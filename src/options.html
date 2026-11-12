@@ -50,7 +50,7 @@
   }
   main { max-width: 1040px; margin: 0 auto; }
 
-  header { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }
+  header { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 12px; margin-bottom: 14px; }
   h1 { font-size: 20px; margin: 0; }
   .version { color: var(--muted); font-size: 13px; }
 
@@ -332,17 +332,19 @@
 
   .empty { padding: 32px 8px; text-align: center; color: var(--muted); }
 
-  /* ---------- 状态区：左侧一条提示线 ---------- */
+  /* ---------- 状态区：放在标题行，插件名与版本号后面 ---------- */
   .status {
-    margin-top: 20px;
-    padding: 4px 0 4px 12px;
-    border-left: 3px solid var(--border);
+    flex: 1 1 320px;
+    min-width: 0;
+    margin: 0;
+    padding: 0 0 0 10px;
+    border-left: 2px solid var(--border);
     font-size: 13px;
   }
   .status:empty { display: none; }
   .status p { margin: 0; }
-  .status ul { margin: 8px 0 0; padding-left: 20px; }
-  .status li { margin-bottom: 4px; word-break: break-word; }
+  .status ul { margin: 4px 0 0; padding-left: 18px; }
+  .status li { margin-bottom: 2px; word-break: break-word; }
   .status.ok { border-left-color: var(--ok); color: var(--ok); }
   .status.warn { border-left-color: var(--warn); color: var(--warn); }
   .status.error { border-left-color: var(--error); color: var(--error); }
@@ -354,6 +356,7 @@
   <header>
     <h1>TabPilot 设置</h1>
     <span class="version" id="version"></span>
+    <div id="status" class="status" role="status" aria-live="polite"></div>
   </header>
 
   <div class="toolbar">
@@ -384,8 +387,6 @@
 
     <section class="detail" id="detail"></section>
   </div>
-
-  <section id="status" class="status" role="status" aria-live="polite"></section>
 </main>
 <script src="store.js"></script>
 <script src="rules.js"></script>
