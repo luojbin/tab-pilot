@@ -112,17 +112,10 @@ test('normalizeHighlight：边框与 banner 的不透明度分别收敛到 0–1
   assert.equal(missing.banner.opacity, 60);
 });
 
-test('normalizeHighlight：兼容旧的统一 opacity', () => {
-  const spec = normalizeHighlight({ highlight: { opacity: 40 } });
-  assert.equal(spec.border.opacity, 40);
-  assert.equal(spec.banner.opacity, 40);
-
-  // 显式指定时以各自的值为准
-  const explicit = normalizeHighlight({
-    highlight: { opacity: 40, border: { opacity: 90 } }
-  });
-  assert.equal(explicit.border.opacity, 90);
-  assert.equal(explicit.banner.opacity, 40);
+test('normalizeHighlight：显式部分不透明度按各自的值收敛', () => {
+  const spec = normalizeHighlight({ highlight: { border: { opacity: 90 } } });
+  assert.equal(spec.border.opacity, 90);
+  assert.equal(spec.banner.opacity, 60);
 });
 
 test('borderStyle：四条边各自贴边', () => {

@@ -33,33 +33,18 @@
 
   function normalizeEntry(raw) {
     const source = isObject(raw) ? raw : {};
-    const replacement = typeof source.replacement === 'string' ? source.replacement : '';
-
-    // 兼容早期带 prefix 字段的写法：等价于把前缀直接拼进目标文本
-    const prefix = typeof source.prefix === 'string' ? source.prefix : '';
-    const escapedPrefix = prefix.replace(/\$/g, '$$$$');
-
     return {
       pattern: typeof source.pattern === 'string' ? source.pattern : '',
-      replacement: escapedPrefix + replacement,
+      replacement: typeof source.replacement === 'string' ? source.replacement : '',
       description: typeof source.description === 'string' ? source.description : ''
     };
   }
 
   function normalizeTitleRule(rule) {
     const raw = rule && isObject(rule.titleRule) ? rule.titleRule : {};
-
-    // 兼容 v4 之前的单条写法：{ enabled, pattern, replacement }
-    const legacy =
-      !Array.isArray(raw.rules) && typeof raw.pattern === 'string' && raw.pattern.trim() !== ''
-        ? [{ pattern: raw.pattern, replacement: raw.replacement, description: '' }]
-        : null;
-
-    const list = Array.isArray(raw.rules) ? raw.rules : legacy || [];
-
     return {
       enabled: raw.enabled === true,
-      rules: list.map(normalizeEntry),
+      rules: Array.isArray(raw.rules) ? raw.rules.map(normalizeEntry) : [],
       testText: typeof raw.testText === 'string' ? raw.testText : ''
     };
   }

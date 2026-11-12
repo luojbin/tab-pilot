@@ -6,7 +6,6 @@ const {
   GROUP_COLORS,
   SCHEMA_VERSION,
   validateConfig,
-  migrate,
   buildConfigFromRules,
   colorForIndex,
   parseConfigText,
@@ -18,35 +17,12 @@ function validConfig() {
   return clone(DEFAULT_CONFIG);
 }
 
-function legacyConfig() {
-  return {
-    schemaVersion: 1,
-    globalEnabled: true,
-    rules: [
-      {
-        id: 'dev-localhost',
-        enabled: true,
-        priority: 100,
-        note: '本地开发环境',
-        match: { urlPattern: '*://localhost:*/*', minTabs: 1 },
-        actions: [{ type: 'group', name: '开发', color: 'green', collapsed: false }]
-      },
-      {
-        id: 'code-github',
-        enabled: true,
-        priority: 90,
-        match: { urlPattern: '*://*.github.com/*', minTabs: 3 },
-        actions: [{ type: 'group', name: '代码', color: 'blue', collapsed: false }]
-      }
-    ]
-  };
-}
 
 test('默认配置能通过校验', () => {
   const result = validateConfig(validConfig());
   assert.equal(result.ok, true);
   assert.equal(result.config.schemaVersion, SCHEMA_VERSION);
-  assert.equal(SCHEMA_VERSION, 5);
+  assert.equal(SCHEMA_VERSION, 1);
 });
 
 test('clone 产生独立副本', () => {
@@ -57,157 +33,29 @@ test('clone 产生独立副本', () => {
 
 test('schemaVersion 不符时拒绝', () => {
   const config = validConfig();
-  config.schemaVersion = 6;
+  config.schemaVersion = 2;
   const result = validateConfig(config);
   assert.equal(result.ok, false);
   assert.match(result.errors.join('\n'), /schemaVersion/);
 });
 
-test('migrate：v1 配置逐级升级为当前结构', () => {
-  const migrated = migrate(legacyConfig());
-  assert.equal(migrated.schemaVersion, 5);
-  assert.deepEqual(
-    migrated.rules.map((rule) => rule.id),
-    ['dev-localhost', 'code-github'],
-    '按旧 priority 降序排列'
-  );
-  assert.deepEqual(migrated.rules[0].patterns, ['*://localhost:*/*']);
-  assert.equal(migrated.rules[0].name, '开发');
-  assert.equal(migrated.rules[0].color, 'green');
-  assert.equal(migrated.rules[1].minTabs, 3);
-  assert.equal(migrated.rules[0].highlight.enabled, false, '补上页面内标识默认值');
-  assert.deepEqual(
-    migrated.rules[0].titleRule,
-    { enabled: false, rules: [], testText: '' },
-    '补上标签页名规则默认值'
-  );
-  assert.equal(validateConfig(migrated).ok, true, '迁移结果必须通过校验');
-});
-
-test('migrate：v2 配置补上 highlight 并升到 v5', () => {
-  const v2 = {
-    schemaVersion: 2,
+test('开发期旧格式配置被拒绝（1.0 起不再迁移）', () => {
+  const old = {
+    schemaVersion: 5,
     globalEnabled: true,
     rules: [
       {
         id: 'dev-localhost',
         enabled: true,
-        name: '开发',
-        color: 'green',
-        collapsed: false,
-        minTabs: 1,
-        note: '',
-        patterns: ['*://localhost:*/*']
+        priority: 100,
+        match: { urlPattern: '^*://localhost:*/*' },
+        actions: [{ type: 'group', name: '开发', color: 'green' }]
       }
     ]
   };
-
-  const migrated = migrate(v2);
-  assert.equal(migrated.schemaVersion, 5);
-  assert.deepEqual(migrated.rules[0].highlight, {
-    enabled: false,
-    border: { sides: ['top', 'right', 'bottom', 'left'], width: 4, opacity: 100 },
-    banner: { positions: ['topLeft'], size: 28, fontSize: 14, opacity: 60 }
-  });
-  assert.equal(validateConfig(migrated).ok, true);
-});
-
-test('migrate：v3 配置补上 titleRule 并升到 v5', () => {
-  const v3 = {
-    schemaVersion: 3,
-    globalEnabled: true,
-    rules: [
-      {
-        id: 'dev',
-        enabled: true,
-        name: '开发',
-        color: 'green',
-        collapsed: false,
-        minTabs: 1,
-        note: '',
-        patterns: ['*://localhost:*/*'],
-        highlight: {
-          enabled: false,
-          border: { sides: [], width: 4, opacity: 100 },
-          banner: { positions: [], size: 28, fontSize: 14, opacity: 60 }
-        }
-      }
-    ]
-  };
-
-  const migrated = migrate(v3);
-  assert.equal(migrated.schemaVersion, 5);
-  assert.deepEqual(migrated.rules[0].titleRule, {
-    enabled: false,
-    rules: [],
-    testText: ''
-  });
-  assert.equal(validateConfig(migrated).ok, true);
-});
-
-test('migrate：v4 的单条 titleRule 升级为规则数组', () => {
-  const v4 = {
-    schemaVersion: 4,
-    globalEnabled: true,
-    rules: [
-      {
-        id: 'dev',
-        enabled: true,
-        name: '开发',
-        color: 'green',
-        collapsed: false,
-        minTabs: 1,
-        note: '',
-        patterns: ['*://localhost:*/*'],
-        highlight: { enabled: false },
-        titleRule: { enabled: true, pattern: '^abc$', replacement: 'XYZ' }
-      }
-    ]
-  };
-
-  const migrated = migrate(v4);
-  assert.equal(migrated.schemaVersion, 5);
-  const titleRule = migrated.rules[0].titleRule;
-  assert.equal(titleRule.enabled, true);
-  assert.equal(titleRule.testText, '');
-  assert.equal(titleRule.rules.length, 1);
-  assert.equal(titleRule.rules[0].pattern, '^abc$');
-  assert.equal(titleRule.rules[0].replacement, 'XYZ');
-  assert.equal(titleRule.rules[0].description, '');
-  assert.equal(validateConfig(migrated).ok, true);
-});
-
-test('migrate：已带 highlight 的 v2 规则不覆盖用户配置', () => {
-  const v2 = {
-    schemaVersion: 2,
-    globalEnabled: true,
-    rules: [
-      {
-        id: 'x',
-        name: 'X',
-        patterns: ['*://x/*'],
-        highlight: { enabled: true, border: { sides: ['top'], width: 6 } }
-      }
-    ]
-  };
-  const migrated = migrate(v2);
-  assert.equal(migrated.rules[0].highlight.enabled, true);
-  assert.deepEqual(migrated.rules[0].highlight.border.sides, ['top']);
-});
-
-test('migrate：非 v1 配置原样返回', () => {
-  const config = validConfig();
-  assert.equal(migrate(config), config);
-  assert.equal(migrate(null), null);
-});
-
-test('migrate：保留 enabled=false 并丢弃没有路径的规则', () => {
-  const legacy = legacyConfig();
-  legacy.rules[0].enabled = false;
-  legacy.rules.push({ id: 'no-match', enabled: true, match: {}, actions: [] });
-  const migrated = migrate(legacy);
-  assert.equal(migrated.rules[0].enabled, false);
-  assert.equal(migrated.rules.find((rule) => rule.id === 'no-match'), undefined);
+  const result = validateConfig(old);
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join('\n'), /schemaVersion/);
 });
 
 test('globalEnabled 非布尔值被拒绝', () => {
@@ -311,11 +159,11 @@ test('parseConfigText：合法 JSON 文本通过', () => {
   assert.equal(result.config.rules.length, 1);
 });
 
-test('parseConfigText：旧格式 JSON 文本会先迁移', () => {
-  const result = parseConfigText(JSON.stringify(legacyConfig()));
-  assert.equal(result.ok, true);
-  assert.equal(result.config.schemaVersion, 5);
-  assert.equal(result.config.rules.length, 2);
+test('parseConfigText：开发期旧格式会被拒绝', () => {
+  const old = { schemaVersion: 4, globalEnabled: true, rules: [] };
+  const result = parseConfigText(JSON.stringify(old));
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join('\n'), /schemaVersion/);
 });
 
 test('parseConfigText：JSON 语法错误给出明确提示', () => {
@@ -350,15 +198,17 @@ test('导出文本可被导入解析（round-trip）', () => {
   assert.deepEqual(parsed.config, config);
 });
 
-test('导入旧格式文件会先迁移再落库', () => {
-  const text = JSON.stringify(legacyConfig(), null, 2);
-  const parsed = parseConfigText(text);
-  assert.equal(parsed.ok, true);
-  assert.equal(parsed.config.schemaVersion, 5);
-  assert.deepEqual(
-    parsed.config.rules.map((rule) => rule.id),
-    ['dev-localhost', 'code-github']
-  );
+test('导入开发期旧版本文件会被拒绝', () => {
+  const old = {
+    schemaVersion: 5,
+    globalEnabled: true,
+    rules: [
+      { id: 'dev', enabled: true, name: '开发', color: 'green', patterns: ['*://localhost:*/*'] }
+    ]
+  };
+  const result = parseConfigText(JSON.stringify(old, null, 2));
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join('\n'), /schemaVersion/);
 });
 
 test('highlight：非法结构与越界数值被拒绝', () => {
@@ -414,7 +264,7 @@ test('buildConfigFromRules：保留 highlight / titleRule 并规范化字段（�
     }
   ]);
 
-  assert.equal(config.schemaVersion, 5);
+  assert.equal(config.schemaVersion, 1);
   assert.equal(config.rules[0].name, '开发');
   assert.equal(config.rules[0].note, '本地');
   assert.equal(config.rules[0].minTabs, 1);

@@ -29,26 +29,12 @@ test('normalizeTitleRule：缺省时给出关闭状态和空规则组', () => {
   assert.deepEqual(normalizeTitleRule({}).rules, []);
 });
 
-test('normalizeTitleRule：兼容 v4 的单条正则写法', () => {
+test('normalizeTitleRule：旧单条写法不再兼容（只认 rules 数组）', () => {
   const spec = normalizeTitleRule({
     titleRule: { enabled: true, pattern: 'a', replacement: 'b' }
   });
   assert.equal(spec.enabled, true);
-  assert.equal(spec.rules.length, 1);
-  assert.equal(spec.rules[0].pattern, 'a');
-  assert.equal(spec.rules[0].replacement, 'b');
-  assert.equal(spec.rules[0].description, '');
-});
-
-test('normalizeTitleRule：旧的 prefix 字段折算进目标文本（含 $ 转义）', () => {
-  const spec = normalizeTitleRule({
-    titleRule: {
-      enabled: true,
-      rules: [{ pattern: 'a', replacement: '$1', prefix: '[$] ' }]
-    }
-  });
-  // 前缀里的 $ 需要转义，否则会被当成替换占位符
-  assert.equal(spec.rules[0].replacement, '[$$] $1');
+  assert.deepEqual(spec.rules, []);
 });
 
 test('normalizeTitleRule：字段只接受字符串', () => {

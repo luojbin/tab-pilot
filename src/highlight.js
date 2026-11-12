@@ -70,34 +70,26 @@
    * 缺字段、越界数值、未知位置都在这里收敛，渲染层不再做判断。
    */
   function normalizeHighlight(rule) {
-    // 完全没有配置时（新建分组 / 旧配置缺字段）用默认规格：四边边框 + 左上角 banner
+    // 完全没有配置时（新建分组）用默认规格：四边边框 + 左上角 banner
     if (!rule || rule.highlight === undefined || rule.highlight === null) {
       return JSON.parse(JSON.stringify(DEFAULT_HIGHLIGHT));
     }
     const raw = typeof rule.highlight === 'object' ? rule.highlight : {};
     const border = raw.border && typeof raw.border === 'object' ? raw.border : {};
     const banner = raw.banner && typeof raw.banner === 'object' ? raw.banner : {};
-    // 早期版本只有一个统一的不透明度，作为两部分的兜底
-    const legacyOpacity = raw.opacity;
 
     return {
       enabled: raw.enabled === true,
       border: {
         sides: uniqueKnown(border.sides, BORDER_SIDES),
         width: clampInt(border.width, LIMITS.borderWidth),
-        opacity: clampInt(
-          border.opacity === undefined ? legacyOpacity : border.opacity,
-          LIMITS.borderOpacity
-        )
+        opacity: clampInt(border.opacity, LIMITS.borderOpacity)
       },
       banner: {
         positions: uniqueKnown(banner.positions, BANNER_POSITIONS),
         size: clampInt(banner.size, LIMITS.bannerSize),
         fontSize: clampInt(banner.fontSize, LIMITS.fontSize),
-        opacity: clampInt(
-          banner.opacity === undefined ? legacyOpacity : banner.opacity,
-          LIMITS.bannerOpacity
-        )
+        opacity: clampInt(banner.opacity, LIMITS.bannerOpacity)
       }
     };
   }

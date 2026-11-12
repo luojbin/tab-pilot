@@ -113,7 +113,7 @@ function rule(overrides) {
 
 function configWith(rules, globalEnabled) {
   return {
-    schemaVersion: 2,
+    schemaVersion: 1,
     globalEnabled: globalEnabled !== false,
     rules
   };
@@ -428,7 +428,7 @@ test('无关消息不触发同步', async () => {
   assert.equal(state.groupCalls.length, 0);
 });
 
-test('v1 旧配置会被迁移后正常生效', async () => {
+test('开发期旧格式配置会被拒绝并回退默认', async () => {
   reset();
   state.storedConfig = {
     schemaVersion: 1,
@@ -449,14 +449,22 @@ test('v1 旧配置会被迁移后正常生效', async () => {
   Background.schedule(tab);
   await Background.flush();
 
-  assert.equal(state.groupCalls.length, 1);
-  assert.equal(state.storedConfig.schemaVersion, 5, '迁移结果应写回 storage');
+  assert.equal(state.groupCalls.length, 1, '回退默认配置后仍应归组');
+  assert.equal(
+    state.storedConfig.schemaVersion,
+    1,
+    '旧配置不会被迁移或改写，仍保持原样'
+  );
+  assert.ok(
+    Logger.recent().some((entry) => /配置校验失败/.test(entry.message)),
+    '应记录配置回退告警'
+  );
 });
 
 test('page-style：命中的分组开启标识时返回渲染规格', async () => {
   reset();
   state.storedConfig = {
-    schemaVersion: 3,
+    schemaVersion: 1,
     globalEnabled: true,
     rules: [
       {
@@ -494,7 +502,7 @@ test('page-style：命中的分组开启标识时返回渲染规格', async () =
 test('page-style：只启用标题规则时也返回配置', async () => {
   reset();
   state.storedConfig = {
-    schemaVersion: 4,
+    schemaVersion: 1,
     globalEnabled: true,
     rules: [
       {
@@ -511,7 +519,11 @@ test('page-style：只启用标题规则时也返回配置', async () => {
           border: { sides: [], width: 4, opacity: 100 },
           banner: { positions: [], size: 28, fontSize: 14, opacity: 60 }
         },
-        titleRule: { enabled: true, pattern: '工作', replacement: '办公' }
+        titleRule: {
+          enabled: true,
+          rules: [{ pattern: '工作', replacement: '办公', description: '' }],
+          testText: ''
+        }
       }
     ]
   };
@@ -531,7 +543,7 @@ test('page-style：只启用标题规则时也返回配置', async () => {
 test('page-style：标识未开启或未命中时返回 null', async () => {
   reset();
   state.storedConfig = {
-    schemaVersion: 3,
+    schemaVersion: 1,
     globalEnabled: true,
     rules: [
       {

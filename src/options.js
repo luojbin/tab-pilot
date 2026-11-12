@@ -1462,7 +1462,7 @@
   }
 
   async function load() {
-    const { config, source, errors, migrated } = await Store.loadConfig();
+    const { config, source, errors } = await Store.loadConfig();
 
     state = {
       globalEnabled: config.globalEnabled !== false,
@@ -1488,8 +1488,6 @@
 
     if (errors && errors.length > 0) {
       setStatus('warn', '存储中的配置校验失败，已回退到内置默认配置：', errors);
-    } else if (migrated) {
-      setStatus('warn', '检测到旧格式（v1）配置，已自动升级为新结构，请确认后保存。');
     } else {
       setStatus(
         'info',

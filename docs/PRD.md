@@ -96,7 +96,7 @@
 
 - 导出为 JSON 文件（含 `schemaVersion`），文件名带日期；入口与其他全局按钮一起放在工具栏。
 - 导出内容为页面当前编辑状态（含尚未保存的修改）。
-- 导入时校验 schema 版本与字段合法性，非法则拒绝并逐条提示，不改动现有配置；旧格式（v1）自动迁移。
+- 导入时校验 schema 版本与字段合法性，非法则拒绝并逐条提示，不改动现有配置；`schemaVersion` 不是当前基线（1）时直接拒绝，不做迁移。
 - 导入确认后替换当前配置，立即保存并同步已打开的标签页。
 - 支持“恢复默认”。
 
@@ -138,11 +138,11 @@
 
 ## 5. 数据模型
 
-`schemaVersion: 5`。一条规则对应一个标签页分组，`patterns` 可包含多个匹配路径，数组顺序即优先级，`highlight` 描述页面内标识，`titleRule` 描述标签页名规则。
+`schemaVersion: 1`（1.0 起的基线）。一条规则对应一个标签页分组，`patterns` 可包含多个匹配路径，数组顺序即优先级，`highlight` 描述页面内标识，`titleRule` 描述标签页名规则。
 
 ```json
 {
-  "schemaVersion": 5,
+  "schemaVersion": 1,
   "globalEnabled": true,
   "rules": [
     {
@@ -187,7 +187,7 @@
 - **匹配路径**：`patterns` 数组，任一命中即视为该规则的 URL 命中。
 - **页面内标识 `highlight`**：`enabled` 开关；`border.sides` ⊂ top/right/bottom/left，`border.width` 1–24；`banner.positions` ⊂ top/right/bottom/left/topLeft/topRight/bottomRight/bottomLeft，`border.opacity` 0–100（默认 100）、`banner.size` 8–160、`banner.fontSize` 8–32、`banner.opacity` 0–100（默认 60）。缺省或越界由 `highlight.js` 收敛到合法值；早期统一写法 `highlight.opacity` 仍可读，作为两部分的兜底。
 - **标签页名规则 `titleRule`**：`enabled` 开关；`rules[]` 是按顺序匹配的命名规则，每条含 `pattern`（正则，不带标志位，只替换第一个匹配）、`replacement`（替换串，支持 `$1`/`$<name>`/`$&`/`$$`，需要加前缀直接写在这里）、`description`（说明）；`testText` 是多行测试文本，随配置保存。命中第一条规则即停止；正则非法时运行期跳过并告警，保存前校验会拒绝非法 `pattern`。早期带 `prefix` 字段的写法会在读取时自动折算进 `replacement`。
-- **旧配置迁移**：`v1 → v2`（`match.urlPattern` + `actions[]` + `priority` → `patterns` / 规则内联属性 / 数组顺序）→ `v3`（补 `highlight` 默认值）→ `v4`（补 `titleRule` 默认值）→ `v5`（`titleRule` 单条正则升级为 `rules[]` + `testText`），读取时自动迁移并写回。
+- **基线说明**：1.0 起配置格式版本从 `1` 重新起算。开发期的 `schemaVersion 2–5` 属于过渡格式，**不再兼容、也不再迁移**（读取时按校验失败回退默认配置，导入时直接拒绝）。以后的结构变更从 1 开始递增，并在当次改动里补迁移。
 - `schemaVersion` 与插件版本号解耦，仅随配置结构的不兼容变更递增。
 
 ## 6. 非功能需求
@@ -207,7 +207,7 @@
 background.js      事件监听 + 调度；回答 content script 的页面标识 / 标题规则查询
   ├─ rules.js      纯函数：match(tab, rules) → 命中的规则
   ├─ actions.js    执行 browser.tabs.group / tabGroups.update
-  ├─ store.js      封装 storage.local 读写 + schema 校验 + 迁移
+  ├─ store.js      封装 storage.local 读写 + schema 校验（基线 schemaVersion 1）
   ├─ highlight.js  页面内标识规格：默认值、边界收敛、几何（纯函数）
   ├─ title-rule.js 标签页名规则：正则编译与替换（纯函数）
   └─ logger.js     控制台日志（开发期辅助）
@@ -220,7 +220,7 @@ manifest.json      MV3，background.scripts（非 service worker）+ content_scr
 
 1. 规则引擎与 `browser.*` API 解耦（只依赖 actions 层）。
 2. 存储封装层（以后换 IndexedDB/同步只改此层）。
-3. 配置带 `schemaVersion`，便于迁移。
+3. 配置带 `schemaVersion`，便于以后从 1.0 的基线做迁移。
 
 ## 8. 版本规划
 
@@ -231,7 +231,7 @@ manifest.json      MV3，background.scripts（非 service worker）+ content_scr
 | v0.3.0   | 配置导入/导出：工具栏「导出 JSON」「导入 JSON…」，导入校验（v1 自动迁移）、覆盖确认、导入后自动同步；日志页取消（改为控制台辅助） | 换机器 / 重载后可恢复配置 |
 | v0.4.0   | 页面内标识：分组开关；边框（上下左右可选、宽度可调、颜色取自分组）；banner（上下左右 + 四角斜向、显示分组名、尺寸/字号可调）；配置结构升级到 `schemaVersion 3` 并自动迁移 | 命中分组的页面无刷新即显示标识 |
 | v0.5.0   | 标签页名规则：每个分组可配置多条命名规则（源文本 / 目标文本 / 描述），按顺序匹配、命中第一条即停止；配置页多行测试并保存测试文本；配置结构升级到 `schemaVersion 5` 并自动迁移 | 命中页面的标题按首条命中规则改写，测试文本可复用 |
-| v1.0.0   | 稳定自用一周；卸载至少一个旧插件                             | 达成 2.1 目标           |
+| v1.0.0   | 正式发布：功能集合与 v0.5.0 相同；配置格式重新基线为 `schemaVersion 1`，开发期过渡格式（2–5）作废、不再迁移 | 发布 + 连续自用一周、卸载一个旧插件 |
 | v1.1.0+  | 页面内标识的更多样式；标题规则支持正则标志位等增强           | 不阻塞主线              |
 
 ## 9. 里程碑与时间（碎片时间制）

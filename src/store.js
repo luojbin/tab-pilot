@@ -4,31 +4,21 @@
  * 唯一负责读写 browser.storage.local 的地方；所有配置读取都从这里走，
  * 以后换 IndexedDB / 同步存储只改本文件。
  *
- * 配置结构（schemaVersion 2）：
+ * 配置结构（schemaVersion 1，1.0 之后的基线）：
  *   { schemaVersion, globalEnabled, rules: [rule] }
- *   rule = { id, enabled, name, color, collapsed, minTabs, note, patterns[] }
+ *   rule = { id, enabled, name, color, collapsed, minTabs, note, patterns[],
+ *            highlight{...}, titleRule{...} }
  * 一条规则对应一个标签页分组，`patterns` 里可以有多个匹配路径，
  * 规则在数组中的顺序就是优先级（越靠前越高）。
+ *
+ * 说明：开发期的 schemaVersion 2–5 属于过渡格式，1.0 起作废，不再提供迁移；
+ * 以后的结构变更都从这里的 1 重新递增，并在当次改动里补迁移。
  */
 (function (global) {
   'use strict';
 
   const CONFIG_KEY = 'tabpilot:config';
-  const SCHEMA_VERSION = 5;
-
-  /** 标签页名规则的默认值（与 src/title-rule.js 的 DEFAULT_TITLE_RULE 保持一致）。 */
-  const DEFAULT_TITLE_RULE_CONFIG = {
-    enabled: false,
-    rules: [],
-    testText: ''
-  };
-
-  /** 页面内标识的默认值（与 src/highlight.js 的 DEFAULT_HIGHLIGHT 保持一致）。 */
-  const DEFAULT_HIGHLIGHT_CONFIG = {
-    enabled: false,
-    border: { sides: ['top', 'right', 'bottom', 'left'], width: 4, opacity: 100 },
-    banner: { positions: ['topLeft'], size: 28, fontSize: 14, opacity: 60 }
-  };
+  const SCHEMA_VERSION = 1;
 
   /** Firefox tabGroups 的预设颜色。 */
   const GROUP_COLORS = [
@@ -230,9 +220,6 @@
             errors.push(`${at}.enabled 必须是布尔值`);
           }
 
-          // 早期统一的不透明度，兼容读取但不再写入
-          checkInteger(highlight.opacity, 0, 100, `${at}.opacity`, errors);
-
           if (highlight.border !== undefined) {
             if (!isPlainObject(highlight.border)) {
               errors.push(`${at}.border 必须是对象`);
@@ -283,126 +270,6 @@
   }
 
   /**
-   * 逐级迁移到当前 schemaVersion：
-   * v1 → v2：单条 urlPattern → patterns；actions[0] → 规则属性；priority 降序 → 顺序
-   * v2 → v3：为每条规则补上 highlight（页面内标识）默认值
-   * v3 → v4：为每条规则补上 titleRule（标签页名规则）默认值
-   * v4 → v5：titleRule 从单条正则升级为「按顺序匹配的命名规则数组 + 测试文本」
-   */
-  function migrate(config) {
-    let current = config;
-    if (isPlainObject(current) && current.schemaVersion === 1) {
-      current = migrateFromV1(current);
-    }
-    if (isPlainObject(current) && current.schemaVersion === 2) {
-      current = migrateFromV2(current);
-    }
-    if (isPlainObject(current) && current.schemaVersion === 3) {
-      current = migrateFromV3(current);
-    }
-    if (isPlainObject(current) && current.schemaVersion === 4) {
-      current = migrateFromV4(current);
-    }
-    return current;
-  }
-
-  function migrateFromV1(config) {
-    const oldRules = Array.isArray(config.rules) ? config.rules : [];
-    const ordered = oldRules.slice().sort((a, b) => {
-      const pa = Number(a && a.priority);
-      const pb = Number(b && b.priority);
-      return (Number.isFinite(pb) ? pb : 0) - (Number.isFinite(pa) ? pa : 0);
-    });
-
-    const rules = ordered
-      .map((rule, index) => {
-        const action = Array.isArray(rule.actions)
-          ? rule.actions.find((item) => item && item.type === 'group')
-          : null;
-        const pattern = rule.match && rule.match.urlPattern;
-        const minTabs = Number(rule.match && rule.match.minTabs);
-        return {
-          id: typeof rule.id === 'string' && rule.id ? rule.id : `rule-${index + 1}`,
-          enabled: rule.enabled !== false,
-          name: (action && action.name) || '未命名分组',
-          color: (action && action.color) || DEFAULT_COLOR,
-          collapsed: Boolean(action && action.collapsed),
-          minTabs: Number.isFinite(minTabs) && minTabs >= 1 ? Math.floor(minTabs) : DEFAULT_MIN_TABS,
-          note: typeof rule.note === 'string' ? rule.note : '',
-          patterns: typeof pattern === 'string' && pattern ? [pattern] : []
-        };
-      })
-      .filter((rule) => rule.patterns.length > 0);
-
-    return {
-      schemaVersion: 2,
-      globalEnabled: config.globalEnabled !== false,
-      rules
-    };
-  }
-
-  function migrateFromV3(config) {
-    const rules = (Array.isArray(config.rules) ? config.rules : []).map((rule) => {
-      if (!isPlainObject(rule) || isPlainObject(rule.titleRule)) return rule;
-      return { ...rule, titleRule: clone(DEFAULT_TITLE_RULE_CONFIG) };
-    });
-
-    return {
-      // 只升级到 4，由外层迁移链继续升到当前版本
-      schemaVersion: 4,
-      globalEnabled: config.globalEnabled !== false,
-      rules
-    };
-  }
-
-  function migrateFromV2(config) {
-    const rules = (Array.isArray(config.rules) ? config.rules : []).map((rule) => {
-      if (!isPlainObject(rule) || isPlainObject(rule.highlight)) return rule;
-      return { ...rule, highlight: clone(DEFAULT_HIGHLIGHT_CONFIG) };
-    });
-
-    return {
-      // 只升级到 3，由外层迁移链继续升到当前版本
-      schemaVersion: 3,
-      globalEnabled: config.globalEnabled !== false,
-      rules
-    };
-  }
-
-  function migrateFromV4(config) {
-    const rules = (Array.isArray(config.rules) ? config.rules : []).map((rule) => {
-      if (!isPlainObject(rule) || !isPlainObject(rule.titleRule)) return rule;
-      const titleRule = rule.titleRule;
-      if (Array.isArray(titleRule.rules)) return rule; // 已经是新结构
-
-      const hasPattern = typeof titleRule.pattern === 'string' && titleRule.pattern.trim() !== '';
-      return {
-        ...rule,
-        titleRule: {
-          enabled: titleRule.enabled === true,
-          rules: hasPattern
-            ? [
-                {
-                  pattern: titleRule.pattern,
-                  replacement:
-                    typeof titleRule.replacement === 'string' ? titleRule.replacement : '',
-                  description: ''
-                }
-              ]
-            : [],
-          testText: ''
-        }
-      };
-    });
-
-    return {
-      schemaVersion: SCHEMA_VERSION,
-      globalEnabled: config.globalEnabled !== false,
-      rules
-    };
-  }
-
-  /**
    * 解析 JSON 文本并校验（为导入功能与调试保留；配置页已改为可视化编辑）。
    */
   function parseConfigText(text) {
@@ -415,14 +282,14 @@
     } catch (err) {
       return { ok: false, errors: [`JSON 语法错误：${(err && err.message) || err}`] };
     }
-    return validateConfig(migrate(raw));
+    return validateConfig(raw);
   }
 
   /**
-   * 读取配置。未存过或校验失败时回退到默认配置，并通过 source / errors 说明原因。
-   * 旧格式会被就地迁移并写回，避免每次读取都重复迁移。
+   * 读取配置。未存过或校验失败（例如开发期旧格式）时回退到默认配置，
+   * 并通过 source / errors 说明原因。
    *
-   * @returns {Promise<{config: object, source: 'storage'|'default', errors?: string[], migrated?: boolean}>}
+   * @returns {Promise<{config: object, source: 'storage'|'default', errors?: string[]}>}
    */
   async function loadConfig() {
     const data = await browser.storage.local.get(CONFIG_KEY);
@@ -432,30 +299,19 @@
       return { config: clone(DEFAULT_CONFIG), source: 'default' };
     }
 
-    const migrated = migrate(stored);
-    const result = validateConfig(migrated);
+    const result = validateConfig(stored);
     if (!result.ok) {
       return { config: clone(DEFAULT_CONFIG), source: 'default', errors: result.errors };
     }
-
-    const wasMigrated = migrated !== stored;
-    if (wasMigrated) {
-      try {
-        await browser.storage.local.set({ [CONFIG_KEY]: migrated });
-      } catch (err) {
-        // 写回失败不影响本次读取
-      }
-    }
-    return { config: result.config, source: 'storage', migrated: wasMigrated };
+    return { config: result.config, source: 'storage' };
   }
 
   /** 保存配置；非法配置不会被写入。 */
   async function saveConfig(config) {
-    const normalized = migrate(config);
-    const result = validateConfig(normalized);
+    const result = validateConfig(config);
     if (!result.ok) return result;
-    await browser.storage.local.set({ [CONFIG_KEY]: normalized });
-    return { ok: true, config: normalized };
+    await browser.storage.local.set({ [CONFIG_KEY]: config });
+    return { ok: true, config };
   }
 
   /** 清除用户配置，回到内置默认值（“恢复默认”）。 */
@@ -525,7 +381,6 @@
     DEFAULT_CONFIG,
     clone,
     validateConfig,
-    migrate,
     buildConfigFromRules,
     parseConfigText,
     loadConfig,
