@@ -22,7 +22,6 @@
     reset: document.getElementById('reset'),
     addRule: document.getElementById('addRule'),
     exportFile: document.getElementById('exportFile'),
-    copyJson: document.getElementById('copyJson'),
     importFile: document.getElementById('importFile'),
     importInput: document.getElementById('importInput')
   };
@@ -782,16 +781,6 @@
     setStatus('ok', `已导出 ${config.rules.length} 个分组到 ${name}`);
   }
 
-  async function copyToClipboard() {
-    const config = exportableConfig();
-    try {
-      await navigator.clipboard.writeText(`${JSON.stringify(config, null, 2)}\n`);
-      setStatus('ok', `已复制 ${config.rules.length} 个分组的 JSON 到剪贴板`);
-    } catch (err) {
-      setStatus('warn', `复制失败，可以改用「导出 JSON 文件」：${String(err)}`);
-    }
-  }
-
   function applyConfig(config) {
     state.globalEnabled = config.globalEnabled !== false;
     state.rules = config.rules.map((rule) => ({
@@ -897,9 +886,6 @@
 
   els.exportFile.addEventListener('click', () => {
     exportToFile();
-  });
-  els.copyJson.addEventListener('click', () => {
-    copyToClipboard().catch((err) => setStatus('error', `复制失败：${String(err)}`));
   });
   els.importFile.addEventListener('click', () => {
     els.importInput.click();
