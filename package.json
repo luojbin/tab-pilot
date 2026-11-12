@@ -1,6 +1,6 @@
 {
   "name": "tab-pilot",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "Firefox 个人标签页管理器（WebExtensions，无构建）",
   "license": "MIT",
