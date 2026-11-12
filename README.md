@@ -8,7 +8,7 @@
 - **隐私**：纯本地运行，无任何网络请求上传数据
 - **版本**：遵循 [SemVer](https://semver.org/lang/zh-CN/) 三段式 `MAJOR.MINOR.PATCH`
 
-> **当前状态**：`v0.3.0` 已实现配置导入 / 导出（顶部工具栏的「导出 JSON」「导入 JSON…」，导入前校验并确认替换，导入后自动同步），`v0.2.0` 的两栏配置页与 `v0.1.0` 的规则引擎均已在 Firefox 实机验证通过。配置结构为 `schemaVersion 2`，v1 旧配置自动迁移。共 78 个单元测试。其余功能仍在规划中，详见下方[功能清单](#功能清单与实现状态)与[版本规划](#版本规划)。
+> **当前状态**：`v0.4.0` 新增**页面内标识**——每个分组可开启页面内边框（上下左右任选、宽度可调、颜色取自分组）与 banner（上下左右 + 四个角，角上为斜向，显示分组名，尺寸与字号可调），由 content script 在命中的页面内注入。`v0.3.0` 的导入导出、`v0.2.0` 的两栏配置页与 `v0.1.0` 的规则引擎均已在 Firefox 实机验证。配置结构为 `schemaVersion 3`，v1/v2 旧配置自动迁移。共 91 个单元测试。其余功能仍在规划中，详见下方[功能清单](#功能清单与实现状态)与[版本规划](#版本规划)。
 
 ---
 
@@ -62,12 +62,13 @@
 | F4 | 配置导入 / 导出：导出 JSON 文件、导入时校验 `schemaVersion` 与字段、覆盖前确认、导入后自动同步（入口在顶部工具栏） | P1 | **已完成（v0.3.0）**，待 Firefox 实机确认 |
 | F5 | 操作日志：记录时间、URL、命中规则、动作、结果 / 错误 | 开发期辅助 | **不做独立日志页**。`explain()` 的 steps 已在控制台输出，足够排查「为什么没进组」；内存环形缓冲保留供调试 |
 | F6 | 标签页重命名（实验）：content script 改 `document.title`，失败静默降级 | P2 | 规划中（v1.1.0），不阻塞 v1.0.0 |
+| F7 | 页面内标识：按分组在页面内绘制边框（上下左右可选、宽度可调、颜色取自分组）与 banner（上下左右为贴边小标签，宽度随文字、内侧圆角；四角为 45° 斜带，两端越过页面边缘并被裁掉，显示分组名；边框与 banner 的不透明度分别可调，默认 100% / 60%；配置页带一个示意预览框） | P1 | **已完成（v0.4.0）**，待 Firefox 实机确认 |
 
 **验收标准（F1）**：打开 3 个 `localhost` 页面，自动进入同一「开发」组、绿色，控制台各打印一条命中记录。
 
 ## 规则怎么写
 
-配置页左侧是分组列表，选中某个分组后在右侧编辑；一条规则对应一个分组，等价的结构（`schemaVersion: 2`）是：
+配置页左侧是分组列表，选中某个分组后在右侧编辑；一条规则对应一个分组，等价的结构（`schemaVersion: 3`）是：
 
 ```json
 {
@@ -78,7 +79,12 @@
   "collapsed": false,
   "minTabs": 3,
   "note": "代码托管：攒够 3 个再归组",
-  "patterns": ["*://*.github.com/*", "*://gitlab.com/*"]
+  "patterns": ["*://*.github.com/*", "*://gitlab.com/*"],
+  "highlight": {
+    "enabled": true,
+    "border": { "sides": ["top", "bottom"], "width": 6, "opacity": 100 },
+    "banner": { "positions": ["topRight", "bottomLeft"], "size": 34, "fontSize": 15, "opacity": 60 }
+  }
 }
 ```
 
@@ -99,11 +105,11 @@
 
 ## 数据模型
 
-配置存放在 `tabpilot:config`，`schemaVersion` 为 `2`：
+配置存放在 `tabpilot:config`，`schemaVersion` 为 `3`：
 
 ```json
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "globalEnabled": true,
   "rules": [
     {
@@ -114,32 +120,40 @@
       "collapsed": false,
       "minTabs": 1,
       "note": "本地开发环境",
-      "patterns": ["*://localhost:*/*"]
+      "patterns": ["*://localhost:*/*"],
+      "highlight": {
+        "enabled": false,
+        "border": { "sides": [], "width": 4, "opacity": 100 },
+        "banner": { "positions": [], "size": 28, "fontSize": 14, "opacity": 60 }
+      }
     }
   ]
 }
 ```
 
 - 未存过配置或配置校验失败时，插件回退到内置默认配置（即上面这条 `dev-localhost`）。
-- 旧的 `schemaVersion: 1` 配置（`match.urlPattern` + `actions[]` + `priority`）会在读取时**自动迁移**到 v2 并写回：单条路径转成 `patterns` 数组，`actions[0]` 的分组属性提到规则上，旧 `priority` 降序转成数组顺序。
+- **迁移链**：`v1 → v2`（`match.urlPattern` + `actions[]` + `priority` → `patterns` / 规则内联属性 / 数组顺序）→ `v3`（为每条规则补上 `highlight` 默认值）。读取时自动迁移并写回，用户不需要手动处理。
 - `schemaVersion` 是**配置格式版本**，只在结构不兼容变更时递增，与插件版本号无关。
 
 ## 架构与目录
 
 ```
-manifest.json          MV3，background.scripts（非 service worker）
+manifest.json          MV3，background.scripts（非 service worker）+ content_scripts
 src/
-  background.js        事件监听 + 防抖调度：唯一做编排的地方
+  background.js        事件监听 + 防抖调度：唯一做编排的地方；也负责回答页面标识查询
   rules.js             纯函数规则引擎：match / explain，可脱离浏览器单测
   actions.js           动作执行：唯一调用 tabs.group / tabGroups.* 的层
-  store.js             存储封装：storage.local 读写 + schema 校验 + 默认配置
+  store.js             存储封装：storage.local 读写 + schema 校验 + 迁移 + 默认配置
+  highlight.js         页面内标识规格：默认值、边界收敛（background / content / 配置页共用）
+  content.js           content script：按 background 下发的规格在页面内绘制边框与 banner
   logger.js            日志：控制台 + 内存环形缓冲（定位为开发调试辅助，不做独立日志页）
   options.html         配置页：两栏布局（左分组列表 / 右分组详情）
-  options.js           配置页逻辑（选中、排序、删除、路径编辑与补全、校验提示、保存后请求同步）
+  options.js           配置页逻辑（选中、排序、删除、路径编辑与补全、页面内标识、校验提示、保存后请求同步）
 test/
-  rules.test.js        规则匹配、优先级、阈值、窗口隔离
-  store.test.js        配置校验（含 minTabs / 颜色 / 重复 id）与 JSON 解析
-  background.test.js   编排链路：事件、同步、工具栏、消息、调试入口
+  rules.test.js        规则匹配、顺序优先级、阈值、窗口隔离、路径补全
+  store.test.js        配置校验（含 minTabs / 颜色 / highlight）与 v1→v3 迁移
+  highlight.test.js    页面内标识规格的默认值、边界收敛、过滤去重
+  background.test.js   编排链路：事件、同步、工具栏、消息、页面标识、调试入口
 docs/PRD.md            需求、场景、架构、版本规划的完整依据
 ```
 
@@ -152,7 +166,8 @@ docs/PRD.md            需求、场景、架构、版本规划的完整依据
 | v0.1.0 | 规则引擎 + 内置默认 `localhost` →「开发」组绿色 + 控制台日志 + 全量同步（工具栏按钮） | 已完成，Firefox 实机验证通过 |
 | v0.2.0 | 配置页两栏布局：左栏只读分组列表（选中、⋯ 排序/删除），右栏编辑分组名/颜色/启停 + 多匹配路径（含自动补全）、阈值、折叠、备注；全局开关 + 保存前校验 + 保存后自动同步；配置结构升级到 `schemaVersion 2` 并自动迁移旧配置 | 已完成，Firefox 实机验证通过 |
 | v0.3.0 | 配置导入 / 导出：工具栏「导出 JSON」「导入 JSON…」，导入校验（v1 自动迁移）、覆盖确认、导入后自动同步 | 已实现并本地验证，待 Firefox 确认 |
-| v0.4.0 | 按容器 / 窗口区分规则 | 规划中 |
+| v0.4.0 | 页面内标识：按分组绘制边框（上下左右可选、宽度可调、颜色取自分组）与 banner（上下左右 + 四角斜向、显示分组名、尺寸/字号可调）；配置结构升级到 `schemaVersion 3` 并自动迁移 | 已实现并本地验证，待 Firefox 确认 |
+| v0.5.0 | 按容器 / 窗口区分规则 | 规划中 |
 | v1.0.0 | 稳定自用一周，卸载至少一个旧插件 | 规划中 |
 | v1.1.0+ | 标签页重命名实验、按容器 / 窗口区分规则 | 规划中 |
 
@@ -183,11 +198,11 @@ docs/PRD.md            需求、场景、架构、版本规划的完整依据
 
 页面是两栏布局：
 
-- **左栏：分组列表（只读）**。每行只有色块、分组名、iOS 风格拨杆（表示启用状态，不可点击）和 ⋯；点行选中分组，选中项左侧有高亮条，停用的分组名字带删除线。⋯ 菜单可上移 / 下移（**顺序即优先级，靠上的先匹配**）或删除。
-- **右栏：选中分组的详情**，按行组织：
-  - 第一行：分组名（固定约 240px 宽）、颜色、阈值、启用、命中后折叠。颜色是自带色块的自绘下拉；启用与折叠是 iOS 风格拨杆，和其他字段一样**文字在上、控件在下**，所以整行底边对齐。
-  - 第二行：备注，可拖动缩放的文本域。
-  - 再往下是匹配路径（可增删、支持简写自动补全），底部「该分组的更多设置」为标签页重命名、页面内高亮标识预留了位置（标注「规划中」）。
+- **左栏：分组列表（只读）**。每行只有色块、分组名、iOS 风格拨杆（表示启用状态，不可点击）和 ⋯；点行选中分组，选中项左侧有高亮条，停用的分组名字带删除线。⋯ 菜单可上移 / 下移（**顺序即优先级，靠上的先匹配**）或删除。新建分组会按序号在 9 个预设色里循环取色，相邻分组默认不同色。
+- **右栏：选中分组的详情**，分成三个可独立折叠的区块（折叠状态记在 localStorage）。默认只展开「基础配置」；折叠时标题右侧会显示该区块的状态——页面内突出显示用只读拨杆表示启停，标签页名规则显示「规划中」徽标：
+  - **基础配置**：分组名 / 颜色 / 阈值 / 启用 / 命中后折叠排在同一行（颜色是自带色块的自绘下拉，后两个是 iOS 拨杆，都是文字在上、控件在下）；下面依次是备注（可拖动缩放的文本域）与匹配路径（可增删、支持简写自动补全）。
+  - **页面内突出显示**：一个开关；边框可勾选上/下/左/右并调整宽度与不透明度（颜色自动取该分组的颜色，默认不透明）；banner 可选上/下/左/右（贴着对应边缘的小标签，宽度随文字、内侧圆角）与四个角（45° 斜带，两端伸出页面边缘被裁掉），可调尺寸、字号与不透明度（默认 60%）。顶部有一个 **16:9 的示意预览框**：用细条和斜线表示位置、颜色与透明度，banner 内用 `XXX` 占位。新分组的默认值是**四边边框 + 左上角 banner**（标识总开关默认仍是关闭）。
+  - **标签页名规则**：目前是「规划中」占位，后续做标签页重命名。
 
 顶部工具栏是全局开关与 `保存并同步` / `放弃修改` / `恢复默认` / `导出 JSON` / `导入 JSON…`。**操作结果提示显示在标题行**（插件名与版本号后面），成功 / 警告 / 失败用颜色区分；保存失败时错误会逐条列在标题行里（如 `rules[0].name 必须是非空字符串`），同时高亮左侧对应分组。保存成功会写回 storage 并立刻同步已打开的标签页；`Ctrl/Cmd + S` 也能保存。
 
@@ -233,8 +248,10 @@ npm test        # 运行规则引擎、配置校验与编排链路的单测
   const { config, source, errors } = await TabPilotStore.loadConfig();
   console.log('配置来源:', source, '校验错误:', errors ?? '无');
   console.table(config.rules.map((r) => ({
-    id: r.id, enabled: r.enabled, priority: r.priority,
-    pattern: r.match.urlPattern, minTabs: r.match.minTabs ?? 1
+    id: r.id, enabled: r.enabled, name: r.name,
+    patterns: (r.patterns || []).join(' | '),
+    minTabs: r.minTabs ?? 1,
+    highlight: r.highlight ? r.highlight.enabled : false
   })));
   const tabs = await browser.tabs.query({ currentWindow: true });
   console.table(tabs.map((t) => ({ id: t.id, groupId: t.groupId, url: t.url })));
@@ -250,9 +267,11 @@ npm test        # 运行规则引擎、配置校验与编排链路的单测
 ## 已知限制
 
 - 分组 API 已在 Firefox 实机验证可用（`tabs.group` + `tabGroups.update`）；不支持该 API 的版本会打印明确日志而不是抛错。
+- **页面内标识需要 content script 注入所有 http(s) 页面**，所以安装时 Firefox 会提示「可访问所有网站的数据」。扩展只用当前网址做规则匹配，仅在命中分组且该分组开启标识时绘制覆盖层：不读取页面内容、不上传任何数据。
+- 页面内标识是 `position: fixed` 的覆盖层，`pointer-events: none`，不拦截点击；少数强制改写 `z-index` 或使用顶层 iframe 的页面可能遮不住，属已知限制。
 - MV3 后台是事件页，会被回收：日志的内存缓冲、防抖队列都是易失状态。日志只作为开发期排查手段（控制台），不做落盘。
 - 临时加载的扩展在**浏览器重启或重新载入后消失，storage 也随之清空**：用工具栏的「导出 JSON」备份，重载后用「导入 JSON…」恢复。
-- 规则匹配不做容器（Container Tabs）区分，见 v1.1.0 规划。
+- 规则匹配不做容器（Container Tabs）区分，见 v0.5.0 规划。
 
 ## 许可证
 

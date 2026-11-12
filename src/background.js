@@ -19,6 +19,7 @@
   const Store = global.TabPilotStore;
   const Actions = global.TabPilotActions;
   const Logger = global.TabPilotLogger;
+  const Highlight = global.TabPilotHighlight;
 
   /**
    * 把 explain() 的判断过程压成一句人话，直接写进日志消息里，
@@ -238,11 +239,74 @@
     Logger.info('浏览器启动', { version: browser.runtime.getManifest().version });
   });
 
+  /**
+   * 页面内标识：给定 URL，返回该页面应渲染的分组标识（没有则 null）。
+   * 与规则引擎共用一套匹配逻辑，阈值也照常生效。
+   */
+  async function resolvePageStyle(tab, url) {
+    const { config } = await Store.loadConfig();
+    if (config.globalEnabled === false) return null;
+
+    const targetUrl = typeof url === 'string' && url !== '' ? url : (tab && tab.url) || '';
+    if (targetUrl === '' || isIgnorable(targetUrl)) return null;
+
+    const windowId = tab && typeof tab.windowId === 'number' ? tab.windowId : undefined;
+    const allTabs = windowId === undefined ? null : await tabsInWindow(windowId);
+    const pseudoTab = { id: -1, windowId, url: targetUrl, groupId: -1 };
+
+    const { matched } = Rules.explain(pseudoTab, config.rules, { tabs: allTabs, windowId });
+    if (!matched) {
+      Logger.info('页面标识查询：未命中分组', { url: targetUrl });
+      return null;
+    }
+
+    const highlight = Highlight.normalizeHighlight(matched.rule);
+    if (!highlight.enabled) {
+      Logger.info('页面标识查询：分组未开启标识', { url: targetUrl, ruleId: matched.ruleId });
+      return null;
+    }
+
+    Logger.info('页面标识查询：返回标识', {
+      url: targetUrl,
+      ruleId: matched.ruleId,
+      border: highlight.border,
+      banner: highlight.banner
+    });
+
+    return {
+      ruleId: matched.ruleId,
+      name: matched.rule.name || '未命名分组',
+      colorHex: Store.colorHexOf(matched.rule),
+      highlight
+    };
+  }
+
+  /** 配置变化后通知所有页面重绘标识。 */
+  async function refreshPages() {
+    let tabs = [];
+    try {
+      tabs = await browser.tabs.query({});
+    } catch (err) {
+      return;
+    }
+    for (const tab of tabs) {
+      if (!tab || typeof tab.id !== 'number') continue;
+      browser.tabs.sendMessage(tab.id, { type: 'tabpilot:refresh' }).catch(() => {});
+    }
+  }
+
   // 配置页是独立上下文，保存后通过消息请求一次全量同步
-  browser.runtime.onMessage.addListener((message) => {
+  browser.runtime.onMessage.addListener((message, sender) => {
     if (!message || typeof message !== 'object') return undefined;
     if (message.type === 'sync-all') return syncAll();
+    if (message.type === 'page-style') return resolvePageStyle(sender && sender.tab, message.url);
     return undefined;
+  });
+
+  // 无论从配置页、控制台还是导入修改配置，都让已打开的页面刷新标识
+  browser.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== 'local' || !changes[Store.CONFIG_KEY]) return;
+    refreshPages().catch((err) => Logger.error('刷新页面标识失败', String(err)));
   });
 
   // 工具栏按钮：点一下就把当前窗口/所有窗口的标签页按规则同步一遍

@@ -14,7 +14,14 @@
   'use strict';
 
   const CONFIG_KEY = 'tabpilot:config';
-  const SCHEMA_VERSION = 2;
+  const SCHEMA_VERSION = 3;
+
+  /** 页面内标识的默认值（与 src/highlight.js 的 DEFAULT_HIGHLIGHT 保持一致）。 */
+  const DEFAULT_HIGHLIGHT_CONFIG = {
+    enabled: false,
+    border: { sides: ['top', 'right', 'bottom', 'left'], width: 4, opacity: 100 },
+    banner: { positions: ['topLeft'], size: 28, fontSize: 14, opacity: 60 }
+  };
 
   /** Firefox tabGroups 的预设颜色。 */
   const GROUP_COLORS = [
@@ -32,6 +39,19 @@
   const DEFAULT_COLOR = 'grey';
   const DEFAULT_MIN_TABS = 1;
 
+  /** 分组颜色的实际色值（页面内标识需要真实颜色，不是色名）。 */
+  const GROUP_COLOR_HEX = {
+    grey: '#9aa0a6',
+    blue: '#1a73e8',
+    red: '#d93025',
+    yellow: '#f9ab00',
+    green: '#1e8e3e',
+    pink: '#d01884',
+    purple: '#9334e6',
+    cyan: '#007b83',
+    orange: '#e8710a'
+  };
+
   /**
    * 内置默认配置：没有存储配置时的兜底，也是配置页的初始内容。
    */
@@ -47,7 +67,12 @@
         collapsed: false,
         minTabs: 1,
         note: '本地开发环境',
-        patterns: ['*://localhost:*/*']
+        patterns: ['*://localhost:*/*'],
+        highlight: {
+          enabled: false,
+          border: { sides: ['top', 'right', 'bottom', 'left'], width: 4, opacity: 100 },
+          banner: { positions: ['topLeft'], size: 28, fontSize: 14, opacity: 60 }
+        }
       }
     ]
   };
@@ -58,6 +83,19 @@
 
   function isPlainObject(value) {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
+  }
+
+  function checkInteger(value, min, max, path, errors) {
+    if (value === undefined) return;
+    if (
+      typeof value !== 'number' ||
+      !Number.isFinite(value) ||
+      Math.floor(value) !== value ||
+      value < min ||
+      value > max
+    ) {
+      errors.push(`${path} 必须是 ${min}~${max} 的整数`);
+    }
   }
 
   /**
@@ -126,6 +164,55 @@
         }
       }
 
+      if (rule.highlight !== undefined) {
+        const at = `${where}.highlight`;
+        if (!isPlainObject(rule.highlight)) {
+          errors.push(`${at} 必须是对象`);
+        } else {
+          const highlight = rule.highlight;
+
+          if (highlight.enabled !== undefined && typeof highlight.enabled !== 'boolean') {
+            errors.push(`${at}.enabled 必须是布尔值`);
+          }
+
+          // 早期统一的不透明度，兼容读取但不再写入
+          checkInteger(highlight.opacity, 0, 100, `${at}.opacity`, errors);
+
+          if (highlight.border !== undefined) {
+            if (!isPlainObject(highlight.border)) {
+              errors.push(`${at}.border 必须是对象`);
+            } else {
+              if (highlight.border.sides !== undefined) {
+                if (!Array.isArray(highlight.border.sides)) {
+                  errors.push(`${at}.border.sides 必须是数组`);
+                } else if (highlight.border.sides.some((side) => typeof side !== 'string')) {
+                  errors.push(`${at}.border.sides 只能包含字符串`);
+                }
+              }
+              checkInteger(highlight.border.width, 1, 24, `${at}.border.width`, errors);
+              checkInteger(highlight.border.opacity, 0, 100, `${at}.border.opacity`, errors);
+            }
+          }
+
+          if (highlight.banner !== undefined) {
+            if (!isPlainObject(highlight.banner)) {
+              errors.push(`${at}.banner 必须是对象`);
+            } else {
+              if (highlight.banner.positions !== undefined) {
+                if (!Array.isArray(highlight.banner.positions)) {
+                  errors.push(`${at}.banner.positions 必须是数组`);
+                } else if (highlight.banner.positions.some((item) => typeof item !== 'string')) {
+                  errors.push(`${at}.banner.positions 只能包含字符串`);
+                }
+              }
+              checkInteger(highlight.banner.size, 8, 160, `${at}.banner.size`, errors);
+              checkInteger(highlight.banner.fontSize, 8, 32, `${at}.banner.fontSize`, errors);
+              checkInteger(highlight.banner.opacity, 0, 100, `${at}.banner.opacity`, errors);
+            }
+          }
+        }
+      }
+
       if (!Array.isArray(rule.patterns) || rule.patterns.length === 0) {
         errors.push(`${where}.patterns 必须是非空数组（至少一个匹配路径）`);
         return;
@@ -141,14 +228,22 @@
   }
 
   /**
-   * 把 schemaVersion 1 的旧配置迁移到当前结构：
-   * - 单条 urlPattern → patterns 数组
-   * - actions[0] 的 name / color / collapsed → 规则自身的分组属性
-   * - 旧 priority 降序 → 数组顺序（顺序即优先级）
+   * 逐级迁移到当前 schemaVersion：
+   * v1 → v2：单条 urlPattern → patterns；actions[0] → 规则属性；priority 降序 → 顺序
+   * v2 → v3：为每条规则补上 highlight（页面内标识）默认值
    */
   function migrate(config) {
-    if (!isPlainObject(config) || config.schemaVersion !== 1) return config;
+    let current = config;
+    if (isPlainObject(current) && current.schemaVersion === 1) {
+      current = migrateFromV1(current);
+    }
+    if (isPlainObject(current) && current.schemaVersion === 2) {
+      current = migrateFromV2(current);
+    }
+    return current;
+  }
 
+  function migrateFromV1(config) {
     const oldRules = Array.isArray(config.rules) ? config.rules : [];
     const ordered = oldRules.slice().sort((a, b) => {
       const pa = Number(a && a.priority);
@@ -175,6 +270,19 @@
         };
       })
       .filter((rule) => rule.patterns.length > 0);
+
+    return {
+      schemaVersion: 2,
+      globalEnabled: config.globalEnabled !== false,
+      rules
+    };
+  }
+
+  function migrateFromV2(config) {
+    const rules = (Array.isArray(config.rules) ? config.rules : []).map((rule) => {
+      if (!isPlainObject(rule) || isPlainObject(rule.highlight)) return rule;
+      return { ...rule, highlight: clone(DEFAULT_HIGHLIGHT_CONFIG) };
+    });
 
     return {
       schemaVersion: SCHEMA_VERSION,
@@ -245,26 +353,73 @@
     return clone(DEFAULT_CONFIG);
   }
 
+  /**
+   * 由「全局开关 + 规则数组」组装出可保存的配置。
+   * 放在存储层是为了让字段映射有单测兜底——之前配置页自己组对象，
+   * 漏掉过 highlight 字段，导致页面内标识保存后丢失。
+   */
+  function buildConfigFromRules(globalEnabled, rules) {
+    const list = Array.isArray(rules) ? rules : [];
+    return {
+      schemaVersion: SCHEMA_VERSION,
+      globalEnabled: globalEnabled !== false,
+      rules: list.map((rule) => {
+        const normalized = {
+          id: String(rule && rule.id != null ? rule.id : ''),
+          enabled: !rule || rule.enabled !== false,
+          name: String(rule && rule.name != null ? rule.name : '').trim(),
+          color: rule && GROUP_COLORS.includes(rule.color) ? rule.color : DEFAULT_COLOR,
+          collapsed: Boolean(rule && rule.collapsed === true),
+          minTabs: rule && rule.minTabs != null ? rule.minTabs : DEFAULT_MIN_TABS,
+          note: String(rule && rule.note != null ? rule.note : '').trim(),
+          patterns: (Array.isArray(rule && rule.patterns) ? rule.patterns : [])
+            .map((pattern) => String(pattern).trim())
+            .filter((pattern) => pattern !== '')
+        };
+        if (isPlainObject(rule && rule.highlight)) {
+          normalized.highlight = rule.highlight;
+        }
+        return normalized;
+      })
+    };
+  }
+
+  /** 按序号循环取分组颜色，新建分组时用，保证相邻分组颜色不同。 */
+  function colorForIndex(index) {
+    const number = Number(index);
+    if (!Number.isFinite(number)) return GROUP_COLORS[0];
+    return GROUP_COLORS[Math.abs(Math.floor(number)) % GROUP_COLORS.length];
+  }
+
   /** 规则实际使用的分组颜色。 */
   function colorOf(rule) {
     return rule && GROUP_COLORS.includes(rule.color) ? rule.color : DEFAULT_COLOR;
+  }
+
+  /** 分组颜色对应的色值，未知颜色回退到 grey。 */
+  function colorHexOf(rule) {
+    return GROUP_COLOR_HEX[colorOf(rule)] || GROUP_COLOR_HEX.grey;
   }
 
   const api = {
     CONFIG_KEY,
     SCHEMA_VERSION,
     GROUP_COLORS,
+    GROUP_COLOR_HEX,
     DEFAULT_COLOR,
     DEFAULT_MIN_TABS,
     DEFAULT_CONFIG,
     clone,
     validateConfig,
     migrate,
+    buildConfigFromRules,
     parseConfigText,
     loadConfig,
     saveConfig,
     resetConfig,
-    colorOf
+    colorForIndex,
+    colorOf,
+    colorHexOf
   };
 
   global.TabPilotStore = api;

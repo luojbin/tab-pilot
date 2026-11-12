@@ -7,6 +7,8 @@ const {
   SCHEMA_VERSION,
   validateConfig,
   migrate,
+  buildConfigFromRules,
+  colorForIndex,
   parseConfigText,
   colorOf,
   clone
@@ -44,7 +46,7 @@ test('默认配置能通过校验', () => {
   const result = validateConfig(validConfig());
   assert.equal(result.ok, true);
   assert.equal(result.config.schemaVersion, SCHEMA_VERSION);
-  assert.equal(SCHEMA_VERSION, 2);
+  assert.equal(SCHEMA_VERSION, 3);
 });
 
 test('clone 产生独立副本', () => {
@@ -55,15 +57,15 @@ test('clone 产生独立副本', () => {
 
 test('schemaVersion 不符时拒绝', () => {
   const config = validConfig();
-  config.schemaVersion = 3;
+  config.schemaVersion = 4;
   const result = validateConfig(config);
   assert.equal(result.ok, false);
   assert.match(result.errors.join('\n'), /schemaVersion/);
 });
 
-test('migrate：v1 配置升级为 v2 结构', () => {
+test('migrate：v1 配置逐级升级为当前结构', () => {
   const migrated = migrate(legacyConfig());
-  assert.equal(migrated.schemaVersion, 2);
+  assert.equal(migrated.schemaVersion, 3);
   assert.deepEqual(
     migrated.rules.map((rule) => rule.id),
     ['dev-localhost', 'code-github'],
@@ -73,7 +75,54 @@ test('migrate：v1 配置升级为 v2 结构', () => {
   assert.equal(migrated.rules[0].name, '开发');
   assert.equal(migrated.rules[0].color, 'green');
   assert.equal(migrated.rules[1].minTabs, 3);
+  assert.equal(migrated.rules[0].highlight.enabled, false, '补上页面内标识默认值');
   assert.equal(validateConfig(migrated).ok, true, '迁移结果必须通过校验');
+});
+
+test('migrate：v2 配置补上 highlight 并升到 v3', () => {
+  const v2 = {
+    schemaVersion: 2,
+    globalEnabled: true,
+    rules: [
+      {
+        id: 'dev-localhost',
+        enabled: true,
+        name: '开发',
+        color: 'green',
+        collapsed: false,
+        minTabs: 1,
+        note: '',
+        patterns: ['*://localhost:*/*']
+      }
+    ]
+  };
+
+  const migrated = migrate(v2);
+  assert.equal(migrated.schemaVersion, 3);
+  assert.deepEqual(migrated.rules[0].highlight, {
+    enabled: false,
+    border: { sides: ['top', 'right', 'bottom', 'left'], width: 4, opacity: 100 },
+    banner: { positions: ['topLeft'], size: 28, fontSize: 14, opacity: 60 }
+  });
+  assert.equal(validateConfig(migrated).ok, true);
+});
+
+test('migrate：已带 highlight 的 v2 规则不覆盖用户配置', () => {
+  const v2 = {
+    schemaVersion: 2,
+    globalEnabled: true,
+    rules: [
+      {
+        id: 'x',
+        name: 'X',
+        patterns: ['*://x/*'],
+        highlight: { enabled: true, border: { sides: ['top'], width: 6 } }
+      }
+    ]
+  };
+  const migrated = migrate(v2);
+  assert.equal(migrated.rules[0].highlight.enabled, true);
+  assert.deepEqual(migrated.rules[0].highlight.border.sides, ['top']);
 });
 
 test('migrate：非 v1 配置原样返回', () => {
@@ -195,7 +244,7 @@ test('parseConfigText：合法 JSON 文本通过', () => {
 test('parseConfigText：旧格式 JSON 文本会先迁移', () => {
   const result = parseConfigText(JSON.stringify(legacyConfig()));
   assert.equal(result.ok, true);
-  assert.equal(result.config.schemaVersion, 2);
+  assert.equal(result.config.schemaVersion, 3);
   assert.equal(result.config.rules.length, 2);
 });
 
@@ -235,9 +284,104 @@ test('导入旧格式文件会先迁移再落库', () => {
   const text = JSON.stringify(legacyConfig(), null, 2);
   const parsed = parseConfigText(text);
   assert.equal(parsed.ok, true);
-  assert.equal(parsed.config.schemaVersion, 2);
+  assert.equal(parsed.config.schemaVersion, 3);
   assert.deepEqual(
     parsed.config.rules.map((rule) => rule.id),
     ['dev-localhost', 'code-github']
   );
+});
+
+test('highlight：非法结构与越界数值被拒绝', () => {
+  const config = validConfig();
+  config.rules[0].highlight = {
+    enabled: 'yes',
+    border: { sides: 'top', width: 99 },
+    banner: { positions: [1], size: 999, fontSize: 2 }
+  };
+
+  const result = validateConfig(config);
+  assert.equal(result.ok, false);
+  const joined = result.errors.join('\n');
+  assert.match(joined, /highlight\.enabled/);
+  assert.match(joined, /highlight\.border\.sides/);
+  assert.match(joined, /highlight\.border\.width/);
+  assert.match(joined, /highlight\.banner\.positions/);
+  assert.match(joined, /highlight\.banner\.size/);
+  assert.match(joined, /highlight\.banner\.fontSize/);
+});
+
+test('highlight：合法配置通过校验', () => {
+  const config = validConfig();
+  config.rules[0].highlight = {
+    enabled: true,
+    border: { sides: ['top', 'left'], width: 8 },
+    banner: { positions: ['topLeft', 'bottomRight'], size: 36, fontSize: 15 }
+  };
+  assert.equal(validateConfig(config).ok, true);
+});
+
+test('buildConfigFromRules：保留 highlight 并规范化字段（回归）', () => {
+  const config = buildConfigFromRules(true, [
+    {
+      id: 'dev',
+      name: '  开发  ',
+      color: 'green',
+      minTabs: undefined,
+      note: '  本地  ',
+      patterns: [' *://localhost:*/* ', ''],
+      highlight: {
+        enabled: true,
+        border: { sides: ['top'], width: 6 },
+        banner: { positions: ['topRight'], size: 30, fontSize: 15 }
+      }
+    }
+  ]);
+
+  assert.equal(config.schemaVersion, 3);
+  assert.equal(config.rules[0].name, '开发');
+  assert.equal(config.rules[0].note, '本地');
+  assert.equal(config.rules[0].minTabs, 1);
+  assert.deepEqual(config.rules[0].patterns, ['*://localhost:*/*']);
+  assert.equal(config.rules[0].highlight.enabled, true, 'highlight 不能在组装时丢失');
+  assert.equal(validateConfig(config).ok, true);
+});
+
+test('buildConfigFromRules：没有 highlight 时不凭空补字段', () => {
+  const config = buildConfigFromRules(true, [
+    { id: 'x', name: 'X', patterns: ['*://x/*'] }
+  ]);
+  assert.equal('highlight' in config.rules[0], false);
+  assert.equal(validateConfig(config).ok, true);
+});
+
+test('highlight：边框与 banner 的不透明度各自校验 0~100', () => {
+  const bad = validConfig();
+  bad.rules[0].highlight = {
+    enabled: true,
+    border: { opacity: 150 },
+    banner: { opacity: -5 }
+  };
+  const badResult = validateConfig(bad);
+  assert.equal(badResult.ok, false);
+  const joined = badResult.errors.join('\n');
+  assert.match(joined, /highlight\.border\.opacity/);
+  assert.match(joined, /highlight\.banner\.opacity/);
+
+  const good = validConfig();
+  good.rules[0].highlight = {
+    enabled: true,
+    border: { opacity: 100 },
+    banner: { opacity: 35 }
+  };
+  assert.equal(validateConfig(good).ok, true);
+});
+
+test('colorForIndex：按序号循环取色，9 个颜色一轮', () => {
+  assert.equal(colorForIndex(0), GROUP_COLORS[0]);
+  assert.equal(colorForIndex(1), GROUP_COLORS[1]);
+  assert.equal(colorForIndex(9), GROUP_COLORS[0]);
+  assert.equal(colorForIndex(10), GROUP_COLORS[1]);
+  assert.equal(colorForIndex(-1), GROUP_COLORS[1]);
+  assert.equal(colorForIndex('2'), GROUP_COLORS[2]);
+  assert.equal(colorForIndex('x'), GROUP_COLORS[0]);
 });

@@ -9,6 +9,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 // 按 manifest.json 中 background.scripts 的顺序加载，确保全局层已就绪
+require('../src/highlight.js');
 require('../src/store.js');
 require('../src/logger.js');
 require('../src/rules.js');
@@ -19,10 +20,11 @@ const state = {
   existingGroups: [],
   storedConfig: null,
   groupCalls: [],
-  updateCalls: []
+  updateCalls: [],
+  pageMessages: []
 };
 
-const listeners = { created: [], updated: [], actionClicked: [], message: [] };
+const listeners = { created: [], updated: [], actionClicked: [], message: [], configChanged: [] };
 
 globalThis.browser = {
   storage: {
@@ -36,7 +38,8 @@ globalThis.browser = {
       async remove() {
         state.storedConfig = null;
       }
-    }
+    },
+    onChanged: { addListener(fn) { listeners.configChanged.push(fn); } }
   },
   tabs: {
     async query(queryInfo) {
@@ -51,7 +54,10 @@ globalThis.browser = {
       return options.createProperties ? 42 : options.groupId;
     },
     onCreated: { addListener(fn) { listeners.created.push(fn); } },
-    onUpdated: { addListener(fn) { listeners.updated.push(fn); } }
+    onUpdated: { addListener(fn) { listeners.updated.push(fn); } },
+    async sendMessage(tabId, message) {
+      state.pageMessages.push({ tabId, message });
+    }
   },
   tabGroups: {
     async query() {
@@ -86,6 +92,7 @@ function reset() {
   state.storedConfig = null;
   state.groupCalls = [];
   state.updateCalls = [];
+  state.pageMessages = [];
   Logger.clear();
 }
 
@@ -442,5 +449,86 @@ test('v1 旧配置会被迁移后正常生效', async () => {
   await Background.flush();
 
   assert.equal(state.groupCalls.length, 1);
-  assert.equal(state.storedConfig.schemaVersion, 2, '迁移结果应写回 storage');
+  assert.equal(state.storedConfig.schemaVersion, 3, '迁移结果应写回 storage');
+});
+
+test('page-style：命中的分组开启标识时返回渲染规格', async () => {
+  reset();
+  state.storedConfig = {
+    schemaVersion: 3,
+    globalEnabled: true,
+    rules: [
+      {
+        id: 'dev',
+        enabled: true,
+        name: '开发',
+        color: 'green',
+        collapsed: false,
+        minTabs: 1,
+        note: '',
+        patterns: ['*://localhost:*/*'],
+        highlight: {
+          enabled: true,
+          border: { sides: ['top'], width: 6 },
+          banner: { positions: ['topLeft'], size: 30, fontSize: 16 }
+        }
+      }
+    ]
+  };
+  state.tabsByWindow[1] = [{ id: 1, windowId: 1, url: 'http://localhost:3000/', groupId: -1 }];
+
+  const style = await listeners.message[0](
+    { type: 'page-style', url: 'http://localhost:3000/x' },
+    { tab: { id: 1, windowId: 1, url: 'http://localhost:3000/x' } }
+  );
+
+  assert.equal(style.ruleId, 'dev');
+  assert.equal(style.name, '开发');
+  assert.equal(style.colorHex, '#1e8e3e');
+  assert.deepEqual(style.highlight.border.sides, ['top']);
+  assert.deepEqual(style.highlight.banner.positions, ['topLeft']);
+});
+
+test('page-style：标识未开启或未命中时返回 null', async () => {
+  reset();
+  state.storedConfig = {
+    schemaVersion: 3,
+    globalEnabled: true,
+    rules: [
+      {
+        id: 'dev',
+        enabled: true,
+        name: '开发',
+        color: 'green',
+        patterns: ['*://localhost:*/*'],
+        highlight: { enabled: false }
+      }
+    ]
+  };
+
+  const disabled = await listeners.message[0](
+    { type: 'page-style', url: 'http://localhost:3000/' },
+    { tab: { id: 1, windowId: 1 } }
+  );
+  assert.equal(disabled, null);
+
+  const noMatch = await listeners.message[0](
+    { type: 'page-style', url: 'https://example.com/' },
+    { tab: { id: 1, windowId: 1 } }
+  );
+  assert.equal(noMatch, null);
+});
+
+test('配置变化会通知所有页面刷新标识', async () => {
+  reset();
+  state.tabsByWindow[2] = [
+    { id: 7, windowId: 2, url: 'http://localhost:3000/' },
+    { id: 8, windowId: 2, url: 'https://example.com/' }
+  ];
+
+  listeners.configChanged[0]({ 'tabpilot:config': { oldValue: null, newValue: {} } }, 'local');
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(state.pageMessages.length, 2);
+  assert.deepEqual(state.pageMessages[0], { tabId: 7, message: { type: 'tabpilot:refresh' } });
 });

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "TabPilot",
-  "version": "0.3.0",
-  "description": "个人用 Firefox 标签页管理器：按 JSON 规则自动归组与上色。",
+  "version": "0.4.0",
+  "description": "个人用 Firefox 标签页管理器：按规则自动归组、上色，并可在页面内显示分组标识。",
   "browser_specific_settings": {
     "gecko": {
       "id": "tabpilot@local",
@@ -17,8 +17,16 @@
     "page": "src/options.html",
     "open_in_tab": true
   },
+  "content_scripts": [
+    {
+      "matches": ["*://*/*"],
+      "js": ["src/highlight.js", "src/content.js"],
+      "run_at": "document_idle"
+    }
+  ],
   "background": {
     "scripts": [
+      "src/highlight.js",
       "src/store.js",
       "src/logger.js",
       "src/rules.js",

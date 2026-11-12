@@ -10,6 +10,7 @@
 
   const Store = globalThis.TabPilotStore;
   const Rules = globalThis.TabPilotRules;
+  const Highlight = globalThis.TabPilotHighlight;
 
   const els = {
     list: document.getElementById('groupList'),
@@ -26,9 +27,9 @@
     importInput: document.getElementById('importInput')
   };
 
-  if (!Store || !Rules) {
+  if (!Store || !Rules || !Highlight) {
     els.status.className = 'status error';
-    els.status.textContent = 'store.js / rules.js 未加载，无法读写配置。';
+    els.status.textContent = 'store.js / rules.js / highlight.js 未加载，无法读写配置。';
     return;
   }
 
@@ -61,6 +62,7 @@
   let state = { globalEnabled: true, rules: [], selectedId: null };
   let savedSnapshot = '';
   let busy = false;
+  let previewRefresh = null;
   const openMenus = new Set();
 
   function newRuleId() {
@@ -272,7 +274,7 @@
       id: newRuleId(),
       enabled: true,
       name: `新分组 ${state.rules.length + 1}`,
-      color: 'blue',
+      color: Store.colorForIndex(state.rules.length),
       collapsed: false,
       minTabs: 1,
       note: '',
@@ -322,6 +324,76 @@
 
   // ---------------- 右栏：分组详情 ----------------
 
+  const SECTION_KEY = 'tabpilot:sections:v2';
+
+  function loadSectionState() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(SECTION_KEY) || '{}');
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (err) {
+      return {};
+    }
+  }
+
+  function saveSectionState(state) {
+    try {
+      localStorage.setItem(SECTION_KEY, JSON.stringify(state));
+    } catch (err) {
+      // 折叠状态存不住不影响使用
+    }
+  }
+
+  /**
+   * 可独立折叠的配置区块：标题栏点击切换，状态记在 localStorage。
+   * options.status 是一个元素，只在折叠时显示，用来快速看出该区块是否已配置。
+   */
+  function createSection(id, title, body, options) {
+    const opts = options || {};
+    const section = document.createElement('section');
+    section.className = 'config-section';
+
+    const head = document.createElement('button');
+    head.type = 'button';
+    head.className = 'section-head';
+
+    const titleEl = document.createElement('span');
+    titleEl.className = 'section-title';
+    titleEl.textContent = title;
+
+    const statusSlot = document.createElement('span');
+    statusSlot.className = 'section-status';
+    if (opts.status) statusSlot.append(opts.status);
+
+    const chevron = document.createElement('span');
+    chevron.className = 'section-chevron';
+    chevron.textContent = '▾';
+
+    head.append(titleEl, statusSlot, chevron);
+
+    const bodyEl = document.createElement('div');
+    bodyEl.className = 'section-body';
+    bodyEl.append(body);
+
+    const stored = loadSectionState();
+    const open = stored[id] === undefined ? opts.defaultOpen !== false : stored[id] !== false;
+    bodyEl.hidden = !open;
+    statusSlot.hidden = open;
+    head.setAttribute('aria-expanded', String(open));
+
+    head.addEventListener('click', () => {
+      const nextOpen = bodyEl.hidden;
+      bodyEl.hidden = !nextOpen;
+      statusSlot.hidden = nextOpen;
+      head.setAttribute('aria-expanded', String(nextOpen));
+      const current = loadSectionState();
+      current[id] = nextOpen;
+      saveSectionState(current);
+    });
+
+    section.append(head, bodyEl);
+    return section;
+  }
+
   function futureRow(label) {
     const row = document.createElement('div');
     row.className = 'future-row';
@@ -334,10 +406,289 @@
     return row;
   }
 
-  /** 同一时刻只允许一个颜色面板打开。 */
-  let closeColorMenu = null;
+  // ---------------- 页面内标识 ----------------
+
+  /** 把规则上的 highlight 规范化后写回，保证 UI 与存储结构一致。 */
+  function ensureHighlight(rule) {
+    rule.highlight = Highlight.normalizeHighlight(rule);
+    return rule.highlight;
+  }
+
+  function checkOption(text, checked, onChange) {
+    const label = document.createElement('label');
+    label.className = 'check';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = checked;
+    input.addEventListener('change', () => onChange(input.checked));
+    const span = document.createElement('span');
+    span.textContent = text;
+    label.append(input, span);
+    return label;
+  }
+
+  function numberField(text, value, min, max, onChange) {
+    const label = document.createElement('label');
+    label.className = 'field';
+    label.append(document.createTextNode(text));
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.min = String(min);
+    input.max = String(max);
+    input.step = '1';
+    input.value = String(value);
+    input.addEventListener('input', () => onChange(Number(input.value)));
+    label.append(input);
+    return label;
+  }
+
+  function toggleInList(list, value, checked) {
+    const index = list.indexOf(value);
+    if (checked && index === -1) list.push(value);
+    if (!checked && index !== -1) list.splice(index, 1);
+  }
 
   /**
+   * 配置页里的效果预览：只做示意，不按真实尺寸渲染。
+   * 边框固定画成细条，banner 固定画成一小段横线/竖线/斜线，颜色与透明度跟随配置。
+   */
+  function createHighlightPreview(rule) {
+    const box = document.createElement('div');
+    box.className = 'preview-box';
+
+    const page = document.createElement('div');
+    page.className = 'preview-page';
+    const pageTitle = document.createElement('span');
+    pageTitle.className = 'preview-page-title';
+    pageTitle.textContent = '页面预览（示意）';
+    page.appendChild(pageTitle);
+    for (const width of ['62%', '84%', '46%']) {
+      const line = document.createElement('span');
+      line.className = 'preview-line';
+      line.style.width = width;
+      page.appendChild(line);
+    }
+    box.appendChild(page);
+
+    const layer = document.createElement('div');
+    layer.className = 'preview-layer';
+    box.appendChild(layer);
+
+    const empty = document.createElement('p');
+    empty.className = 'preview-empty';
+    empty.textContent = '标识已关闭';
+    box.appendChild(empty);
+
+    // 示意图固定尺寸，不跟随配置里的 px 值；banner 用 XXX 占位
+    const schematicBorder = 4;
+    const schematicBannerSize = 12;
+    const schematicFontSize = 5;
+    const schematicText = 'XXX';
+    // 小预览里把斜带的长度下限调小，让四角标签更贴近角部
+    const schematicCornerLimits = { minLength: 60, maxLength: 120 };
+
+    function refresh() {
+      const spec = Highlight.normalizeHighlight(rule);
+      const color = Store.colorHexOf(rule);
+
+      layer.textContent = '';
+      box.classList.toggle('off', !spec.enabled);
+      empty.hidden = spec.enabled;
+      if (!spec.enabled) return;
+
+      for (const side of spec.border.sides) {
+        const element = document.createElement('div');
+        Object.assign(element.style, {
+          position: 'absolute',
+          background: color,
+          pointerEvents: 'none'
+        });
+        Object.assign(element.style, Highlight.borderStyle(side, schematicBorder));
+        element.style.opacity = String(spec.border.opacity / 100);
+        layer.appendChild(element);
+      }
+
+      for (const position of spec.banner.positions) {
+        const element = document.createElement('div');
+        Object.assign(element.style, {
+          position: 'absolute',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: color,
+          color: Highlight.textColorFor(color),
+          font: `600 ${schematicFontSize}px/1 system-ui, -apple-system, "Segoe UI", sans-serif`,
+          letterSpacing: '0.04em',
+          overflow: 'hidden',
+          boxSizing: 'border-box',
+          pointerEvents: 'none'
+        });
+        Object.assign(
+          element.style,
+          Highlight.bannerStyle(
+            position,
+            schematicText,
+            schematicBannerSize,
+            schematicFontSize,
+            schematicCornerLimits
+          )
+        );
+        element.style.opacity = String(spec.banner.opacity / 100);
+        element.textContent = schematicText;
+        layer.appendChild(element);
+      }
+    }
+
+    refresh();
+    return { box, refresh };
+  }
+
+  function createHighlightSection(rule) {
+    const spec = ensureHighlight(rule);
+
+    const section = document.createElement('div');
+    section.className = 'highlight-controls';
+
+    const preview = createHighlightPreview(rule);
+    previewRefresh = preview.refresh;
+    const commit = () => {
+      rule.highlight = spec;
+      preview.refresh();
+    };
+
+    const toggleLabel = document.createElement('label');
+    toggleLabel.className = 'field field-switch';
+    toggleLabel.append(document.createTextNode('在该分组的页面上显示标识'));
+    const slot = document.createElement('span');
+    slot.className = 'switch-slot';
+    const toggleInput = document.createElement('input');
+    toggleInput.type = 'checkbox';
+    toggleInput.className = 'field-highlight';
+    toggleInput.checked = spec.enabled;
+    const track = document.createElement('span');
+    track.className = 'switch-ui';
+    track.setAttribute('aria-hidden', 'true');
+    slot.append(toggleInput, track);
+    toggleLabel.append(slot);
+
+    const body = document.createElement('div');
+    body.className = 'highlight-body';
+    body.classList.toggle('disabled', !spec.enabled);
+
+    toggleInput.addEventListener('change', () => {
+      spec.enabled = toggleInput.checked;
+      commit();
+      body.classList.toggle('disabled', !spec.enabled);
+    });
+
+    // 边框
+    const borderBlock = document.createElement('div');
+    borderBlock.className = 'highlight-block';
+    const borderLabel = document.createElement('span');
+    borderLabel.className = 'block-label';
+    borderLabel.textContent = '边框（颜色取自该分组）';
+    const borderChecks = document.createElement('div');
+    borderChecks.className = 'checks';
+    const sideNames = { top: '上', right: '右', bottom: '下', left: '左' };
+    for (const side of Highlight.BORDER_SIDES) {
+      borderChecks.append(
+        checkOption(sideNames[side], spec.border.sides.includes(side), (checked) => {
+          toggleInList(spec.border.sides, side, checked);
+          commit();
+        })
+      );
+    }
+    const widthField = numberField(
+      '宽度 px',
+      spec.border.width,
+      Highlight.LIMITS.borderWidth.min,
+      Highlight.LIMITS.borderWidth.max,
+      (value) => {
+        spec.border.width = value;
+        commit();
+      }
+    );
+    const borderOpacity = numberField(
+      '不透明度 %',
+      spec.border.opacity,
+      Highlight.LIMITS.borderOpacity.min,
+      Highlight.LIMITS.borderOpacity.max,
+      (value) => {
+        spec.border.opacity = value;
+        commit();
+      }
+    );
+    borderBlock.append(borderLabel, borderChecks, widthField, borderOpacity);
+
+    // banner
+    const bannerBlock = document.createElement('div');
+    bannerBlock.className = 'highlight-block';
+    const bannerLabel = document.createElement('span');
+    bannerLabel.className = 'block-label';
+    bannerLabel.textContent = 'Banner（显示分组名，四个角为斜向）';
+    const bannerChecks = document.createElement('div');
+    bannerChecks.className = 'checks';
+    const positionNames = {
+      top: '上',
+      right: '右',
+      bottom: '下',
+      left: '左',
+      topLeft: '左上',
+      topRight: '右上',
+      bottomRight: '右下',
+      bottomLeft: '左下'
+    };
+    for (const position of Highlight.BANNER_POSITIONS) {
+      bannerChecks.append(
+        checkOption(positionNames[position], spec.banner.positions.includes(position), (checked) => {
+          toggleInList(spec.banner.positions, position, checked);
+          commit();
+        })
+      );
+    }
+    const bannerNums = document.createElement('div');
+    bannerNums.className = 'highlight-nums';
+    bannerNums.append(
+      numberField(
+        '尺寸 px',
+        spec.banner.size,
+        Highlight.LIMITS.bannerSize.min,
+        Highlight.LIMITS.bannerSize.max,
+        (value) => {
+          spec.banner.size = value;
+          commit();
+        }
+      ),
+      numberField(
+        '字号 px',
+        spec.banner.fontSize,
+        Highlight.LIMITS.fontSize.min,
+        Highlight.LIMITS.fontSize.max,
+        (value) => {
+          spec.banner.fontSize = value;
+          commit();
+        }
+      ),
+      numberField(
+        '不透明度 %',
+        spec.banner.opacity,
+        Highlight.LIMITS.bannerOpacity.min,
+        Highlight.LIMITS.bannerOpacity.max,
+        (value) => {
+          spec.banner.opacity = value;
+          commit();
+        }
+      )
+    );
+    bannerBlock.append(bannerLabel, bannerChecks, bannerNums);
+
+    body.append(borderBlock, bannerBlock);
+    section.append(preview.box, toggleLabel, body);
+    return section;
+  }
+
+  /** 同一时刻只允许一个颜色面板打开。 */
+  let closeColorMenu = null;  /**
    * 颜色选择：自己实现而不是 <select>，因为原生 option 无法同时显示色块。
    * 收起态与展开项都带色块 + 名称。
    */
@@ -421,6 +772,7 @@
 
   function renderDetail() {
     els.detail.textContent = '';
+    previewRefresh = null;
     const rule = selectedRule();
 
     if (!rule) {
@@ -460,6 +812,7 @@
     nameInput.addEventListener('input', () => {
       rule.name = nameInput.value;
       updateListItem(rule);
+      if (previewRefresh) previewRefresh();
     });
     nameLabel.append(nameInput);
 
@@ -595,13 +948,53 @@
 
     patternsSection.append(patternsTitle, patterns, addPattern, patternHint);
 
-    const future = document.createElement('div');
-    future.className = 'fieldset future';
-    const futureTitle = document.createElement('h3');
-    futureTitle.textContent = '该分组的更多设置';
-    future.append(futureTitle, futureRow('标签页重命名'), futureRow('页面内高亮标识'));
+    const basicBody = document.createElement('div');
+    basicBody.append(firstRow, noteRow, patternsSection);
 
-    els.detail.append(head, firstRow, noteRow, patternsSection, future);
+    const highlightBody = document.createElement('div');
+    highlightBody.append(createHighlightSection(rule));
+
+    const tabTitleBody = document.createElement('div');
+    tabTitleBody.append(futureRow('标签页重命名'));
+    const tabTitleHint = document.createElement('p');
+    tabTitleHint.className = 'hint small';
+    tabTitleHint.textContent =
+      '后续可按分组规则改写标签页标题（实验功能，页面导航后可能失效），当前仅占位。';
+    tabTitleBody.append(tabTitleHint);
+
+    // 折叠时的状态提示：页面内突出显示用只读拨杆，标签页名规则用「规划中」徽标
+    const highlightStatus = document.createElement('span');
+    highlightStatus.className = 'switch-ui';
+    highlightStatus.setAttribute('aria-hidden', 'true');
+    const syncHighlightStatus = () => {
+      const on = Boolean(rule.highlight && rule.highlight.enabled);
+      highlightStatus.classList.toggle('on', on);
+      highlightStatus.title = on ? '页面内突出显示：已启用' : '页面内突出显示：未启用';
+    };
+    syncHighlightStatus();
+
+    const tabTitleStatus = document.createElement('span');
+    tabTitleStatus.className = 'badge';
+    tabTitleStatus.textContent = '规划中';
+
+    const highlightSection = createSection('highlight', '页面内突出显示', highlightBody, {
+      defaultOpen: false,
+      status: highlightStatus
+    });
+    const highlightToggle = highlightSection.querySelector('.field-highlight');
+    if (highlightToggle) {
+      highlightToggle.addEventListener('change', syncHighlightStatus);
+    }
+
+    els.detail.append(
+      head,
+      createSection('basic', '基础配置', basicBody, { defaultOpen: true }),
+      highlightSection,
+      createSection('tabTitle', '标签页名规则', tabTitleBody, {
+        defaultOpen: false,
+        status: tabTitleStatus
+      })
+    );
   }
 
   function addPatternRow(rule) {
@@ -650,22 +1043,7 @@
   }
 
   function buildConfig() {
-    return {
-      schemaVersion: Store.SCHEMA_VERSION,
-      globalEnabled: state.globalEnabled,
-      rules: state.rules.map((rule) => ({
-        id: rule.id,
-        enabled: rule.enabled !== false,
-        name: String(rule.name == null ? '' : rule.name).trim(),
-        color: rule.color || Store.DEFAULT_COLOR,
-        collapsed: rule.collapsed === true,
-        minTabs: rule.minTabs == null ? 1 : rule.minTabs,
-        note: String(rule.note == null ? '' : rule.note).trim(),
-        patterns: rule.patterns
-          .map((pattern) => String(pattern).trim())
-          .filter((pattern) => pattern !== '')
-      }))
-    };
+    return Store.buildConfigFromRules(state.globalEnabled, state.rules);
   }
 
   // ---------------- 保存 / 载入 ----------------

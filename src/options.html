@@ -315,6 +315,84 @@
   .pattern-row input:focus { outline: none; border-color: var(--accent); }
   .add-pattern { align-self: flex-start; font-size: 13px; padding: 5px 10px; }
 
+  /* 右栏三段式配置区块 */
+  .config-section { border-top: 1px solid var(--border); }
+  .config-section:first-of-type { border-top: 0; }
+  .section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    padding: 12px 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+  .section-head:hover { color: var(--accent); }
+  .section-title { font-size: 14px; font-weight: 600; }
+  .section-status {
+    display: inline-flex;
+    align-items: center;
+    margin-left: auto;
+    margin-right: 10px;
+  }
+  .section-status[hidden] { display: none; }
+  .section-status .switch-ui { pointer-events: none; }
+  .section-chevron { color: var(--muted); font-size: 12px; transition: transform 0.15s ease; }
+  .section-head[aria-expanded="false"] .section-chevron { transform: rotate(-90deg); }
+  .section-body { padding-bottom: 18px; }
+  .section-body[hidden] { display: none; }
+
+  /* 页面内标识：效果预览 */
+  .preview-box {
+    position: relative;
+    width: 100%;
+    max-width: 460px;
+    aspect-ratio: 16 / 9;
+    margin-bottom: 14px;
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--bg);
+  }
+  .preview-page {
+    position: absolute;
+    inset: 0;
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .preview-page-title { font-size: 12px; font-weight: 600; color: var(--muted); }
+  .preview-line { height: 8px; border-radius: 4px; background: var(--panel-strong); }
+  .preview-layer { position: absolute; inset: 0; pointer-events: none; }
+  .preview-empty {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted);
+    font-size: 12.5px;
+  }
+  .preview-box.off .preview-layer { display: none; }
+  .preview-empty[hidden] { display: none; }
+
+  /* 页面内标识配置 */
+  .highlight-body { display: flex; flex-wrap: wrap; gap: 16px; }
+  .highlight-body.disabled { opacity: 0.55; }
+  .highlight-block { flex: 1 1 260px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .block-label { font-size: 12.5px; color: var(--muted); }
+  .checks { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; }
+  .check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+  .highlight-nums { display: flex; flex-wrap: wrap; gap: 10px; }
+  .highlight-nums .field { width: 92px; }
+  .highlight-controls .field-switch { margin-bottom: 10px; }
+
   /* “规划中”的配置项：用列表行呈现，不额外加框 */
   .future { border-top: 1px dashed var(--border); padding-top: 14px; }
   .future-row {
@@ -390,6 +468,7 @@
 </main>
 <script src="store.js"></script>
 <script src="rules.js"></script>
+<script src="highlight.js"></script>
 <script src="options.js"></script>
 </body>
 </html>
