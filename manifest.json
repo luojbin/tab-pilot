@@ -2,16 +2,29 @@
   "manifest_version": 3,
   "name": "TabPilot",
   "version": "1.0.0",
-  "description": "个人用 Firefox 标签页管理器：按规则自动归组、上色，并可在页面内显示分组标识。",
+  "description": "Firefox 标签页管理器：按规则自动归组、上色，并可在页面内显示分组标识。",
   "browser_specific_settings": {
     "gecko": {
       "id": "tabpilot@local",
-      "strict_min_version": "139.0"
+      "strict_min_version": "139.0",
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ]
+      }
     }
   },
-  "permissions": ["tabs", "tabGroups", "storage"],
+  "permissions": [
+    "tabs",
+    "tabGroups",
+    "storage"
+  ],
   "action": {
-    "default_title": "TabPilot：立即同步标签页"
+    "default_title": "TabPilot：立即同步标签页",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png"
+    }
   },
   "options_ui": {
     "page": "src/options.html",
@@ -19,8 +32,14 @@
   },
   "content_scripts": [
     {
-      "matches": ["*://*/*"],
-      "js": ["src/highlight.js", "src/title-rule.js", "src/content.js"],
+      "matches": [
+        "*://*/*"
+      ],
+      "js": [
+        "src/highlight.js",
+        "src/title-rule.js",
+        "src/content.js"
+      ],
       "run_at": "document_idle"
     }
   ],
@@ -34,5 +53,12 @@
       "src/actions.js",
       "src/background.js"
     ]
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "96": "icons/icon-96.png",
+    "128": "icons/icon-128.png"
   }
 }

@@ -280,7 +280,7 @@
       collapsed: false,
       minTabs: 1,
       note: '',
-      patterns: ['*://*/*']
+      patterns: ['']
     };
     state.rules.push(rule);
     state.selectedId = rule.id;
@@ -1169,7 +1169,7 @@
       input.type = 'text';
       input.className = 'pattern';
       input.value = pattern;
-      input.placeholder = '192.168.3.213 或 *://localhost:*/*';
+      input.placeholder = '192.168.0.123 或 *://localhost:*/*';
       input.setAttribute('aria-label', `匹配路径 ${patternIndex + 1}`);
       input.addEventListener('input', () => {
         rule.patterns[patternIndex] = input.value;

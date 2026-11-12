@@ -2,9 +2,9 @@
 
 | 项         | 内容                                                         |
 | ---------- | ------------------------------------------------------------ |
-| 版本       | v0.1.0（草案）                                               |
+| 版本       | v1.0.0（已发布）                                             |
 | 作者       | 你                                                           |
-| 状态       | 待评审 → 可进入 MVP 开发                                     |
+| 状态       | 已发布，进入自用验收                                          |
 | 目标浏览器 | Firefox 139+（仅此，多浏览器为后续计划）                     |
 | 技术栈     | 原生 WebExtensions（HTML/CSS/JS）+ Manifest V3，无构建、无框架 |
 | 存储       | `browser.storage.local`，封装存储层                          |
@@ -196,7 +196,7 @@
 | ------ | ------------------------------------------------------------ |
 | 性能   | 单次 tab 事件处理 < 50ms；批量合并；不影响页面加载；页面标识只在命中时注入 |
 | 可靠性 | 幂等 + 防循环；单条规则异常不影响其他规则；注入失败要静默降级 |
-| 隐私   | 无网络请求上传数据；content script 只用当前网址做规则匹配，不读取页面内容 |
+| 隐私   | 无网络请求上传数据；content script 只用当前网址做规则匹配，不读取页面内容；manifest 声明 `data_collection_permissions.required = ["none"]` |
 | 权限   | 已接受：`tabs`、`tabGroups`、`storage`，外加页面内标识所需的 content script 全站注入（`*://*/*`，安装时提示可访问所有网站数据）；只用网址做匹配，不读取页面内容、不上传数据 |
 | 可测试 | 规则引擎与标识规格为纯函数，可脱离浏览器单测                 |
 | 可维护 | 规则引擎 / 动作执行 / 存储 / 标识规格分层                    |
@@ -234,6 +234,8 @@ manifest.json      MV3，background.scripts（非 service worker）+ content_scr
 | v1.0.0   | 正式发布：功能集合与 v0.5.0 相同；配置格式重新基线为 `schemaVersion 1`，开发期过渡格式（2–5）作废、不再迁移 | 发布 + 连续自用一周、卸载一个旧插件 |
 | v1.1.0+  | 页面内标识的更多样式；标题规则支持正则标志位等增强           | 不阻塞主线              |
 
+> v0.1–v0.5 中出现的 `schemaVersion` 递增与迁移链已在 v1.0.0 移除：1.0 起配置格式基线重新从 1 算起，历史格式不再兼容（见 §5 基线说明）。表中的“自动迁移”仅记录当时的实现。
+
 ## 9. 里程碑与时间（碎片时间制）
 
 - 第 1 周：v0.1.0 + v0.2.0（周末 2h 集中 + 2 个晚 20min）
@@ -264,3 +266,117 @@ manifest.json      MV3，background.scripts（非 service worker）+ content_scr
 - 至少替代 1 个现有插件。
 - 配置可导出并在另一台机器恢复。
 - 每晚投入 ≤ 40 分钟，不影响 23:00 前睡觉。
+
+## 12. 功能实现状态（v1.0.0）
+
+| 编号 | 功能 | 优先级 | 状态 |
+|---|---|---|---|
+| F1 | 规则引擎自动分组：监听 `tabs.onCreated` / `tabs.onUpdated`，防抖合并、按顺序匹配、幂等执行、单条异常不影响其他标签 | P0 | 已完成（v0.1.0），单测 + Firefox 实机验证 |
+| F1b | 全量同步：把已打开的标签页按规则过一遍；保存配置后自动执行，工具栏按钮可手动触发；默认跳过已在分组内的标签 | P0 | 已完成（v0.1.0），单测 + 实机验证 |
+| F2 | 分组属性：名称、颜色（Firefox 预设色）、是否折叠；已有组按规则增量更新 | P0 | 已完成（v0.1.0），名称与颜色实机验证 |
+| F3 | 规则管理：两栏配置页，左栏只读分组列表（选中 / 排序 / 删除），右栏编辑分组名 / 颜色 / 启停 + 多匹配路径 / 阈值 / 折叠 / 备注、全局暂停；保存前校验并高亮出错分组 | P1 | 已完成（v0.2.0），实机验证 |
+| F4 | 配置导入 / 导出：导出 JSON、导入校验 `schemaVersion` 与字段、覆盖前确认、导入后自动同步 | P1 | 已完成（v0.3.0），实机验证 |
+| F5 | 操作日志：记录时间、URL、命中规则、动作、结果 / 错误 | 开发期辅助 | **不做独立日志页**；`explain()` 的 steps 输出到控制台，内存环形缓冲保留供调试 |
+| F6 | 标签页名规则：每个分组可配置多条命名规则（源文本 / 目标文本 / 描述），按顺序匹配、命中第一条即停止；支持捕获组重排；配置页带多行测试区域，测试文本随配置保存 | P2 | 已完成（v0.5.0），实机验证 |
+| F7 | 页面内标识：按分组绘制边框（上下左右可选、宽度可调、颜色取自分组）与 banner（上下左右贴边小标签 + 四角斜带，显示分组名，尺寸 / 字号 / 不透明度可调）；配置页带示意预览框 | P1 | 已完成（v0.4.0），实机验证 |
+
+**F1 验收**：打开 3 个 `localhost` 页面，自动进入同一「开发」组、绿色，控制台各打印一条命中记录。
+
+## 13. 本地开发、验证与发布
+
+### 13.1 目录与分层
+
+```
+manifest.json          MV3，background.scripts（非 service worker）+ content_scripts
+src/
+  background.js        事件监听 + 防抖调度：唯一做编排的地方；也负责回答页面标识 / 标题规则查询
+  rules.js             纯函数规则引擎：match / explain，可脱离浏览器单测
+  actions.js           动作执行：唯一调用 tabs.group / tabGroups.* 的层
+  store.js             存储封装：storage.local 读写 + schema 校验 + 默认配置（基线 schemaVersion 1）
+  highlight.js         页面内标识规格：默认值、边界收敛、几何（background / content / 配置页共用）
+  title-rule.js        标签页名规则：正则编译与替换（background / content / 配置页共用）
+  content.js           content script：绘制边框与 banner、改写页面标题
+  logger.js            日志：控制台 + 内存环形缓冲（开发调试辅助，不做独立日志页）
+  options.html         配置页：两栏布局（左分组列表 / 右分组详情）
+  options.js           配置页逻辑（选中、排序、删除、路径补全、页面内标识、标题规则、校验提示、保存后同步）
+test/
+  rules.test.js        规则匹配、顺序优先级、阈值、窗口隔离、路径补全
+  store.test.js        配置校验（minTabs / 颜色 / highlight / titleRule）与默认值
+  highlight.test.js    页面内标识规格：默认值、边界收敛、过滤去重、几何
+  title-rule.test.js   命名规则：顺序匹配、捕获组重排、非法正则、多行批处理
+  background.test.js   编排链路：事件、同步、工具栏、消息、页面标识、标题规则、调试入口
+scripts/build.mjs      零依赖打包脚本（生成 output/tabpilot-<version>.zip）
+icons/                 扩展图标：icon-{16,32,48,96,128}.png
+docs/PRD.md            本文件
+```
+
+分层意图：规则引擎与 `browser.*` 解耦（只吃 tab / rules / context），存储层可整体替换，动作为唯一直接碰浏览器分组 API 的地方。以后换 IndexedDB、加 Chrome 兼容层都只改一层。
+
+### 13.2 常用命令
+
+```bash
+npm test        # 119 个单测（node:test，无第三方依赖）
+npm run build   # 生成 output/tabpilot-<version>.zip，供临时加载 / AMO 上传
+```
+
+- 无依赖、无构建，浏览器里也可以直接加载源码目录。
+- 改版本号时同步 `manifest.json` 与 `package.json` 两处。
+- 有单测的是纯逻辑（规则引擎、配置校验、编排链路、标识规格、标题规则）；`options.js` 是纯 DOM 绑定，改动后手动确认页面与保存流程。
+
+### 13.3 本地加载与验证
+
+1. `about:support` 确认 Firefox 版本 ≥ 139（`tabGroups` API 依赖）。
+2. 打开 `about:debugging#/runtime/this-firefox` → 「临时载入附加组件」→ 选择 `manifest.json`（或 `npm run build` 生成的 zip）。
+3. 打开 3 个 `localhost` 页面，预期全部进入「开发」组且为绿色。
+4. 在 `about:debugging` 里点插件的「检查」，控制台应能看到每次命中的日志。
+5. `about:addons` → TabPilot → 首选项打开配置页，加一条 github 规则并保存，确认已打开标签立刻被同步。
+
+注意：**重载扩展后，已打开页面里的 content script 不会自动更新**，需要刷新页面才能看到新的标识 / 标题逻辑。
+
+### 13.4 控制台调试入口
+
+配置页之外，`TabPilotDebug` 可直接操作配置（扩展调试控制台里执行）：
+
+| 操作 | 命令 | 语义 |
+|---|---|---|
+| 增 / 改一条规则 | `await TabPilotDebug.addRule(rule)` | 按 `id` 去重后追加，其余规则保留；保存后自动同步 |
+| 删一条规则 | `await TabPilotDebug.removeRule(id)` | 只删指定规则 |
+| 整份替换 | `await TabPilotDebug.setConfig(config)` | 覆盖整个配置，不合并；保存后自动同步 |
+| 查看当前生效配置 | `await TabPilotDebug.getConfig()` | 返回 `{ config, source, errors? }` |
+| 恢复默认 | `await TabPilotDebug.resetConfig()` | 删除存储的配置，回到内置默认 |
+
+重要区别：**默认规则（`dev-localhost`）只在「storage 里没有配置」时作为兜底生效**；一旦写入过配置，它就只是被写入内容的一部分。`setConfig` 只写 github 一条规则时，localhost 不再自动归组；想两条都在，用 `addRule` 或一次写全。
+
+### 13.5 排查「某个 tab 为什么没归组」
+
+在扩展的调试控制台（`about:debugging` → 「检查」）里执行：
+
+```js
+(async () => {
+  const { config, source, errors } = await TabPilotStore.loadConfig();
+  console.log('配置来源:', source, '校验错误:', errors ?? '无');
+  console.table(config.rules.map((r) => ({
+    id: r.id, enabled: r.enabled, name: r.name,
+    patterns: (r.patterns || []).join(' | '),
+    minTabs: r.minTabs ?? 1,
+    highlight: r.highlight ? r.highlight.enabled : false,
+    titleRule: r.titleRule ? r.titleRule.enabled : false
+  })));
+  const tabs = await browser.tabs.query({ currentWindow: true });
+  console.table(tabs.map((t) => ({ id: t.id, groupId: t.groupId, url: t.url })));
+  for (const t of tabs) {
+    const { matched, steps } = TabPilotRules.explain(t, config.rules, { tabs, windowId: t.windowId });
+    console.log(t.url, '→', matched ? '命中 ' + matched.ruleId : '未命中', steps);
+  }
+})();
+```
+
+`steps` 里 `urlMatched: false` 表示模式没匹配上；`thresholdMet: false` 且 `count < minTabs` 表示数量没达到阈值。
+
+### 13.6 打包与发布
+
+- `npm run build` 用 `scripts/build.mjs` 打包：只收 `manifest.json`、`LICENSE`、`src/`，产物为 `output/tabpilot-<version>.zip`。
+- 正式版 Firefox 只安装已签名扩展：未签名 zip 只能临时加载；正常安装需提交 AMO 签名（listed 上架或 unlisted 自分发），下载签名后的 `.xpi` 安装。
+- manifest 已声明 `browser_specific_settings.gecko.data_collection_permissions.required = ["none"]`（AMO 新扩展必填）。
+- 每次上传新版本必须递增版本号，且 `manifest.json` 与 `package.json` 保持一致。
+
