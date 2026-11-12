@@ -6,8 +6,9 @@
 - **目标浏览器**：Firefox 139+（仅此，多浏览器为后续计划）
 - **存储**：`browser.storage.local`，统一走封装层
 - **隐私**：纯本地运行，无任何网络请求上传数据
+- **版本**：遵循 [SemVer](https://semver.org/lang/zh-CN/) 三段式 `MAJOR.MINOR.PATCH`
 
-> 当前状态：**全部规划中，尚无代码实现**。仓库里只有产品设计文档 [`docs/PRD.md`](docs/PRD.md) 与本说明。
+> **当前状态**：`v0.1.0` 已在 Firefox 实机验证通过——规则引擎与存储层有 56 个单元测试，并在浏览器中验证了自动归组、优先级、阈值攒够后一起归组、全量同步。其余功能仍在规划中，详见下方[功能清单](#功能清单与实现状态)与[版本规划](#版本规划)。
 
 ---
 
@@ -24,7 +25,7 @@
 
 ## 目标与非目标
 
-**v1.0 目标**
+**v1.0.0 目标**
 
 - 用 JSON 规则定义「URL 匹配 → 分组 / 颜色 / 折叠」
 - 规则可启用 / 禁用、有优先级、支持导入导出
@@ -46,7 +47,7 @@
 | S1 | 打开 `localhost:*` 调试服务 | 自动进入「开发」组，绿色 |
 | S2 | 打开 GitHub / GitLab | 自动进入「代码」组，蓝色 |
 | S3 | 打开 Jira / Confluence | 自动进入「工作」组，橙色 |
-| S4 | 同域名标签过多 | 可选：超过 N 个时自动归组 |
+| S4 | 同域名标签过多 | 可选：同一窗口内命中该规则的标签数达到该规则自定义阈值（`match.minTabs`）时才归组 |
 | S5 | 临时不想被自动分组 | 可禁用单条规则或全局暂停 |
 | S6 | 换机器 | 导出 JSON 配置，新机器导入 |
 
@@ -54,29 +55,42 @@
 
 | 编号 | 功能 | 优先级 | 状态 |
 |---|---|---|---|
-| F1 | 规则引擎自动分组：监听 `tabs.onCreated` / `tabs.onUpdated`，按优先级匹配 URL 并执行动作；幂等、防循环、批量防抖 | P0 | 规划中 |
-| F2 | 分组属性设置：名称、颜色（Firefox 预设色）、是否折叠 | P0 | 规划中 |
-| F3 | 规则管理：规则启用 / 禁用、优先级、全局暂停开关、冲突处理（高优先级优先，一个 tab 只应用一个分组规则） | P1 | 规划中 |
-| F4 | 配置导入 / 导出：带 `schemaVersion` 的 JSON，导入时校验版本与字段合法性，支持恢复默认 | P1 | 规划中 |
-| F5 | 操作日志：记录时间、tab URL、命中规则 id、动作、结果 / 错误；可查看最近 200 条、可清空 | P1 | 规划中 |
-| F6 | 标签页重命名（实验）：通过 content script 改 `document.title`，失败静默降级并记日志，不阻塞 F1 | P2 | 规划中（不阻塞 v1.0） |
+| F1 | 规则引擎自动分组：监听 `tabs.onCreated` / `tabs.onUpdated`，防抖合并、按优先级匹配、幂等执行、单条异常不影响其他标签 | P0 | **已完成（v0.1.0）**，单测 + Firefox 实机验证 |
+| F1b | 全量同步：把**已打开**的标签页按规则过一遍（事件监听管不到它们）。改配置后自动执行，工具栏按钮可手动触发；默认跳过已在分组内的标签 | P0 | **已完成（v0.1.0）**，单测 + Firefox 实机验证 |
+| F2 | 分组属性设置：名称、颜色（Firefox 预设色）、是否折叠；已有组按规则增量更新 | P0 | **已完成（v0.1.0）**，名称与颜色已实机验证；折叠未单独验证 |
+| F3 | 规则管理：规则启用 / 禁用、优先级、全局暂停；界面尚未提供 | P1 | 引擎侧已完成；v0.1.0 提供 `TabPilotDebug.addRule / removeRule / setConfig` 控制台入口；配置 UI 待做（v0.2.0 / v0.3.0） |
+| F4 | 配置导入 / 导出：带 `schemaVersion` 的 JSON，导入校验、恢复默认 | P1 | 规划中（v0.4.0）；校验函数已就绪，缺 UI 与文件读写 |
+| F5 | 操作日志：记录时间、URL、命中规则、动作、结果 / 错误 | P1 | 部分完成（v0.1.0）：内存环形缓冲 + 控制台输出；日志页待做（v0.3.0） |
+| F6 | 标签页重命名（实验）：content script 改 `document.title`，失败静默降级 | P2 | 规划中（v1.1.0），不阻塞 v1.0.0 |
 
-**验收标准（F1）**：打开 3 个 `localhost` 页面，自动进入同一「开发」组、绿色，日志各打印一条命中记录。
+**验收标准（F1）**：打开 3 个 `localhost` 页面，自动进入同一「开发」组、绿色，控制台各打印一条命中记录。
 
-## 版本规划与进度
+## 规则怎么写
 
-| 版本 | 内容 | 状态 |
-|---|---|---|
-| v0.1 MVP | 临时加载插件；单条 `localhost` → 「开发」组绿色规则；控制台日志 | 规划中 |
-| v0.2 | 规则从 `storage.local` 读取；JSON textarea 编辑；全局开关 | 规划中 |
-| v0.3 | 多规则 + 优先级 + 启用 / 禁用；操作日志页 | 规划中 |
-| v0.4 | 导入 / 导出 + schema 校验 + 恢复默认 | 规划中 |
-| v1.0 | 稳定自用一周；卸载至少一个旧插件 | 规划中 |
-| v1.x | 标签页重命名实验、同域名超 N 自动归组 | 规划中 |
+```json
+{
+  "id": "code-github",
+  "enabled": true,
+  "priority": 90,
+  "note": "代码托管：攒够 3 个再归组",
+  "match": { "urlPattern": "*://*.github.com/*", "minTabs": 3 },
+  "actions": [{ "type": "group", "name": "代码", "color": "blue", "collapsed": false }]
+}
+```
+
+匹配与执行规则：
+
+- `match.urlPattern` 只支持 `*` 通配，其余字符按字面量处理。
+- `*.github.com` 同时匹配裸域名 `github.com` 与所有子域名（`www.github.com`、`gist.github.com`），与浏览器 match pattern 语义一致；不带 `*.` 的 `github.com` 只匹配该主机本身。
+- `priority` 越大越先匹配；同优先级按 `id` 字典序，保证结果稳定。
+- 一个标签页最多命中一条规则；命中 URL 但**数量未达阈值**的规则会跳过，继续尝试下一条规则。
+- `match.minTabs` 是**分组阈值**，默认 `1`（命中即归组）。设为 N 时，只有同一窗口内命中该规则的标签页数量 ≥ N 才归组。该字段属于规则自身，不同规则互不影响。
+- 阈值达成时会**一起归组**：同窗口内命中该规则、且尚未归入任何分组的标签会被一并移入目标组（否则“攒够 3 个再归组”只会归组第 3 个）。已经在别的分组里的标签不会被拽出来。
+- `actions[].color` 取值：`grey` `blue` `red` `yellow` `green` `pink` `purple` `cyan` `orange`。
 
 ## 数据模型
 
-配置存放在 `storage.local` 的 `tabpilot:config`，日志存放在 `tabpilot:logs`。
+配置存放在 `tabpilot:config`，形如：
 
 ```json
 {
@@ -88,64 +102,112 @@
       "enabled": true,
       "priority": 100,
       "note": "本地开发环境",
-      "match": { "urlPattern": "*://localhost:*/*" },
-      "actions": [
-        { "type": "group", "name": "开发", "color": "green", "collapsed": false }
-      ]
+      "match": { "urlPattern": "*://localhost:*/*", "minTabs": 1 },
+      "actions": [{ "type": "group", "name": "开发", "color": "green", "collapsed": false }]
     }
   ]
 }
 ```
 
-所有读取都经存储封装层，不在各处直接调用 `browser.storage.local`。
+- 未存过配置或配置校验失败时，插件回退到内置默认配置（即上面这条 `dev-localhost`），所以 v0.1.0 无需手动写配置即可生效。
+- `schemaVersion` 是**配置格式版本**，只在 JSON 结构不兼容变更时递增，与插件版本号无关。
 
-## 架构规划
-
-```
-background.js      事件监听 + 调度
-  ├─ rules.js      纯函数：match(tab, rules) → actions[]
-  ├─ actions.js    执行 browser.tabs.group / tabGroups.update
-  ├─ store.js      封装 storage.local 读写 + schema 校验
-  └─ logger.js     写日志、读日志
-options.html/js    规则 JSON 编辑 + 导入导出 + 全局开关
-logs.html/js       日志查看
-manifest.json      MV3，background.scripts（非 service worker）
-```
-
-为未来多浏览器预留的薄缝（本版不实现兼容层）：
-
-1. 规则引擎与 `browser.*` API 解耦，只依赖 actions 层
-2. 存储封装层，以后换 IndexedDB / 同步只改此层
-3. 配置带 `schemaVersion`，便于迁移
-
-## 目录结构
+## 架构与目录
 
 ```
-docs/PRD.md    产品设计文档（需求、场景、架构、版本规划的完整依据）
-src/           插件源码（待创建）
-output/        构建 / 打包产物出口（待定）
+manifest.json          MV3，background.scripts（非 service worker）
+src/
+  background.js        事件监听 + 防抖调度：唯一做编排的地方
+  rules.js             纯函数规则引擎：match / explain，可脱离浏览器单测
+  actions.js           动作执行：唯一调用 tabs.group / tabGroups.* 的层
+  store.js             存储封装：storage.local 读写 + schema 校验 + 默认配置
+  logger.js            日志：控制台 + 内存环形缓冲（v0.3.0 换落盘）
+test/
+  rules.test.js        规则匹配、优先级、阈值、窗口隔离
+  store.test.js        配置校验（含 minTabs / 颜色 / 重复 id）
+docs/PRD.md            需求、场景、架构、版本规划的完整依据
 ```
 
-## 非功能要求
+分层意图：规则引擎与 `browser.*` 解耦（只吃 tab / rules / context），存储层可整体替换，动作为唯一直接碰浏览器分组 API 的地方。以后换 IndexedDB、加 Chrome 兼容层都只改一层。
 
-| 类别 | 要求 |
-|---|---|
-| 性能 | 单次 tab 事件处理 < 50ms；批量合并；不影响页面加载 |
-| 可靠性 | 幂等 + 防循环；单条规则异常不影响其他规则 |
-| 隐私 | 无网络请求上传数据；权限最小化 |
-| 权限 | 首版仅 `tabs`、`tabGroups`、`storage` |
-| 可测试 | 规则引擎为纯函数，可脱离浏览器单测 |
-| 可维护 | 规则引擎 / 动作执行 / 存储 三层分离 |
+## 版本规划
 
-## 本地加载（待实施后补充）
+| 版本 | 内容 | 状态 |
+|---|---|---|
+| v0.1.0 | 规则引擎 + 内置默认 `localhost` →「开发」组绿色 + 控制台日志 + 全量同步（工具栏按钮） | 已完成，Firefox 实机验证通过 |
+| v0.2.0 | 规则从 `storage.local` 读取 + JSON textarea 编辑 + 全局开关 UI | 规划中 |
+| v0.3.0 | 多规则 / 优先级 / 启用禁用的界面 + 日志页（日志落盘） | 规划中 |
+| v0.4.0 | 导入 / 导出 + schema 校验提示 + 恢复默认 | 规划中 |
+| v1.0.0 | 稳定自用一周，卸载至少一个旧插件 | 规划中 |
+| v1.1.0+ | 标签页重命名实验、按容器 / 窗口区分规则 | 规划中 |
 
-Firefox 中通过 `about:debugging#/runtime/this-firefox` → 「临时载入附加组件」选择 `manifest.json`。该步骤在 v0.1 代码落地后验证。
+## 本地加载与验证
 
-## 已知风险
+1. `about:support` 确认 Firefox 版本 ≥ 139（`tabGroups` API 依赖）。
+2. 打开 `about:debugging#/runtime/this-firefox` → 「临时载入附加组件」→ 选择本目录的 `manifest.json`。
+3. 打开 3 个 `localhost` 页面，预期全部进入「开发」组且为绿色。
+4. 在 `about:debugging` 里点插件的「检查」，控制台应能看到每次命中的 `[TabPilot] ... 命中规则并执行动作`。
 
-- Firefox 版本低于 139 无 `tabGroups` API，开工前需在 `about:support` 确认版本
-- MV3 后台为事件页、会被回收，跨事件的运行状态不能只放内存
-- 标签页重命名不稳定，已标 P2，不进 v1.0 验收
+### 同步已打开的标签页
+
+事件监听只覆盖「之后新发生的变化」，**已经开着的标签永远不会被处理**。两种触发方式：
+
+- 改配置后自动同步：`TabPilotDebug.setConfig(...)` 保存成功后会立刻全量同步一遍。
+- 手动同步：点工具栏上的 TabPilot 按钮（`default_title: "TabPilot：立即同步标签页"`），或在控制台执行 `await TabPilotDebug.syncAll()`。
+
+默认**跳过已经在分组里的标签**，避免把手动整理过的标签拽回规则组；需要强制全量重排时用 `await TabPilotDebug.syncAll({ includeGrouped: true })`。同步结束会打印一行 `同步完成：检查 N 个，归组 A 个，跳过 S 个，失败 F 个`。
+
+### 配置操作（v0.1.0 用控制台，v0.2.0 换成 options 页）
+
+在扩展的调试控制台里：
+
+| 操作 | 命令 | 语义 |
+|---|---|---|
+| 增/改一条规则 | `await TabPilotDebug.addRule(rule)` | 按 `id` 去重后追加，**其余规则保留**；保存后自动同步 |
+| 删一条规则 | `await TabPilotDebug.removeRule(id)` | 只删指定规则 |
+| 整份替换 | `await TabPilotDebug.setConfig(config)` | **覆盖**整个配置，不合并；保存后自动同步 |
+| 查看当前生效配置 | `await TabPilotDebug.getConfig()` | 返回 `{ config, source, errors? }` |
+| 恢复默认 | `await TabPilotDebug.resetConfig()` | 删除存储的配置，回到内置默认 |
+
+重要区别：**默认规则（`dev-localhost`）只在「storage 里没有配置」时作为兜底生效**，一旦写入过配置，它就只是被写入内容的一部分。所以 `setConfig` 只写 github 一条规则时，localhost 不再自动归组；想两条都在，用 `addRule` 或一次写全。
+
+## 开发
+
+```bash
+npm test        # 运行规则引擎、配置校验与编排链路的单测
+```
+
+- 无依赖、无构建，浏览器里直接加载源码目录。
+- 改版本号时同步 `manifest.json` 与 `package.json` 两处。
+- 浏览器侧代码（`background.js` / `actions.js`）没有自动化测试，改动后需按上节手动验证。
+
+**排查「某个 tab 为什么没归组」**：在扩展的调试控制台（`about:debugging` → 「检查」）里执行：
+
+```js
+(async () => {
+  const { config, source, errors } = await TabPilotStore.loadConfig();
+  console.log('配置来源:', source, '校验错误:', errors ?? '无');
+  console.table(config.rules.map((r) => ({
+    id: r.id, enabled: r.enabled, priority: r.priority,
+    pattern: r.match.urlPattern, minTabs: r.match.minTabs ?? 1
+  })));
+  const tabs = await browser.tabs.query({ currentWindow: true });
+  console.table(tabs.map((t) => ({ id: t.id, groupId: t.groupId, url: t.url })));
+  for (const t of tabs) {
+    const { matched, steps } = TabPilotRules.explain(t, config.rules, { tabs, windowId: t.windowId });
+    console.log(t.url, '→', matched ? '命中 ' + matched.ruleId : '未命中', steps);
+  }
+})();
+```
+
+`steps` 里 `urlMatched: false` 表示模式没匹配上；`thresholdMet: false` 且 `count < minTabs` 表示数量没达到阈值。
+
+## 已知限制
+
+- 分组 API 已在 Firefox 实机验证可用（`tabs.group` + `tabGroups.update`）；不支持该 API 的版本会打印明确日志而不是抛错。
+- MV3 后台是事件页，会被回收：日志的内存缓冲、防抖队列都是易失状态（日志落盘在 v0.3.0 解决）。
+- 临时加载的扩展在**浏览器重启或重新载入后消失，storage 也随之清空**：每次重载后需要重新写入规则（v0.2.0 的配置页与 v0.4.0 的导入导出会缓解）。
+- 规则匹配不做容器（Container Tabs）区分，见 v1.1.0 规划。
 
 ## 许可证
 
