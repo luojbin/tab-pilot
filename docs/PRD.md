@@ -62,8 +62,8 @@
 ### F1 规则引擎自动分组（P0，核心）
 
 - 监听 `tabs.onCreated`、`tabs.onUpdated`（仅 `status === "complete"` 或 URL 变化时触发）。
-- 按规则优先级匹配 URL；命中后执行动作。
-- 阈值：每条规则可自定义 `match.minTabs`（默认 `1`，即命中即归组）。设为 N 时，只有同一窗口内命中该规则的标签页数量 ≥ N 才归组；未达阈值的规则不生效，继续尝试后续规则。达成阈值时，同窗口内命中该规则且尚未归入任何分组的标签页一并归组，已在其他分组内的标签保持不动。
+- 按规则在配置中的顺序（即优先级）匹配 URL；命中后执行动作。
+- 阈值：每条规则可自定义 `minTabs`（默认 `1`，即命中即归组）。设为 N 时，只有同一窗口内命中该规则的标签页数量 ≥ N 才归组；未达阈值的规则不生效，继续尝试后续规则。达成阈值时，同窗口内命中该规则且尚未归入任何分组的标签页一并归组，已在其他分组内的标签保持不动。
 - 幂等：已处于目标组/颜色则不重复操作。
 - 全量同步：事件监听覆盖不到已打开的标签页，因此提供「同步」动作——保存配置后自动执行，也可由工具栏按钮或控制台手动触发。默认跳过已在分组内的标签，避免覆盖手动整理结果。
 - 防循环：用 `handled` 标记或状态比较，避免分组引发 `onUpdated` 死循环。
@@ -80,10 +80,12 @@
 
 ### F3 规则管理（P1）
 
-- 规则字段：`id`、`enabled`、`priority`、`match.urlPattern`、`match.minTabs`、`actions[]`。
+- 规则字段：`id`、`enabled`、`name`、`color`、`collapsed`、`minTabs`、`note`、`patterns[]`。
 - 支持启用/禁用单条规则；支持全局暂停开关。
-- 冲突处理：高优先级优先；默认一个 tab 只应用一个分组规则。
+- 冲突处理：规则按数组顺序匹配，靠前的优先；默认一个 tab 只应用一个分组规则。
 - 阈值按规则独立配置，不同规则组互不影响。
+- 配置界面为两栏布局：左栏分组列表只做展示与选中（色块、名称、iOS 风格拨杆表示启用状态、⋯ 菜单内排序与删除），左栏不提供编辑入口；右栏第一行是分组名/颜色/阈值/启用/命中后折叠（后两项为拨杆开关），第二行是备注（可拖动缩放的文本域），再往下是多条匹配路径；并为后续的标签页重命名 / 页面内高亮预留位置。不使用裸 JSON 编辑（JSON 导入导出属 F4）。
+- 匹配路径自动补全：输入简写即可，离开输入框或保存时展开为完整模式——不带协议补 `*://`；只写主机且无路径时同时生成「任意端口」与「无端口」两条（如 `192.168.3.213` → `*://192.168.3.213:*/*`、`*://192.168.3.213/*`）；已写端口则不展开端口变体；结尾自动补 `/*`。
 
 **验收**：禁用某规则后，新 tab 不再命中；重新启用恢复。
 
@@ -111,30 +113,32 @@
 
 ## 5. 数据模型
 
+`schemaVersion: 2`。一条规则对应一个标签页分组，`patterns` 可包含多个匹配路径，数组顺序即优先级。
+
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "globalEnabled": true,
   "rules": [
     {
       "id": "dev-localhost",
       "enabled": true,
-      "priority": 100,
+      "name": "开发",
+      "color": "green",
+      "collapsed": false,
+      "minTabs": 1,
       "note": "本地开发环境",
-      "match": { "urlPattern": "*://localhost:*/*", "minTabs": 1 },
-      "actions": [
-        { "type": "group", "name": "开发", "color": "green", "collapsed": false }
-      ]
+      "patterns": ["*://localhost:*/*"]
     },
     {
       "id": "code-github",
       "enabled": true,
-      "priority": 90,
+      "name": "代码",
+      "color": "blue",
+      "collapsed": false,
+      "minTabs": 3,
       "note": "代码托管：攒够 3 个再归组",
-      "match": { "urlPattern": "*://*.github.com/*", "minTabs": 3 },
-      "actions": [
-        { "type": "group", "name": "代码", "color": "blue", "collapsed": false }
-      ]
+      "patterns": ["*://*.github.com/*", "*://gitlab.com/*"]
     }
   ]
 }
@@ -142,7 +146,10 @@
 
 - 存储键：`tabpilot:config`（配置）、`tabpilot:logs`（日志，可单独或 IndexedDB）。
 - 所有读取经存储封装层，不散落直接调用 `browser.storage.local`。
-- **分组阈值 `match.minTabs`**：整数，默认 `1`。值 N 表示同一窗口内命中该规则的标签页数量达到 N 时才执行归组。该字段属于规则自身，不同规则组各自定义、互不影响。
+- **分组阈值 `minTabs`**：整数，默认 `1`。值 N 表示同一窗口内命中该规则的标签页数量达到 N 时才执行归组。该字段属于规则自身，不同规则组各自定义、互不影响。
+- **优先级**：不再用显式字段，规则在 `rules` 数组中的顺序就是匹配顺序，靠前的优先；配置页用上移/下移调整。
+- **匹配路径**：`patterns` 数组，任一命中即视为该规则的 URL 命中。
+- **旧配置迁移**：`schemaVersion: 1`（`match.urlPattern` + `actions[]` + `priority`）在读取时自动迁移为 v2 并写回，迁移不丢失规则。
 - `schemaVersion` 与插件版本号解耦，仅随配置结构的不兼容变更递增。
 
 ## 6. 非功能需求
@@ -164,7 +171,7 @@ background.js      事件监听 + 调度
   ├─ actions.js    执行 browser.tabs.group / tabGroups.update
   ├─ store.js      封装 storage.local 读写 + schema 校验
   └─ logger.js     写日志、读日志
-options.html/js    规则 JSON 编辑 + 导入导出 + 全局开关
+options.html/js    两栏配置页：左栏分组列表（颜色/启用/排序/删除），右栏分组详情（匹配路径/阈值/折叠/备注，并预留标签重命名、页面高亮）；导入导出见 F4
 logs.html/js       日志查看
 manifest.json      MV3，background.scripts（非 service worker）
 ```
@@ -180,7 +187,7 @@ manifest.json      MV3，background.scripts（非 service worker）
 | 版本     | 内容                                                         | 验收                    |
 | -------- | ------------------------------------------------------------ | ----------------------- |
 | v0.1.0   | 临时加载插件；内置默认单规则：`localhost` → “开发”组绿色；控制台日志；全量同步（工具栏按钮） | 3 个 localhost 自动归组 |
-| v0.2.0   | 规则从 `storage.local` 读取；JSON textarea 编辑；全局开关    | 改 JSON 后行为变化      |
+| v0.2.0   | 两栏配置页：左栏分组列表（颜色/启用/排序/删除），右栏分组详情（多匹配路径 + 自动补全、阈值、折叠、备注）；配置结构升级到 `schemaVersion 2` 并自动迁移旧配置 | 改规则后行为变化 |
 | v0.3.0   | 多规则 + 优先级 + 启用/禁用 + 每条规则的分组阈值；操作日志页 | 冲突与排查可用          |
 | v0.4.0   | 导入/导出 + schema 校验 + 恢复默认                           | 备份恢复闭环            |
 | v1.0.0   | 稳定自用一周；卸载至少一个旧插件                             | 达成 2.1 目标           |

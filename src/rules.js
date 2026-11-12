@@ -3,6 +3,12 @@
  *
  * 设计约束：本文件不依赖任何 browser.* API，可以在 Node 下直接单测。
  * 浏览器侧由 background.js 传入 tab / rules / context。
+ *
+ * 规则模型（schemaVersion 2）：
+ *   一条规则 = 一个标签页分组
+ *   { id, enabled, name, color, collapsed, minTabs, note, patterns[] }
+ *   `patterns` 可包含多个匹配路径，任一命中即视为该规则的 URL 命中；
+ *   规则在数组中的顺序就是优先级，靠前的先匹配。
  */
 (function (global) {
   'use strict';
@@ -57,51 +63,108 @@
     return tab.url || tab.pendingUrl || '';
   }
 
-  function ruleUrlPattern(rule) {
-    return rule && rule.match && typeof rule.match.urlPattern === 'string'
-      ? rule.match.urlPattern
-      : '';
+  /** 规则配置的匹配路径列表（忽略非法项）。 */
+  function rulePatterns(rule) {
+    if (!rule || !Array.isArray(rule.patterns)) return [];
+    return rule.patterns.filter((pattern) => typeof pattern === 'string' && pattern.trim() !== '');
+  }
+
+  /** 返回命中的那条路径，未命中返回 null（用于日志展示是哪条路径命中的）。 */
+  function matchedPatternOf(rule, url) {
+    if (typeof url !== 'string' || url === '') return null;
+    for (const pattern of rulePatterns(rule)) {
+      try {
+        if (globToRegExp(pattern).test(url)) return pattern;
+      } catch (err) {
+        // 非法模式只让这一条失效，不影响同规则的其他路径
+      }
+    }
+    return null;
   }
 
   function ruleMatchesUrl(rule, url) {
-    const pattern = ruleUrlPattern(rule);
-    if (pattern === '' || typeof url !== 'string' || url === '') return false;
-    try {
-      return globToRegExp(pattern).test(url);
-    } catch (err) {
-      // 非法模式只让这一条规则失效，不影响其他规则（可靠性要求）
-      return false;
-    }
+    return matchedPatternOf(rule, url) !== null;
   }
 
-  function rulePriority(rule) {
-    const value = Number(rule && rule.priority);
-    return Number.isFinite(value) ? value : 0;
+  /** 主机是否已经显式带了端口（支持 IPv6 的 [::1]:3000 形式）。 */
+  function hostHasPort(host) {
+    if (host.startsWith('[')) {
+      const close = host.indexOf(']');
+      return close !== -1 && host.slice(close + 1).includes(':');
+    }
+    return host.includes(':');
   }
 
   /**
-   * 过滤出可用规则并按优先级排序：高优先级在前；
-   * 同优先级按 id 字典序，保证同一份配置的匹配结果始终一致。
+   * 把用户输入的简写展开成完整的 URL 通配模式。
+   *
+   * 规则：
+   * 1. 不含 `://` 时补上 `*://`（同时匹配 http 与 https）
+   * 2. 只写了主机（域名 / IP）且没有路径时，同时展开“任意端口”和“无端口”两种形式
+   * 3. 结尾不是 `/*` 时自动补全
+   *
+   * 例：`192.168.3.213`
+   *   → `*://192.168.3.213:*​/*`、`*://192.168.3.213/*`
+   *
+   * 对已经展开过的完整模式是幂等的，可以反复调用。
+   * @param {string} input
+   * @returns {string[]} 展开结果；输入为空或只有协议时返回 []
    */
-  function sortRules(rules) {
-    if (!Array.isArray(rules)) return [];
-    return rules
-      .filter(
-        (rule) => rule && rule.enabled !== false && ruleUrlPattern(rule) !== ''
-      )
-      .slice()
-      .sort((a, b) => {
-        const diff = rulePriority(b) - rulePriority(a);
-        if (diff !== 0) return diff;
-        const idA = a.id === undefined || a.id === null ? '' : String(a.id);
-        const idB = b.id === undefined || b.id === null ? '' : String(b.id);
-        return idA.localeCompare(idB);
-      });
+  function expandPattern(input) {
+    if (typeof input !== 'string') return [];
+    let text = input.trim();
+    if (text === '') return [];
+
+    let scheme = '*://';
+    const schemeIndex = text.indexOf('://');
+    if (schemeIndex !== -1) {
+      scheme = text.slice(0, schemeIndex + 3);
+      text = text.slice(schemeIndex + 3);
+    } else if (text.startsWith('//')) {
+      text = text.slice(2);
+    }
+    if (text === '') return [];
+
+    const slashIndex = text.indexOf('/');
+    const host = slashIndex === -1 ? text : text.slice(0, slashIndex);
+    const path = slashIndex === -1 ? '' : text.slice(slashIndex);
+    if (host === '') return [];
+
+    const withSuffix = (prefix) => {
+      if (prefix.endsWith('/*')) return prefix;
+      if (prefix.endsWith('/')) return `${prefix}*`;
+      return `${prefix}/*`;
+    };
+
+    if (path === '' && !hostHasPort(host)) {
+      return [withSuffix(`${scheme}${host}:*`), withSuffix(`${scheme}${host}`)];
+    }
+    return [withSuffix(`${scheme}${host}${path}`)];
   }
 
-  /** 读取规则自身定义的阈值 `match.minTabs`，非法值回退到 1。 */
+  /** 批量展开并去重，保持输入顺序。 */
+  function expandPatterns(list) {
+    const out = [];
+    for (const item of Array.isArray(list) ? list : []) {
+      for (const pattern of expandPattern(item)) {
+        if (!out.includes(pattern)) out.push(pattern);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * 过滤出可用规则。**保持配置中的数组顺序**——顺序即优先级，
+   * 与配置页里卡片的上下顺序一致。
+   */
+  function normalizeRules(rules) {
+    if (!Array.isArray(rules)) return [];
+    return rules.filter((rule) => rule && rule.enabled !== false && rulePatterns(rule).length > 0);
+  }
+
+  /** 读取规则自身定义的阈值 `minTabs`，非法值回退到 1。 */
   function minTabsOf(rule) {
-    const raw = rule && rule.match ? rule.match.minTabs : undefined;
+    const raw = rule ? rule.minTabs : undefined;
     if (raw === undefined || raw === null) return DEFAULT_MIN_TABS;
     const value = Number(raw);
     if (!Number.isFinite(value) || value < 1) return DEFAULT_MIN_TABS;
@@ -129,14 +192,14 @@
    * 逐条走完规则并输出判断过程，供日志排查“为什么这个 tab 没进组”。
    *
    * 语义要点：
-   * - 一个 tab 最多命中一条分组规则（PRD F3 默认策略）。
+   * - 规则按配置顺序匹配，靠前的优先；一个 tab 最多命中一条规则。
    * - 命中 URL 但数量未达阈值的规则不生效，继续尝试下一条规则，
-   *   这样“攒够 3 个再归组”的规则不会挡住更宽泛的兜底规则。
+   *   这样“攒够 3 个再归组”的规则不会挡住后面的兜底规则。
    *
    * @param {object} tab 标签页（需要 id / url / windowId）
    * @param {Array} rules 配置中的规则数组
    * @param {{tabs?: Array, windowId?: number, globalEnabled?: boolean}} [context]
-   * @returns {{matched: null | {ruleId: string, rule: object, actions: Array}, steps: Array}}
+   * @returns {{matched: null | {ruleId: string, rule: object, minTabs: number, tabIds: number[]}, steps: Array}}
    */
   function explain(tab, rules, context) {
     const ctx = context || {};
@@ -162,9 +225,9 @@
       : tab.windowId;
     const tabs = Array.isArray(ctx.tabs) ? ctx.tabs : null;
 
-    for (const rule of sortRules(rules)) {
-      const urlMatched = ruleMatchesUrl(rule, url);
-      if (!urlMatched) {
+    for (const rule of normalizeRules(rules)) {
+      const pattern = matchedPatternOf(rule, url);
+      if (pattern === null) {
         steps.push({ ruleId: rule.id, urlMatched: false, hit: false });
         continue;
       }
@@ -179,6 +242,7 @@
       steps.push({
         ruleId: rule.id,
         urlMatched: true,
+        pattern,
         count,
         minTabs,
         thresholdMet,
@@ -205,13 +269,7 @@
           : [tab.id];
 
         return {
-          matched: {
-            ruleId: rule.id,
-            rule,
-            minTabs,
-            tabIds: candidateIds,
-            actions: Array.isArray(rule.actions) ? rule.actions : []
-          },
+          matched: { ruleId: rule.id, rule, minTabs, tabIds: candidateIds },
           steps
         };
       }
@@ -228,8 +286,13 @@
   const api = {
     DEFAULT_MIN_TABS,
     globToRegExp,
+    rulePatterns,
+    matchedPatternOf,
     ruleMatchesUrl,
-    sortRules,
+    hostHasPort,
+    expandPattern,
+    expandPatterns,
+    normalizeRules,
     minTabsOf,
     countMatchingTabs,
     explain,

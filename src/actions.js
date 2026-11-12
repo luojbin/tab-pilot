@@ -2,18 +2,21 @@
  * TabPilot 动作执行层
  *
  * 这是唯一直接调用 browser.tabs.group / browser.tabGroups.* 的层，
- * 规则引擎只产出 actions[]，不关心浏览器 API。
+ * 规则引擎只产出“命中了哪条规则”，不关心浏览器 API。
  *
- * 注意：Firefox 的 tab groups WebExtension API 形态需要在本机 139+ 实测确认；
- * 若 API 名称有出入，只需改这一个文件。
+ * 一条规则对应一个分组，分组属性直接取自规则（name / color / collapsed）。
  */
 (function (global) {
   'use strict';
 
   const FALLBACK_COLOR = 'grey';
 
-  function colorOf(action) {
-    return typeof action.color === 'string' ? action.color : FALLBACK_COLOR;
+  function colorOf(rule) {
+    return rule && typeof rule.color === 'string' && rule.color ? rule.color : FALLBACK_COLOR;
+  }
+
+  function nameOf(rule) {
+    return rule && typeof rule.name === 'string' ? rule.name : '';
   }
 
   async function findGroupByTitle(windowId, title) {
@@ -22,24 +25,29 @@
   }
 
   /** 只把与目标值不同的字段放进 patch，避免无意义的更新事件。 */
-  function buildGroupPatch(group, action) {
+  function buildGroupPatch(group, rule) {
     const patch = {};
-    if (group.title !== action.name) patch.title = action.name;
-    if (group.color !== colorOf(action)) patch.color = colorOf(action);
-    if (typeof action.collapsed === 'boolean' && group.collapsed !== action.collapsed) {
-      patch.collapsed = action.collapsed;
+    if (group.title !== nameOf(rule)) patch.title = nameOf(rule);
+    if (group.color !== colorOf(rule)) patch.color = colorOf(rule);
+    if (typeof rule.collapsed === 'boolean' && group.collapsed !== rule.collapsed) {
+      patch.collapsed = rule.collapsed;
     }
     return patch;
   }
 
   /**
-   * @param {object} action
+   * @param {object} rule 命中的规则，其 name / color / collapsed 决定分组属性
    * @param {object} tab 触发事件的标签页，始终会被归组
    * @param {Array<object>} [companions] 同一规则下要一起归组的其他标签页
    */
-  async function applyGroupAction(action, tab, companions) {
+  async function applyRule(rule, tab, companions) {
+    const groupName = nameOf(rule);
+    if (groupName === '') {
+      return { ok: false, error: '规则的 name 为空，无法确定目标分组' };
+    }
+
     const windowId = tab.windowId;
-    const existing = await findGroupByTitle(windowId, action.name);
+    const existing = await findGroupByTitle(windowId, groupName);
 
     // 目标标签一定在列；其余只在“尚未归入任何分组”时才一并移动，
     // 避免把手动整理到别的组里的标签硬拽过来。
@@ -51,7 +59,7 @@
     }
 
     if (existing) {
-      const patch = buildGroupPatch(existing, action);
+      const patch = buildGroupPatch(existing, rule);
       if (Object.keys(patch).length > 0) {
         await browser.tabGroups.update(existing.id, patch);
       }
@@ -70,9 +78,9 @@
       createProperties: { windowId }
     });
 
-    const updateProperties = { title: action.name, color: colorOf(action) };
-    if (typeof action.collapsed === 'boolean') {
-      updateProperties.collapsed = action.collapsed;
+    const updateProperties = { title: groupName, color: colorOf(rule) };
+    if (typeof rule.collapsed === 'boolean') {
+      updateProperties.collapsed = rule.collapsed;
     }
     await browser.tabGroups.update(groupId, updateProperties);
 
@@ -80,23 +88,21 @@
   }
 
   /**
-   * 依次执行动作；单个动作失败不阻断其他动作，只把错误写进结果。
-   * @param {Array} actions
+   * @param {object} rule 命中的规则
    * @param {object} tab 触发事件的标签页
    * @param {{tabs?: Array, tabIds?: number[]}} [context] 需要一起归组的候选标签
-   * @returns {Promise<Array<{ok: boolean, groupId?: number, skipped?: boolean, error?: string, reason?: string}>>}
    */
-  async function apply(actions, tab, context) {
-    const results = [];
-    if (!Array.isArray(actions) || !tab) return results;
+  async function apply(rule, tab, context) {
+    if (!rule || !tab) return [{ ok: false, error: '缺少规则或标签页信息' }];
 
     // 版本不支持时给出明确日志，而不是抛一个难懂的 TypeError
     if (!browser.tabs || typeof browser.tabs.group !== 'function' || !browser.tabGroups) {
-      results.push({
-        ok: false,
-        error: '当前 Firefox 不支持 tabs.group / tabGroups API（需要 Firefox 139+）'
-      });
-      return results;
+      return [
+        {
+          ok: false,
+          error: '当前 Firefox 不支持 tabs.group / tabGroups API（需要 Firefox 139+）'
+        }
+      ];
     }
 
     const ctx = context || {};
@@ -107,25 +113,14 @@
       ? ctx.tabs.filter((item) => item && wanted.has(item.id))
       : [];
 
-    for (const action of actions) {
-      if (!action || action.type !== 'group') {
-        results.push({
-          ok: false,
-          skipped: true,
-          reason: `不支持的 action 类型：${action && action.type}`
-        });
-        continue;
-      }
-      try {
-        results.push(await applyGroupAction(action, tab, companions));
-      } catch (err) {
-        results.push({ ok: false, error: String((err && err.message) || err) });
-      }
+    try {
+      return [await applyRule(rule, tab, companions)];
+    } catch (err) {
+      return [{ ok: false, error: String((err && err.message) || err) }];
     }
-    return results;
   }
 
-  const api = { apply, applyGroupAction, findGroupByTitle, buildGroupPatch };
+  const api = { apply, applyRule, findGroupByTitle, buildGroupPatch, colorOf, nameOf };
 
   global.TabPilotActions = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

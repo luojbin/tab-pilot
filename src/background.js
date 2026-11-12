@@ -39,7 +39,7 @@
 
     const urlMissed = steps.filter((step) => step.urlMatched === false);
     if (urlMissed.length > 0) {
-      return `${urlMissed.map((step) => step.ruleId).join('、')} 的 urlPattern 不匹配`;
+      return `${urlMissed.map((step) => step.ruleId).join('、')} 的匹配路径都没命中`;
     }
     return '没有可用规则';
   }
@@ -87,7 +87,7 @@
     // 配了阈值的规则：达成时把同窗口内命中该规则的标签一起归组，
     // 否则“攒够 3 个再归组”会退化成“只归组第 3 个”。
     const tabIds = matched.minTabs > 1 ? matched.tabIds : [tab.id];
-    const results = await Actions.apply(matched.actions, tab, { tabs: allTabs, tabIds });
+    const results = await Actions.apply(matched.rule, tab, { tabs: allTabs, tabIds });
     const failed = results.filter((r) => r.ok === false);
 
     if (failed.length > 0) {
@@ -195,7 +195,7 @@
             stats.skipped += 1;
             continue;
           }
-          const results = await Actions.apply(matched.actions, tab, {
+          const results = await Actions.apply(matched.rule, tab, {
             tabs: windowTabs,
             tabIds: matched.minTabs > 1 ? matched.tabIds : [tab.id]
           });
@@ -236,6 +236,13 @@
 
   browser.runtime.onStartup.addListener(() => {
     Logger.info('浏览器启动', { version: browser.runtime.getManifest().version });
+  });
+
+  // 配置页是独立上下文，保存后通过消息请求一次全量同步
+  browser.runtime.onMessage.addListener((message) => {
+    if (!message || typeof message !== 'object') return undefined;
+    if (message.type === 'sync-all') return syncAll();
+    return undefined;
   });
 
   // 工具栏按钮：点一下就把当前窗口/所有窗口的标签页按规则同步一遍
@@ -305,6 +312,8 @@
 
     syncAll
   };
+
+  Debug.openOptions = () => browser.runtime.openOptionsPage();
 
   global.TabPilotDebug = Debug;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

@@ -1,9 +1,9 @@
 /**
- * background 编排层冒烟测试
+ * background 编排层测试
  *
  * 用一个极简 browser 桩模拟浏览器环境，验证“事件 → 防抖合并 → 读配置 →
- * 匹配 → 执行动作 → 记日志”这条链路，以及幂等与配置回退行为。
- * 真实 tabGroups API 的形态仍需在 Firefox 139+ 实测。
+ * 匹配 → 执行动作 → 记日志”这条链路，以及幂等、同步与配置回退行为。
+ * 真实 tabGroups API 的形态已在 Firefox 实机验证。
  */
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -22,7 +22,7 @@ const state = {
   updateCalls: []
 };
 
-const listeners = { created: [], updated: [], actionClicked: [] };
+const listeners = { created: [], updated: [], actionClicked: [], message: [] };
 
 globalThis.browser = {
   storage: {
@@ -33,7 +33,9 @@ globalThis.browser = {
       async set(data) {
         if (data['tabpilot:config']) state.storedConfig = data['tabpilot:config'];
       },
-      async remove() {}
+      async remove() {
+        state.storedConfig = null;
+      }
     }
   },
   tabs: {
@@ -64,16 +66,18 @@ globalThis.browser = {
   },
   runtime: {
     getManifest() {
-      return { version: '0.1.0' };
+      return { version: '0.2.0' };
     },
     onInstalled: { addListener() {} },
-    onStartup: { addListener() {} }
+    onStartup: { addListener() {} },
+    onMessage: { addListener(fn) { listeners.message.push(fn); } }
   }
 };
 
 require('../src/background.js');
 
 const Background = globalThis.TabPilotBackground;
+const Debug = globalThis.TabPilotDebug;
 const Logger = globalThis.TabPilotLogger;
 
 function reset() {
@@ -85,13 +89,54 @@ function reset() {
   Logger.clear();
 }
 
-function localhostTab(id, windowId, url = `http://localhost:${3000 + id}/`) {
-  return { id, windowId, url, groupId: -1 };
+function rule(overrides) {
+  return {
+    id: 'dev-localhost',
+    enabled: true,
+    name: '开发',
+    color: 'green',
+    collapsed: false,
+    minTabs: 1,
+    note: '',
+    patterns: ['*://localhost:*/*'],
+    ...(overrides || {})
+  };
 }
 
-test('background 注册了 tabs 的创建与更新监听', () => {
+function configWith(rules, globalEnabled) {
+  return {
+    schemaVersion: 2,
+    globalEnabled: globalEnabled !== false,
+    rules
+  };
+}
+
+function githubConfig(minTabs) {
+  return configWith([
+    rule({
+      id: 'code-github',
+      name: '代码',
+      color: 'blue',
+      minTabs,
+      patterns: ['*://*.github.com/*']
+    })
+  ]);
+}
+
+function localhostTab(id, windowId, url) {
+  return {
+    id,
+    windowId,
+    url: url || `http://localhost:${3000 + id}/`,
+    groupId: -1
+  };
+}
+
+test('background 注册了事件、工具栏与消息监听', () => {
   assert.equal(listeners.created.length, 1);
   assert.equal(listeners.updated.length, 1);
+  assert.equal(listeners.actionClicked.length, 1);
+  assert.equal(listeners.message.length, 1);
 });
 
 test('命中内置默认规则时创建分组并记日志', async () => {
@@ -111,7 +156,7 @@ test('命中内置默认规则时创建分组并记日志', async () => {
   ]);
 
   const hit = Logger.recent().find((entry) => entry.message === '命中规则并执行动作');
-  assert.ok(hit, '应记录一条命中日志');
+  assert.ok(hit);
   assert.equal(hit.detail.ruleId, 'dev-localhost');
   assert.equal(hit.detail.results[0].groupId, 42);
 });
@@ -127,7 +172,7 @@ test('不匹配的 URL 不执行动作，但留下判断过程', async () => {
   assert.equal(state.groupCalls.length, 0);
   const miss = Logger.recent().find((entry) => entry.message.startsWith('无规则命中'));
   assert.ok(miss);
-  assert.match(miss.message, /urlPattern 不匹配/);
+  assert.match(miss.message, /匹配路径都没命中/);
   assert.equal(miss.detail.steps.length, 1);
 });
 
@@ -172,19 +217,7 @@ test('存储中的配置非法时回退默认配置并告警', async () => {
 
 test('全局暂停时不执行任何动作', async () => {
   reset();
-  state.storedConfig = {
-    schemaVersion: 1,
-    globalEnabled: false,
-    rules: [
-      {
-        id: 'dev-localhost',
-        enabled: true,
-        priority: 100,
-        match: { urlPattern: '*://localhost:*/*', minTabs: 1 },
-        actions: [{ type: 'group', name: '开发', color: 'green' }]
-      }
-    ]
-  };
+  state.storedConfig = configWith([rule({})], false);
   const tab = localhostTab(6, 11);
   state.tabsByWindow[11] = [tab];
 
@@ -197,19 +230,7 @@ test('全局暂停时不执行任何动作', async () => {
 
 test('阈值未达成时按窗口内标签数判断，不归组', async () => {
   reset();
-  state.storedConfig = {
-    schemaVersion: 1,
-    globalEnabled: true,
-    rules: [
-      {
-        id: 'code-github',
-        enabled: true,
-        priority: 90,
-        match: { urlPattern: '*://*.github.com/*', minTabs: 3 },
-        actions: [{ type: 'group', name: '代码', color: 'blue' }]
-      }
-    ]
-  };
+  state.storedConfig = githubConfig(3);
   const tab = { id: 7, windowId: 12, url: 'https://www.github.com/a', groupId: -1 };
   state.tabsByWindow[12] = [tab, { id: 8, windowId: 12, url: 'https://gist.github.com/b' }];
 
@@ -223,130 +244,9 @@ test('阈值未达成时按窗口内标签数判断，不归组', async () => {
   assert.equal(miss.detail.steps[0].thresholdMet, false);
 });
 
-test('TabPilotDebug.setConfig：合法配置保存成功', async () => {
-  reset();
-  const result = await globalThis.TabPilotDebug.setConfig({
-    schemaVersion: 1,
-    globalEnabled: true,
-    rules: [
-      {
-        id: 'gist',
-        enabled: true,
-        priority: 50,
-        match: { urlPattern: '*://gist.github.com/*', minTabs: 1 },
-        actions: [{ type: 'group', name: 'Gist', color: 'purple' }]
-      }
-    ]
-  });
-  assert.equal(result.ok, true);
-  assert.ok(Logger.recent().some((entry) => entry.message === '配置已保存'));
-});
-
-test('TabPilotDebug.setConfig：非法配置不写入并打印原因', async () => {
-  reset();
-  const result = await globalThis.TabPilotDebug.setConfig({
-    schemaVersion: 1,
-    globalEnabled: true,
-    rules: [{ id: 'broken', enabled: true, match: { urlPattern: '*://a/*' }, actions: [] }]
-  });
-  assert.equal(result.ok, false);
-  const failed = Logger.recent().find((entry) => entry.level === 'error');
-  assert.match(failed.message, /配置未保存/);
-  assert.ok(Array.isArray(failed.detail));
-});
-
-test('syncAll：已存在但未分组的标签会被同步进组', async () => {
-  reset();
-  state.storedConfig = {
-    schemaVersion: 1,
-    globalEnabled: true,
-    rules: [
-      {
-        id: 'dev-localhost',
-        enabled: true,
-        priority: 100,
-        match: { urlPattern: '*://localhost:*/*', minTabs: 1 },
-        actions: [{ type: 'group', name: '开发', color: 'green', collapsed: false }]
-      }
-    ]
-  };
-  const ungrouped = { id: 1, windowId: 3, url: 'http://localhost:3000/', groupId: -1 };
-  const alreadyGrouped = { id: 2, windowId: 3, url: 'http://localhost:3001/', groupId: 99 };
-  state.tabsByWindow[3] = [ungrouped, alreadyGrouped];
-
-  const stats = await Background.syncAll();
-
-  assert.equal(stats.checked, 2);
-  assert.equal(stats.grouped, 1, '只有未分组的那个被处理');
-  assert.equal(stats.skipped, 1, '已在分组内的默认跳过');
-  assert.deepEqual(state.groupCalls[0].tabIds, [1]);
-  assert.ok(Logger.recent().some((entry) => entry.message.startsWith('同步完成')));
-});
-
-test('syncAll：includeGrouped 时把已有分组的标签也重排', async () => {
-  reset();
-  state.storedConfig = {
-    schemaVersion: 1,
-    globalEnabled: true,
-    rules: [
-      {
-        id: 'dev-localhost',
-        enabled: true,
-        priority: 100,
-        match: { urlPattern: '*://localhost:*/*', minTabs: 1 },
-        actions: [{ type: 'group', name: '开发', color: 'green', collapsed: false }]
-      }
-    ]
-  };
-  state.existingGroups = [{ id: 42, title: '开发', color: 'green', collapsed: false }];
-  state.tabsByWindow[3] = [{ id: 5, windowId: 3, url: 'http://localhost:3000/', groupId: 99 }];
-
-  const stats = await Background.syncAll({ includeGrouped: true });
-
-  assert.equal(stats.grouped, 1);
-  assert.deepEqual(state.groupCalls[0], { tabIds: [5], groupId: 42 });
-});
-
-test('setConfig 保存后自动同步已打开的标签页', async () => {
-  reset();
-  state.tabsByWindow[4] = [
-    { id: 9, windowId: 4, url: 'http://localhost:3000/', groupId: -1 }
-  ];
-
-  const result = await globalThis.TabPilotDebug.setConfig({
-    schemaVersion: 1,
-    globalEnabled: true,
-    rules: [
-      {
-        id: 'dev',
-        enabled: true,
-        priority: 1,
-        match: { urlPattern: '*://localhost:*/*', minTabs: 1 },
-        actions: [{ type: 'group', name: '开发', color: 'green' }]
-      }
-    ]
-  });
-
-  assert.equal(result.ok, true);
-  assert.equal(state.groupCalls.length, 1, '保存后应立刻处理已存在的标签');
-  assert.equal(result.sync.grouped, 1);
-});
-
 test('阈值达成时把同窗口内未分组的命中标签一起归组', async () => {
   reset();
-  state.storedConfig = {
-    schemaVersion: 1,
-    globalEnabled: true,
-    rules: [
-      {
-        id: 'code-github',
-        enabled: true,
-        priority: 90,
-        match: { urlPattern: '*://*.github.com/*', minTabs: 3 },
-        actions: [{ type: 'group', name: '代码', color: 'blue' }]
-      }
-    ]
-  };
+  state.storedConfig = githubConfig(3);
   const tabs = [
     { id: 1, windowId: 2, url: 'https://gist.github.com/a', groupId: -1 },
     { id: 2, windowId: 2, url: 'https://gist.github.com/b', groupId: -1 },
@@ -367,19 +267,7 @@ test('阈值达成时把同窗口内未分组的命中标签一起归组', async
 
 test('阈值达成时不移动已在其他分组内的标签', async () => {
   reset();
-  state.storedConfig = {
-    schemaVersion: 1,
-    globalEnabled: true,
-    rules: [
-      {
-        id: 'code-github',
-        enabled: true,
-        priority: 90,
-        match: { urlPattern: '*://*.github.com/*', minTabs: 3 },
-        actions: [{ type: 'group', name: '代码', color: 'blue' }]
-      }
-    ]
-  };
+  state.storedConfig = githubConfig(3);
   const tabs = [
     { id: 1, windowId: 2, url: 'https://gist.github.com/a', groupId: -1 },
     { id: 2, windowId: 2, url: 'https://gist.github.com/b', groupId: 99 },
@@ -397,13 +285,49 @@ test('阈值达成时不移动已在其他分组内的标签', async () => {
   );
 });
 
+test('syncAll：已存在但未分组的标签会被同步进组', async () => {
+  reset();
+  state.storedConfig = configWith([rule({})]);
+  const ungrouped = { id: 1, windowId: 3, url: 'http://localhost:3000/', groupId: -1 };
+  const alreadyGrouped = { id: 2, windowId: 3, url: 'http://localhost:3001/', groupId: 99 };
+  state.tabsByWindow[3] = [ungrouped, alreadyGrouped];
+
+  const stats = await Background.syncAll();
+
+  assert.equal(stats.checked, 2);
+  assert.equal(stats.grouped, 1);
+  assert.equal(stats.skipped, 1);
+  assert.deepEqual(state.groupCalls[0].tabIds, [1]);
+  assert.ok(Logger.recent().some((entry) => entry.message.startsWith('同步完成')));
+});
+
+test('syncAll：includeGrouped 时把已有分组的标签也重排', async () => {
+  reset();
+  state.storedConfig = configWith([rule({})]);
+  state.existingGroups = [{ id: 42, title: '开发', color: 'green', collapsed: false }];
+  state.tabsByWindow[3] = [{ id: 5, windowId: 3, url: 'http://localhost:3000/', groupId: 99 }];
+
+  const stats = await Background.syncAll({ includeGrouped: true });
+
+  assert.equal(stats.grouped, 1);
+  assert.deepEqual(state.groupCalls[0], { tabIds: [5], groupId: 42 });
+});
+
+test('setConfig 保存后自动同步已打开的标签页', async () => {
+  reset();
+  state.tabsByWindow[4] = [{ id: 9, windowId: 4, url: 'http://localhost:3000/', groupId: -1 }];
+
+  const result = await Debug.setConfig(configWith([rule({ id: 'dev' })]));
+
+  assert.equal(result.ok, true);
+  assert.equal(state.groupCalls.length, 1, '保存后应立刻处理已存在的标签');
+  assert.equal(result.sync.grouped, 1);
+});
+
 test('工具栏按钮触发全量同步', async () => {
   reset();
-  state.tabsByWindow[5] = [
-    { id: 11, windowId: 5, url: 'http://localhost:3000/', groupId: -1 }
-  ];
+  state.tabsByWindow[5] = [{ id: 11, windowId: 5, url: 'http://localhost:3000/', groupId: -1 }];
 
-  assert.equal(listeners.actionClicked.length, 1);
   await listeners.actionClicked[0]();
   await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -413,17 +337,19 @@ test('工具栏按钮触发全量同步', async () => {
 test('addRule：在现有配置上追加规则，不丢失默认规则', async () => {
   reset();
 
-  const result = await globalThis.TabPilotDebug.addRule({
-    id: 'code-github',
-    enabled: true,
-    priority: 90,
-    match: { urlPattern: '*://*.github.com/*', minTabs: 3 },
-    actions: [{ type: 'group', name: '代码', color: 'blue' }]
-  });
+  const result = await Debug.addRule(
+    rule({
+      id: 'code-github',
+      name: '代码',
+      color: 'blue',
+      minTabs: 3,
+      patterns: ['*://*.github.com/*']
+    })
+  );
 
   assert.equal(result.ok, true);
   assert.deepEqual(
-    state.storedConfig.rules.map((rule) => rule.id),
+    state.storedConfig.rules.map((item) => item.id),
     ['dev-localhost', 'code-github']
   );
 });
@@ -431,48 +357,90 @@ test('addRule：在现有配置上追加规则，不丢失默认规则', async (
 test('addRule：同 id 覆盖而不是产生重复规则', async () => {
   reset();
 
-  await globalThis.TabPilotDebug.addRule({
-    id: 'code-github',
-    enabled: true,
-    priority: 90,
-    match: { urlPattern: '*://*.github.com/*', minTabs: 1 },
-    actions: [{ type: 'group', name: '代码', color: 'blue' }]
-  });
-  await globalThis.TabPilotDebug.addRule({
-    id: 'code-github',
-    enabled: true,
-    priority: 90,
-    match: { urlPattern: '*://*.github.com/*', minTabs: 2 },
-    actions: [{ type: 'group', name: '代码', color: 'blue' }]
-  });
+  await Debug.addRule(rule({ id: 'code-github', name: '代码', minTabs: 1 }));
+  await Debug.addRule(rule({ id: 'code-github', name: '代码', minTabs: 2 }));
 
-  const github = state.storedConfig.rules.filter((rule) => rule.id === 'code-github');
+  const github = state.storedConfig.rules.filter((item) => item.id === 'code-github');
   assert.equal(github.length, 1);
-  assert.equal(github[0].match.minTabs, 2);
+  assert.equal(github[0].minTabs, 2);
+});
+
+test('addRule：缺少规则 id 时拒绝', async () => {
+  reset();
+  const result = await Debug.addRule({ name: '无 id' });
+  assert.equal(result.ok, false);
+  assert.equal(state.storedConfig, null);
 });
 
 test('removeRule：只删除指定规则', async () => {
   reset();
-  await globalThis.TabPilotDebug.addRule({
-    id: 'code-github',
-    enabled: true,
-    priority: 90,
-    match: { urlPattern: '*://*.github.com/*', minTabs: 1 },
-    actions: [{ type: 'group', name: '代码', color: 'blue' }]
-  });
+  await Debug.addRule(rule({ id: 'code-github', name: '代码' }));
 
-  const result = await globalThis.TabPilotDebug.removeRule('code-github');
+  const result = await Debug.removeRule('code-github');
 
   assert.equal(result.ok, true);
-  assert.deepEqual(state.storedConfig.rules.map((rule) => rule.id), ['dev-localhost']);
+  assert.deepEqual(state.storedConfig.rules.map((item) => item.id), ['dev-localhost']);
 });
 
 test('removeRule：规则不存在时报错且不改动配置', async () => {
   reset();
   const before = state.storedConfig;
 
-  const result = await globalThis.TabPilotDebug.removeRule('nope');
+  const result = await Debug.removeRule('nope');
 
   assert.equal(result.ok, false);
   assert.equal(state.storedConfig, before);
+});
+
+test('setConfig：非法配置不写入并打印原因', async () => {
+  reset();
+  const result = await Debug.setConfig(configWith([rule({ name: '' })]));
+
+  assert.equal(result.ok, false);
+  const failed = Logger.recent().find((entry) => entry.level === 'error');
+  assert.match(failed.message, /配置未保存/);
+  assert.ok(Array.isArray(failed.detail));
+  assert.equal(state.storedConfig, null, '非法配置不应落盘');
+});
+
+test('收到 sync-all 消息时执行同步并返回统计', async () => {
+  reset();
+  state.tabsByWindow[6] = [{ id: 13, windowId: 6, url: 'http://localhost:3000/', groupId: -1 }];
+
+  const stats = await listeners.message[0]({ type: 'sync-all' });
+
+  assert.equal(stats.grouped, 1);
+  assert.equal(state.groupCalls.length, 1);
+});
+
+test('无关消息不触发同步', async () => {
+  reset();
+  const result = await listeners.message[0]({ type: 'something-else' });
+  assert.equal(result, undefined);
+  assert.equal(state.groupCalls.length, 0);
+});
+
+test('v1 旧配置会被迁移后正常生效', async () => {
+  reset();
+  state.storedConfig = {
+    schemaVersion: 1,
+    globalEnabled: true,
+    rules: [
+      {
+        id: 'dev-localhost',
+        enabled: true,
+        priority: 100,
+        match: { urlPattern: '*://localhost:*/*', minTabs: 1 },
+        actions: [{ type: 'group', name: '开发', color: 'green', collapsed: false }]
+      }
+    ]
+  };
+  const tab = localhostTab(14, 15);
+  state.tabsByWindow[15] = [tab];
+
+  Background.schedule(tab);
+  await Background.flush();
+
+  assert.equal(state.groupCalls.length, 1);
+  assert.equal(state.storedConfig.schemaVersion, 2, '迁移结果应写回 storage');
 });
