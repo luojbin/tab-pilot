@@ -10,6 +10,7 @@
   'use strict';
 
   const Highlight = globalThis.TabPilotHighlight;
+  const TitleRule = globalThis.TabPilotTitleRule;
   const ROOT_ID = 'tabpilot-highlight-root';
   const MESSAGE_REFRESH = 'tabpilot:refresh';
   const Z_INDEX = '2147483647';
@@ -20,8 +21,9 @@
   /**
    * 在 <html> 上留一个可检查的标记，便于排查「为什么页面上没有标识」：
    *   loaded  —— content script 已注入，但查询还没返回
-   *   on      —— 已根据分组配置绘制标识
-   *   off     —— 已查询，但没有命中分组 / 分组未开启标识
+   *   on      —— 已按分组配置绘制标识
+   *   title   —— 只应用了标签页标题规则（没有页面内标识）
+   *   off     —— 已查询，但没有命中分组 / 分组什么都没开启
    */
   function mark(state) {
     try {
@@ -117,6 +119,92 @@
     }
   }
 
+  const titleState = { input: null, applied: null };
+  let watchedTitleRule = null;
+  let lastTriedTitle = null;
+  let titleObserver = null;
+  let titleWatchdog = null;
+
+  /** 停止监听并清掉改写状态（分组不再匹配时用）。 */
+  function stopTitleWatch() {
+    if (titleObserver) {
+      titleObserver.disconnect();
+      titleObserver = null;
+    }
+    if (titleWatchdog) {
+      clearInterval(titleWatchdog);
+      titleWatchdog = null;
+    }
+    watchedTitleRule = null;
+    lastTriedTitle = null;
+  }
+
+  /** 恢复被我们改过的标题。 */
+  function restoreTitle() {
+    if (titleState.applied !== null && document.title === titleState.applied) {
+      document.title = titleState.input;
+    }
+    titleState.input = null;
+    titleState.applied = null;
+    stopTitleWatch();
+  }
+
+  /**
+   * 尝试用当前标题匹配规则。
+   * 不要求必须命中：页面可能在加载后才把标题改成最终值，
+   * 所以只要规则开着就持续尝试，直到某个标题命中。
+   */
+  function attemptTitle() {
+    const rule = watchedTitleRule;
+    if (!TitleRule || !rule || rule.enabled !== true) return false;
+
+    const current = document.title;
+    if (titleState.applied !== null && current === titleState.applied) return true;
+    // 同一个标题只尝试一次，避免轮询反复打印「未命中」
+    if (titleState.applied === null && current === lastTriedTitle) return false;
+    lastTriedTitle = current;
+
+    const outcome = TitleRule.applyTitleRules({ titleRule: rule }, current);
+    if (!outcome.ok || !outcome.matched) {
+      if (!outcome.ok) console.warn('[TabPilot] 标题规则无效', outcome.error || outcome.reason);
+      else console.info('[TabPilot] 标题规则未命中：', outcome.reason, '（等页面设置标题后会重试）');
+      return false;
+    }
+
+    titleState.input = current;
+    titleState.applied = outcome.result;
+    if (current !== outcome.result) {
+      document.title = outcome.result;
+      console.info('[TabPilot] 标题已改写：', current, '→', outcome.result);
+    }
+    return true;
+  }
+
+  /**
+   * 监听标题变化并持续尝试。
+   * 只要分组开启了标题规则就启动，不管当前标题是否命中——
+   * 页面常在加载后才把标题改成最终值。
+   */
+  function watchTitleChanges(titleRule) {
+    watchedTitleRule = titleRule;
+    lastTriedTitle = null;
+
+    if (!titleObserver && document.documentElement) {
+      titleObserver = new MutationObserver(() => attemptTitle());
+      titleObserver.observe(document.documentElement, {
+        subtree: true,
+        childList: true,
+        characterData: true
+      });
+    }
+
+    if (!titleWatchdog) {
+      titleWatchdog = setInterval(() => attemptTitle(), 1500);
+    }
+
+    attemptTitle();
+  }
+
   async function refresh() {
     let style = null;
     try {
@@ -127,13 +215,28 @@
       removeRoot();
       return;
     }
-    if (!style || !style.highlight) {
+    if (!style) {
+      restoreTitle();
       mark('off');
       removeRoot();
       return;
     }
-    mark('on');
-    render(style);
+
+    if (style.titleRule && style.titleRule.enabled === true) {
+      watchTitleChanges(style.titleRule);
+    } else {
+      restoreTitle();
+    }
+    const titleWatched = style.titleRule && style.titleRule.enabled === true;
+
+    if (style.highlight && style.highlight.enabled) {
+      mark('on');
+      render(style);
+      return;
+    }
+
+    removeRoot();
+    mark(titleWatched ? 'title' : 'off');
   }
 
   browser.runtime.onMessage.addListener((message) => {

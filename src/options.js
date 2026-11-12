@@ -11,6 +11,7 @@
   const Store = globalThis.TabPilotStore;
   const Rules = globalThis.TabPilotRules;
   const Highlight = globalThis.TabPilotHighlight;
+  const TitleRule = globalThis.TabPilotTitleRule;
 
   const els = {
     list: document.getElementById('groupList'),
@@ -27,9 +28,10 @@
     importInput: document.getElementById('importInput')
   };
 
-  if (!Store || !Rules || !Highlight) {
+  if (!Store || !Rules || !Highlight || !TitleRule) {
     els.status.className = 'status error';
-    els.status.textContent = 'store.js / rules.js / highlight.js 未加载，无法读写配置。';
+    els.status.textContent =
+      'store.js / rules.js / highlight.js / title-rule.js 未加载，无法读写配置。';
     return;
   }
 
@@ -391,6 +393,257 @@
     });
 
     section.append(head, bodyEl);
+    return section;
+  }
+
+  // ---------------- 标签页名规则 ----------------
+
+  function ensureTitleRule(rule) {
+    rule.titleRule = TitleRule.normalizeTitleRule(rule);
+    return rule.titleRule;
+  }
+
+  function titleField(labelText, className, value, placeholder, onInput) {
+    const label = document.createElement('label');
+    label.className = 'field';
+    label.append(document.createTextNode(labelText));
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = className;
+    input.value = value;
+    if (placeholder) input.placeholder = placeholder;
+    input.addEventListener('input', () => onInput(input.value));
+
+    label.append(input);
+    return label;
+  }
+
+  function createTitleRuleCard(rule, spec, entry, index) {
+    const card = document.createElement('div');
+    card.className = 'title-rule-card';
+
+    const head = document.createElement('div');
+    head.className = 'title-rule-head';
+
+    const order = document.createElement('span');
+    order.className = 'title-rule-order';
+    order.textContent = String(index + 1);
+
+    const description = document.createElement('input');
+    description.type = 'text';
+    description.className = 'title-rule-desc';
+    description.value = entry.description;
+    description.placeholder = '描述（可选，例如：Jira 标题）';
+    description.addEventListener('input', () => {
+      entry.description = description.value;
+      rule.titleRule = spec;
+    });
+
+    const up = document.createElement('button');
+    up.type = 'button';
+    up.className = 'title-rule-move';
+    up.textContent = '↑';
+    up.title = '上移（靠前的规则先匹配）';
+    up.disabled = index === 0;
+    up.addEventListener('click', () => {
+      if (index === 0) return;
+      const rules = spec.rules;
+      [rules[index - 1], rules[index]] = [rules[index], rules[index - 1]];
+      rule.titleRule = spec;
+      renderDetail();
+    });
+
+    const down = document.createElement('button');
+    down.type = 'button';
+    down.className = 'title-rule-move';
+    down.textContent = '↓';
+    down.title = '下移';
+    down.disabled = index === spec.rules.length - 1;
+    down.addEventListener('click', () => {
+      if (index >= spec.rules.length - 1) return;
+      const rules = spec.rules;
+      [rules[index + 1], rules[index]] = [rules[index], rules[index + 1]];
+      rule.titleRule = spec;
+      renderDetail();
+    });
+
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'title-rule-remove';
+    remove.textContent = '✕';
+    remove.title = '删除这条命名规则';
+    remove.addEventListener('click', () => {
+      spec.rules.splice(index, 1);
+      rule.titleRule = spec;
+      renderDetail();
+    });
+
+    head.append(order, description, up, down, remove);
+
+    const patternField = titleField(
+      '源文本（正则表达式）',
+      'title-rule-pattern',
+      entry.pattern,
+      '^\\[(.*?)\\]\\s*(.*)$',
+      (value) => {
+        entry.pattern = value;
+        rule.titleRule = spec;
+      }
+    );
+
+    const replacementField = titleField(
+      '目标文本（可用 $1/$2 引用匹配组）',
+      'title-rule-replacement',
+      entry.replacement,
+      '$2 · $1',
+      (value) => {
+        entry.replacement = value;
+        rule.titleRule = spec;
+      }
+    );
+
+    card.append(head, patternField, replacementField);
+    return card;
+  }
+
+  function createTitleRuleSection(rule) {
+    const spec = ensureTitleRule(rule);
+
+    const section = document.createElement('div');
+    section.className = 'title-rule-controls';
+
+    const toggleLabel = document.createElement('label');
+    toggleLabel.className = 'field field-switch';
+    toggleLabel.append(document.createTextNode('按顺序匹配并改写标签页标题'));
+    const toggleSlot = document.createElement('span');
+    toggleSlot.className = 'switch-slot';
+    const toggleInput = document.createElement('input');
+    toggleInput.type = 'checkbox';
+    toggleInput.className = 'field-title-enabled';
+    toggleInput.checked = spec.enabled;
+    const toggleTrack = document.createElement('span');
+    toggleTrack.className = 'switch-ui';
+    toggleTrack.setAttribute('aria-hidden', 'true');
+    toggleSlot.append(toggleInput, toggleTrack);
+    toggleLabel.append(toggleSlot);
+
+    const hint = document.createElement('p');
+    hint.className = 'hint small';
+    hint.textContent =
+      '按从上到下的顺序匹配，命中第一条就停止；只替换第一个匹配。目标文本可用 $1/$2、$<name>、$&、$$；需要加前缀的话直接写在目标文本里，例如 "W· $1"。';
+
+    const list = document.createElement('div');
+    list.className = 'title-rule-list';
+    spec.rules.forEach((entry, index) => {
+      list.append(createTitleRuleCard(rule, spec, entry, index));
+    });
+    if (spec.rules.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'hint small';
+      empty.textContent = '还没有命名规则，点下方按钮添加。';
+      list.append(empty);
+    }
+
+    const addButton = document.createElement('button');
+    addButton.type = 'button';
+    addButton.className = 'add-title-rule';
+    addButton.textContent = '＋ 添加命名规则';
+    addButton.addEventListener('click', () => {
+      spec.rules.push({ pattern: '', replacement: '', description: '' });
+      rule.titleRule = spec;
+      renderDetail();
+    });
+
+    const testBox = document.createElement('div');
+    testBox.className = 'title-test';
+    const testLabel = document.createElement('label');
+    testLabel.className = 'field';
+    testLabel.append(document.createTextNode('测试文本（每行一个标题）'));
+    const testInput = document.createElement('textarea');
+    testInput.className = 'title-test-input';
+    testInput.rows = 4;
+    testInput.value = spec.testText;
+    testInput.placeholder =
+      '[工作] Jira - 看板\n[代码] GitHub - Pull requests\n普通页面标题';
+    testInput.addEventListener('input', () => {
+      spec.testText = testInput.value;
+      rule.titleRule = spec;
+    });
+    testLabel.append(testInput);
+
+    const testButton = document.createElement('button');
+    testButton.type = 'button';
+    testButton.className = 'title-test-run';
+    testButton.textContent = '查看效果';
+
+    const testOutput = document.createElement('div');
+    testOutput.className = 'title-test-output';
+
+    testButton.addEventListener('click', () => {
+      const candidate = { enabled: true, rules: spec.rules, testText: spec.testText };
+      const rows = TitleRule.applyTitleBatch({ titleRule: candidate }, testInput.value);
+
+      testOutput.textContent = '';
+      if (rows.length === 0) {
+        const empty = document.createElement('p');
+        empty.className = 'hint small';
+        empty.textContent = '测试文本为空，先输入几行标题。';
+        testOutput.append(empty);
+        return;
+      }
+
+      rows.forEach((row) => {
+        const line = document.createElement('div');
+        line.className = 'title-test-line';
+
+        const source = document.createElement('span');
+        source.className = 'title-test-src';
+        source.textContent = row.source;
+
+        const arrow = document.createElement('span');
+        arrow.className = 'title-test-arrow';
+        arrow.textContent = '→';
+
+        const target = document.createElement('span');
+        target.className = 'title-test-dst';
+
+        if (row.matched) {
+          target.textContent = row.result;
+        } else if (row.reason === 'invalid-regex') {
+          target.classList.add('warn');
+          target.textContent = '正则有误，未应用';
+        } else {
+          target.classList.add('warn');
+          target.textContent = '未匹配，保持原样';
+        }
+
+        line.append(source, arrow, target);
+        testOutput.append(line);
+      });
+    });
+
+    testBox.append(testLabel, testButton, testOutput);
+
+    /** 规则没启用时把整块配置置灰禁用，省得配了半天不生效。 */
+    function syncEnabledState() {
+      const disabled = !spec.enabled;
+      section.classList.toggle('disabled', disabled);
+      section.querySelectorAll('input, button, textarea').forEach((element) => {
+        if (element === toggleInput) return;
+        element.disabled = disabled;
+      });
+    }
+
+    toggleInput.addEventListener('change', () => {
+      spec.enabled = toggleInput.checked;
+      rule.titleRule = spec;
+      syncEnabledState();
+    });
+
+    syncEnabledState();
+
+    section.append(toggleLabel, hint, list, addButton, testBox);
     return section;
   }
 
@@ -955,14 +1208,9 @@
     highlightBody.append(createHighlightSection(rule));
 
     const tabTitleBody = document.createElement('div');
-    tabTitleBody.append(futureRow('标签页重命名'));
-    const tabTitleHint = document.createElement('p');
-    tabTitleHint.className = 'hint small';
-    tabTitleHint.textContent =
-      '后续可按分组规则改写标签页标题（实验功能，页面导航后可能失效），当前仅占位。';
-    tabTitleBody.append(tabTitleHint);
+    tabTitleBody.append(createTitleRuleSection(rule));
 
-    // 折叠时的状态提示：页面内突出显示用只读拨杆，标签页名规则用「规划中」徽标
+    // 折叠时的状态提示：两个区块都用只读拨杆表示启停
     const highlightStatus = document.createElement('span');
     highlightStatus.className = 'switch-ui';
     highlightStatus.setAttribute('aria-hidden', 'true');
@@ -974,8 +1222,14 @@
     syncHighlightStatus();
 
     const tabTitleStatus = document.createElement('span');
-    tabTitleStatus.className = 'badge';
-    tabTitleStatus.textContent = '规划中';
+    tabTitleStatus.className = 'switch-ui';
+    tabTitleStatus.setAttribute('aria-hidden', 'true');
+    const syncTabTitleStatus = () => {
+      const on = Boolean(rule.titleRule && rule.titleRule.enabled);
+      tabTitleStatus.classList.toggle('on', on);
+      tabTitleStatus.title = on ? '标签页名规则：已启用' : '标签页名规则：未启用';
+    };
+    syncTabTitleStatus();
 
     const highlightSection = createSection('highlight', '页面内突出显示', highlightBody, {
       defaultOpen: false,
@@ -986,14 +1240,20 @@
       highlightToggle.addEventListener('change', syncHighlightStatus);
     }
 
+    const tabTitleSection = createSection('tabTitle', '标签页名规则', tabTitleBody, {
+      defaultOpen: false,
+      status: tabTitleStatus
+    });
+    const titleToggle = tabTitleSection.querySelector('.field-title-enabled');
+    if (titleToggle) {
+      titleToggle.addEventListener('change', syncTabTitleStatus);
+    }
+
     els.detail.append(
       head,
       createSection('basic', '基础配置', basicBody, { defaultOpen: true }),
       highlightSection,
-      createSection('tabTitle', '标签页名规则', tabTitleBody, {
-        defaultOpen: false,
-        status: tabTitleStatus
-      })
+      tabTitleSection
     );
   }
 

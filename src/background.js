@@ -20,6 +20,7 @@
   const Actions = global.TabPilotActions;
   const Logger = global.TabPilotLogger;
   const Highlight = global.TabPilotHighlight;
+  const TitleRule = global.TabPilotTitleRule;
 
   /**
    * 把 explain() 的判断过程压成一句人话，直接写进日志消息里，
@@ -261,23 +262,32 @@
     }
 
     const highlight = Highlight.normalizeHighlight(matched.rule);
-    if (!highlight.enabled) {
-      Logger.info('页面标识查询：分组未开启标识', { url: targetUrl, ruleId: matched.ruleId });
+    const titleRule = TitleRule.normalizeTitleRule(matched.rule);
+    const needsHighlight =
+      highlight.enabled && (highlight.border.sides.length > 0 || highlight.banner.positions.length > 0);
+    const needsTitle = titleRule.enabled && titleRule.rules.some((entry) => entry.pattern.trim() !== '');
+
+    if (!needsHighlight && !needsTitle) {
+      Logger.info('页面标识查询：分组未启用页面内标识或标题规则', {
+        url: targetUrl,
+        ruleId: matched.ruleId
+      });
       return null;
     }
 
-    Logger.info('页面标识查询：返回标识', {
+    Logger.info('页面标识查询：返回配置', {
       url: targetUrl,
       ruleId: matched.ruleId,
-      border: highlight.border,
-      banner: highlight.banner
+      highlight: needsHighlight,
+      title: needsTitle
     });
 
     return {
       ruleId: matched.ruleId,
       name: matched.rule.name || '未命名分组',
       colorHex: Store.colorHexOf(matched.rule),
-      highlight
+      highlight,
+      titleRule
     };
   }
 

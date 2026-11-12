@@ -10,6 +10,7 @@ const assert = require('node:assert/strict');
 
 // 按 manifest.json 中 background.scripts 的顺序加载，确保全局层已就绪
 require('../src/highlight.js');
+require('../src/title-rule.js');
 require('../src/store.js');
 require('../src/logger.js');
 require('../src/rules.js');
@@ -449,7 +450,7 @@ test('v1 旧配置会被迁移后正常生效', async () => {
   await Background.flush();
 
   assert.equal(state.groupCalls.length, 1);
-  assert.equal(state.storedConfig.schemaVersion, 3, '迁移结果应写回 storage');
+  assert.equal(state.storedConfig.schemaVersion, 5, '迁移结果应写回 storage');
 });
 
 test('page-style：命中的分组开启标识时返回渲染规格', async () => {
@@ -487,6 +488,44 @@ test('page-style：命中的分组开启标识时返回渲染规格', async () =
   assert.equal(style.colorHex, '#1e8e3e');
   assert.deepEqual(style.highlight.border.sides, ['top']);
   assert.deepEqual(style.highlight.banner.positions, ['topLeft']);
+  assert.equal(style.titleRule.enabled, false);
+});
+
+test('page-style：只启用标题规则时也返回配置', async () => {
+  reset();
+  state.storedConfig = {
+    schemaVersion: 4,
+    globalEnabled: true,
+    rules: [
+      {
+        id: 'title-only',
+        enabled: true,
+        name: '标题组',
+        color: 'blue',
+        collapsed: false,
+        minTabs: 1,
+        note: '',
+        patterns: ['*://localhost:*/*'],
+        highlight: {
+          enabled: false,
+          border: { sides: [], width: 4, opacity: 100 },
+          banner: { positions: [], size: 28, fontSize: 14, opacity: 60 }
+        },
+        titleRule: { enabled: true, pattern: '工作', replacement: '办公' }
+      }
+    ]
+  };
+  state.tabsByWindow[1] = [{ id: 1, windowId: 1, url: 'http://localhost:3000/' }];
+
+  const style = await listeners.message[0](
+    { type: 'page-style', url: 'http://localhost:3000/' },
+    { tab: { id: 1, windowId: 1 } }
+  );
+
+  assert.ok(style, '只开标题规则时也应返回配置');
+  assert.equal(style.titleRule.enabled, true);
+  assert.equal(style.titleRule.rules[0].pattern, '工作');
+  assert.equal(style.highlight.enabled, false);
 });
 
 test('page-style：标识未开启或未命中时返回 null', async () => {

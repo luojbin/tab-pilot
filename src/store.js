@@ -14,7 +14,14 @@
   'use strict';
 
   const CONFIG_KEY = 'tabpilot:config';
-  const SCHEMA_VERSION = 3;
+  const SCHEMA_VERSION = 5;
+
+  /** 标签页名规则的默认值（与 src/title-rule.js 的 DEFAULT_TITLE_RULE 保持一致）。 */
+  const DEFAULT_TITLE_RULE_CONFIG = {
+    enabled: false,
+    rules: [],
+    testText: ''
+  };
 
   /** 页面内标识的默认值（与 src/highlight.js 的 DEFAULT_HIGHLIGHT 保持一致）。 */
   const DEFAULT_HIGHLIGHT_CONFIG = {
@@ -72,6 +79,11 @@
           enabled: false,
           border: { sides: ['top', 'right', 'bottom', 'left'], width: 4, opacity: 100 },
           banner: { positions: ['topLeft'], size: 28, fontSize: 14, opacity: 60 }
+        },
+        titleRule: {
+          enabled: false,
+          rules: [],
+          testText: ''
         }
       }
     ]
@@ -164,6 +176,49 @@
         }
       }
 
+      if (rule.titleRule !== undefined) {
+        const at = `${where}.titleRule`;
+        if (!isPlainObject(rule.titleRule)) {
+          errors.push(`${at} 必须是对象`);
+        } else {
+          const titleRule = rule.titleRule;
+          if (titleRule.enabled !== undefined && typeof titleRule.enabled !== 'boolean') {
+            errors.push(`${at}.enabled 必须是布尔值`);
+          }
+          if (titleRule.testText !== undefined && typeof titleRule.testText !== 'string') {
+            errors.push(`${at}.testText 必须是字符串`);
+          }
+          if (titleRule.rules !== undefined) {
+            if (!Array.isArray(titleRule.rules)) {
+              errors.push(`${at}.rules 必须是数组`);
+            } else {
+              titleRule.rules.forEach((entry, index) => {
+                const entryAt = `${at}.rules[${index}]`;
+                if (!isPlainObject(entry)) {
+                  errors.push(`${entryAt} 必须是对象`);
+                  return;
+                }
+                if (typeof entry.pattern !== 'string' || entry.pattern.trim() === '') {
+                  errors.push(`${entryAt}.pattern 必须是非空字符串`);
+                } else {
+                  try {
+                    new RegExp(entry.pattern);
+                  } catch (err) {
+                    errors.push(`${entryAt}.pattern 不是合法的正则：${(err && err.message) || err}`);
+                  }
+                }
+                if (entry.replacement !== undefined && typeof entry.replacement !== 'string') {
+                  errors.push(`${entryAt}.replacement 必须是字符串`);
+                }
+                if (entry.description !== undefined && typeof entry.description !== 'string') {
+                  errors.push(`${entryAt}.description 必须是字符串`);
+                }
+              });
+            }
+          }
+        }
+      }
+
       if (rule.highlight !== undefined) {
         const at = `${where}.highlight`;
         if (!isPlainObject(rule.highlight)) {
@@ -231,6 +286,8 @@
    * 逐级迁移到当前 schemaVersion：
    * v1 → v2：单条 urlPattern → patterns；actions[0] → 规则属性；priority 降序 → 顺序
    * v2 → v3：为每条规则补上 highlight（页面内标识）默认值
+   * v3 → v4：为每条规则补上 titleRule（标签页名规则）默认值
+   * v4 → v5：titleRule 从单条正则升级为「按顺序匹配的命名规则数组 + 测试文本」
    */
   function migrate(config) {
     let current = config;
@@ -239,6 +296,12 @@
     }
     if (isPlainObject(current) && current.schemaVersion === 2) {
       current = migrateFromV2(current);
+    }
+    if (isPlainObject(current) && current.schemaVersion === 3) {
+      current = migrateFromV3(current);
+    }
+    if (isPlainObject(current) && current.schemaVersion === 4) {
+      current = migrateFromV4(current);
     }
     return current;
   }
@@ -278,10 +341,58 @@
     };
   }
 
+  function migrateFromV3(config) {
+    const rules = (Array.isArray(config.rules) ? config.rules : []).map((rule) => {
+      if (!isPlainObject(rule) || isPlainObject(rule.titleRule)) return rule;
+      return { ...rule, titleRule: clone(DEFAULT_TITLE_RULE_CONFIG) };
+    });
+
+    return {
+      // 只升级到 4，由外层迁移链继续升到当前版本
+      schemaVersion: 4,
+      globalEnabled: config.globalEnabled !== false,
+      rules
+    };
+  }
+
   function migrateFromV2(config) {
     const rules = (Array.isArray(config.rules) ? config.rules : []).map((rule) => {
       if (!isPlainObject(rule) || isPlainObject(rule.highlight)) return rule;
       return { ...rule, highlight: clone(DEFAULT_HIGHLIGHT_CONFIG) };
+    });
+
+    return {
+      // 只升级到 3，由外层迁移链继续升到当前版本
+      schemaVersion: 3,
+      globalEnabled: config.globalEnabled !== false,
+      rules
+    };
+  }
+
+  function migrateFromV4(config) {
+    const rules = (Array.isArray(config.rules) ? config.rules : []).map((rule) => {
+      if (!isPlainObject(rule) || !isPlainObject(rule.titleRule)) return rule;
+      const titleRule = rule.titleRule;
+      if (Array.isArray(titleRule.rules)) return rule; // 已经是新结构
+
+      const hasPattern = typeof titleRule.pattern === 'string' && titleRule.pattern.trim() !== '';
+      return {
+        ...rule,
+        titleRule: {
+          enabled: titleRule.enabled === true,
+          rules: hasPattern
+            ? [
+                {
+                  pattern: titleRule.pattern,
+                  replacement:
+                    typeof titleRule.replacement === 'string' ? titleRule.replacement : '',
+                  description: ''
+                }
+              ]
+            : [],
+          testText: ''
+        }
+      };
     });
 
     return {
@@ -378,6 +489,9 @@
         };
         if (isPlainObject(rule && rule.highlight)) {
           normalized.highlight = rule.highlight;
+        }
+        if (isPlainObject(rule && rule.titleRule)) {
+          normalized.titleRule = rule.titleRule;
         }
         return normalized;
       })

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TabPilot",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "个人用 Firefox 标签页管理器：按规则自动归组、上色，并可在页面内显示分组标识。",
   "browser_specific_settings": {
     "gecko": {
@@ -20,13 +20,14 @@
   "content_scripts": [
     {
       "matches": ["*://*/*"],
-      "js": ["src/highlight.js", "src/content.js"],
+      "js": ["src/highlight.js", "src/title-rule.js", "src/content.js"],
       "run_at": "document_idle"
     }
   ],
   "background": {
     "scripts": [
       "src/highlight.js",
+      "src/title-rule.js",
       "src/store.js",
       "src/logger.js",
       "src/rules.js",
