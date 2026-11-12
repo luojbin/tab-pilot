@@ -20,7 +20,11 @@
     save: document.getElementById('save'),
     reload: document.getElementById('reload'),
     reset: document.getElementById('reset'),
-    addRule: document.getElementById('addRule')
+    addRule: document.getElementById('addRule'),
+    exportFile: document.getElementById('exportFile'),
+    copyJson: document.getElementById('copyJson'),
+    importFile: document.getElementById('importFile'),
+    importInput: document.getElementById('importInput')
   };
 
   if (!Store || !Rules) {
@@ -705,37 +709,125 @@
     }
   }
 
-  async function save() {
-    if (busy) return;
-
-    // 保存前统一展开简写，保证落盘内容与页面显示一致
+  async function persist(label) {
+    // 写入前统一展开简写，保证落盘内容与页面显示一致
     normalizeAllPatterns();
 
     const config = buildConfig();
     const checked = Store.validateConfig(config);
     if (checked.ok !== true) {
-      setStatus('error', '配置未保存，请修正以下问题：', checked.errors);
+      setStatus('error', `${label}失败，请修正以下问题：`, checked.errors);
       markInvalid(checked.errors);
-      return;
+      return false;
     }
 
+    const result = await Store.saveConfig(config);
+    if (result.ok !== true) {
+      setStatus('error', `${label}失败，请修正以下问题：`, result.errors);
+      markInvalid(result.errors);
+      return false;
+    }
+
+    markInvalid([]);
+    savedSnapshot = snapshot();
+    const stats = await sendSync();
+    const summary = stats && typeof stats.grouped === 'number'
+      ? `；同步完成：归组 ${stats.grouped} 个，跳过 ${stats.skipped} 个，失败 ${stats.failed} 个`
+      : '';
+    setStatus('ok', `${label}成功，共 ${config.rules.length} 个分组${summary}`);
+    return true;
+  }
+
+  async function save() {
+    if (busy) return;
     busy = true;
     els.save.disabled = true;
     try {
-      const result = await Store.saveConfig(config);
-      if (result.ok !== true) {
-        setStatus('error', '配置未保存，请修正以下问题：', result.errors);
-        markInvalid(result.errors);
-        return;
-      }
+      await persist('保存');
+    } finally {
+      busy = false;
+      els.save.disabled = false;
+    }
+  }
 
-      markInvalid([]);
-      savedSnapshot = snapshot();
-      const stats = await sendSync();
-      const summary = stats && typeof stats.grouped === 'number'
-        ? `；同步完成：归组 ${stats.grouped} 个，跳过 ${stats.skipped} 个，失败 ${stats.failed} 个`
-        : '';
-      setStatus('ok', `已保存 ${config.rules.length} 个分组${summary}`);
+  // ---------------- 备份与迁移 ----------------
+
+  /** 导出的是页面当前内容（含尚未保存的编辑）。 */
+  function exportableConfig() {
+    normalizeAllPatterns();
+    return buildConfig();
+  }
+
+  function exportFileName() {
+    const now = new Date();
+    const pad = (value) => String(value).padStart(2, '0');
+    return `tabpilot-config-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}.json`;
+  }
+
+  function exportToFile() {
+    const config = exportableConfig();
+    const text = `${JSON.stringify(config, null, 2)}\n`;
+    const blob = new Blob([text], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const name = exportFileName();
+
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+    setStatus('ok', `已导出 ${config.rules.length} 个分组到 ${name}`);
+  }
+
+  async function copyToClipboard() {
+    const config = exportableConfig();
+    try {
+      await navigator.clipboard.writeText(`${JSON.stringify(config, null, 2)}\n`);
+      setStatus('ok', `已复制 ${config.rules.length} 个分组的 JSON 到剪贴板`);
+    } catch (err) {
+      setStatus('warn', `复制失败，可以改用「导出 JSON 文件」：${String(err)}`);
+    }
+  }
+
+  function applyConfig(config) {
+    state.globalEnabled = config.globalEnabled !== false;
+    state.rules = config.rules.map((rule) => ({
+      ...rule,
+      patterns: Array.isArray(rule.patterns) ? rule.patterns.slice() : ['']
+    }));
+    els.globalEnabled.checked = state.globalEnabled;
+    state.selectedId = state.rules[0] ? state.rules[0].id : null;
+    persistSelected();
+    closeMenus();
+    renderList();
+    renderDetail();
+  }
+
+  async function importFromText(text, label) {
+    const parsed = Store.parseConfigText(text);
+    if (parsed.ok !== true) {
+      setStatus('error', `导入失败：${label} 不是合法的 TabPilot 配置`, parsed.errors);
+      return;
+    }
+
+    const config = parsed.config;
+    const confirmed = window.confirm(
+      `用导入的配置替换当前配置？\n\n来源：${label}\n分组数：${config.rules.length}`
+    );
+    if (!confirmed) {
+      setStatus('info', '已取消导入');
+      return;
+    }
+
+    applyConfig(config);
+    if (busy) return;
+    busy = true;
+    els.save.disabled = true;
+    try {
+      await persist('导入');
     } finally {
       busy = false;
       els.save.disabled = false;
@@ -801,6 +893,25 @@
   els.addRule.addEventListener('click', addRule);
   els.globalEnabled.addEventListener('change', () => {
     state.globalEnabled = els.globalEnabled.checked;
+  });
+
+  els.exportFile.addEventListener('click', () => {
+    exportToFile();
+  });
+  els.copyJson.addEventListener('click', () => {
+    copyToClipboard().catch((err) => setStatus('error', `复制失败：${String(err)}`));
+  });
+  els.importFile.addEventListener('click', () => {
+    els.importInput.click();
+  });
+  els.importInput.addEventListener('change', () => {
+    const file = els.importInput.files && els.importInput.files[0];
+    els.importInput.value = '';
+    if (!file) return;
+    file
+      .text()
+      .then((text) => importFromText(text, file.name))
+      .catch((err) => setStatus('error', `读取文件失败：${String(err)}`));
   });
 
   // 点空白处或按 Esc 收起颜色面板

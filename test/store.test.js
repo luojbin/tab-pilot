@@ -210,3 +210,34 @@ test('parseConfigText：空文本与非字符串被拒绝', () => {
   assert.equal(parseConfigText(null).ok, false);
   assert.equal(parseConfigText(123).ok, false);
 });
+
+test('导出文本可被导入解析（round-trip）', () => {
+  const config = validConfig();
+  config.rules.push({
+    id: 'code-github',
+    enabled: true,
+    name: '代码',
+    color: 'blue',
+    collapsed: false,
+    minTabs: 3,
+    note: '攒够 3 个再归组',
+    patterns: ['*://*.github.com/*', '*://gitlab.com/*']
+  });
+
+  const text = `${JSON.stringify(config, null, 2)}\n`;
+  const parsed = parseConfigText(text);
+
+  assert.equal(parsed.ok, true);
+  assert.deepEqual(parsed.config, config);
+});
+
+test('导入旧格式文件会先迁移再落库', () => {
+  const text = JSON.stringify(legacyConfig(), null, 2);
+  const parsed = parseConfigText(text);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.config.schemaVersion, 2);
+  assert.deepEqual(
+    parsed.config.rules.map((rule) => rule.id),
+    ['dev-localhost', 'code-github']
+  );
+});

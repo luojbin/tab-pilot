@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TabPilot",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "个人用 Firefox 标签页管理器：按 JSON 规则自动归组与上色。",
   "browser_specific_settings": {
     "gecko": {

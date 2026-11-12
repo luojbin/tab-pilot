@@ -332,6 +332,12 @@
 
   .empty { padding: 32px 8px; text-align: center; color: var(--muted); }
 
+  /* ---------- 备份与迁移 ---------- */
+  .backup { margin-top: 22px; padding-top: 16px; border-top: 1px dashed var(--border); }
+  .backup h2 { margin: 0 0 10px; font-size: 13px; font-weight: 600; color: var(--muted); }
+  .backup-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .backup .hint.small { margin-top: 10px; }
+
   /* ---------- 状态区：左侧一条提示线 ---------- */
   .status {
     margin-top: 20px;
@@ -381,6 +387,19 @@
 
     <section class="detail" id="detail"></section>
   </div>
+
+  <section class="backup">
+    <h2>备份与迁移</h2>
+    <div class="backup-actions">
+      <button id="exportFile" type="button">导出 JSON 文件</button>
+      <button id="copyJson" type="button">复制 JSON</button>
+      <button id="importFile" type="button">导入 JSON…</button>
+      <input type="file" id="importInput" accept="application/json,.json" hidden>
+    </div>
+    <p class="hint small">
+      导出的内容包含全局开关与全部规则（含未保存的编辑）。导入会校验文件并用它替换当前配置，确认后立即保存并同步已打开的标签页；旧格式（v1）配置会自动迁移。
+    </p>
+  </section>
 
   <section id="status" class="status" role="status" aria-live="polite"></section>
 </main>
