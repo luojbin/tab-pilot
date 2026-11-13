@@ -4,7 +4,7 @@
  * - manifests/base.json 放共享字段
  * - manifests/manifest.<target>.json 放该目标独有的字段
  * - 版本号统一从 package.json 注入
- * - 产物：dist/<target>/ 与 output/tabpilot-<version>[-chromium].zip
+ * - 产物：dist/<target>/ 与 output/tabpilot-<version>-<target>.zip
  *
  * 用法：
  *   node scripts/build-targets.mjs            # 两个目标都构建
@@ -50,10 +50,12 @@ function zipDirectory(dir, outFile) {
     const archive = new ZipArchive({ zlib: { level: 9 } });
 
     output.on('close', resolve);
+    output.on('error', reject);
     archive.on('error', reject);
+    archive.on('warning', reject);
     archive.pipe(output);
     archive.directory(dir, false);
-    archive.finalize();
+    archive.finalize().catch(reject);
   });
 }
 
@@ -102,6 +104,9 @@ async function build(target) {
 
 const requested = process.argv.slice(2);
 const targets = requested.length > 0 ? requested : Object.keys(TARGETS);
+for (const target of targets) {
+  if (!TARGETS[target]) throw new Error(`未知构建目标：${target}`);
+}
 for (const target of targets) {
   await build(target);
 }

@@ -9,7 +9,7 @@
 - **运行方式**：纯本地，无网络请求、不上传任何数据
 - **配置**：全部在可视化配置页里完成，支持导入 / 导出 JSON
 
-> 开发进度、架构、版本规划等开发文档见 [docs/PRD.md](docs/PRD.md)。
+> 开发、构建、调试及发布见 [CONTRIBUTING.md](CONTRIBUTING.md)；产品需求与验收见 [docs/PRD.md](docs/PRD.md)。
 
 ---
 
@@ -34,26 +34,21 @@ Chrome Web Store / Edge Add-ons 尚未上架。本地测试请先按下一节构
 ### 从源码构建（开发 / 本地测试）
 
 ```bash
-npm install
+npm ci
 npm run build          # 同时构建 Firefox 与 Chromium
 npm run build:firefox  # 或者只构建其中一个
 npm run build:chromium
 ```
 
-源码使用 ES Module（`import` / `export`），构建脚本通过 esbuild 将后台、网页内容脚本和配置页三个入口分别打包为独立的普通 JS 脚本。浏览器加载的是 `dist/` 中的产物；修改源码后需要重新构建并重载扩展。
+构建完成后，Firefox 加载 `dist/firefox/manifest.json`，Chrome / Edge 加载 `dist/chromium/`。扩展 ZIP 输出到 `output/`。修改源码后需要重新构建、重载扩展并刷新目标网页。
 
-新增依赖时在使用它的文件中直接 `import`，无需在 manifest 或 HTML 中维护基础脚本的加载顺序。`src/platform/browser.js` 统一提供 Firefox / Chromium 的浏览器 API；后台保留 `TabPilotDebug` 控制台调试入口。
-
-| 目标 | 目录 | 压缩包 |
-|---|---|---|
-| Firefox | `dist/firefox/` | `output/tabpilot-<version>-firefox.zip` |
-| Chrome / Edge | `dist/chromium/` | `output/tabpilot-<version>-chromium.zip` |
+架构、测试、产物说明及 Mozilla 审核人员的重建步骤见 [开发指南](CONTRIBUTING.md)。发布使用 GitHub 自动提供的源码 ZIP，签名后的 Firefox XPI 补充到对应 Release；详细步骤见 [发布与 Mozilla 源码审核](CONTRIBUTING.md#发布与-mozilla-源码审核)。
 
 **Firefox 临时加载**：`about:debugging#/runtime/this-firefox` → 「临时载入附加组件」→ 选择 `dist/firefox/manifest.json`。
 
 **Chrome / Edge 加载**：打开 `chrome://extensions`（Edge 为 `edge://extensions`）→ 打开「开发者模式」→ 「加载已解压的扩展程序」→ 选择 `dist/chromium` 目录。
 
-> Firefox 的临时加载在浏览器重启或重新载入后消失，配置也会清空；Chrome / Edge 的「加载已解压的扩展程序」会一直保留，直到手动移除。Firefox 重载前建议先用「导出 JSON」备份。
+> Firefox 的临时扩展在浏览器重启后会被卸载，不应依赖其配置长期保留；Chrome / Edge 的「加载已解压的扩展程序」会一直保留，直到手动移除。Firefox 重载前建议先用「导出 JSON」备份。
 
 ## 快速开始
 
@@ -137,7 +132,7 @@ npm run build:chromium
 
 ### 启用 / 停用
 
-- 单条规则：右栏「启用」开关，或左栏列表里的状态
+- 单条规则：右栏「启用」开关；左栏列表仅展示状态
 - 全局：配置页左上角「启用自动归组」，关掉后所有规则暂停
 
 ## 页面内标识
@@ -217,7 +212,7 @@ npm run build:chromium
 按顺序检查：
 
 1. 分组和全局开关是否都开着
-2. 当前 URL 是否命中分组里的某条匹配路径（简写保存后会被展开，可以展开左栏分组看实际路径）
+2. 当前 URL 是否命中分组里的某条匹配路径（简写保存后会被展开，可在右栏匹配路径中查看实际模式）
 3. 是否设置了 `minTabs` 而当前窗口内命中数量不够
 4. 标签页是否已经在**别的**分组里（插件不会把已分组的标签拽走）
 5. 页面是保存配置之前就打开的？点一下工具栏的 TabPilot 按钮补同步，或刷新页面
@@ -246,13 +241,13 @@ npm run build:chromium
 
 ### 重启浏览器后配置没了？
 
-Firefox 的临时加载随浏览器重启消失，配置也随之清空；先用「导出 JSON」备份，重载扩展后「导入 JSON…」。
+Firefox 的临时扩展在浏览器重启后会被卸载，不应依赖其配置长期保留；先用「导出 JSON」备份，重载扩展后「导入 JSON…」。
 
 Chrome / Edge 的「加载已解压的扩展程序」不会因重启消失，配置会保留；只有手动移除扩展时才会丢失。
 
 ### 安装时提示「可访问所有网站的数据」？
 
-页面内标识和标签页改名需要 content script 注入页面。插件只用当前网址做匹配，不读取页面内容、不发起网络请求；Firefox 包的 manifest 里声明了 `data_collection_permissions.required = ["none"]`。
+页面内标识和标签页改名需要 content script 注入页面。插件用网址匹配规则，按需读取和改写页面标题；不采集页面正文、不发起网络请求。Firefox 包的 manifest 声明了 `data_collection_permissions.required = ["none"]`。
 
 ## 隐私与权限
 
