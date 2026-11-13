@@ -121,9 +121,13 @@
 
   const titleState = { input: null, applied: null };
   let watchedTitleRule = null;
+  let watchedRuleSignature = null;
   let lastTriedTitle = null;
   let titleObserver = null;
+  let observedTitleRoot = null;
   let titleWatchdog = null;
+  let loggedNoMatch = false;
+  let loggedInvalid = false;
 
   /** 停止监听并清掉改写状态（分组不再匹配时用）。 */
   function stopTitleWatch() {
@@ -136,7 +140,11 @@
       titleWatchdog = null;
     }
     watchedTitleRule = null;
+    watchedRuleSignature = null;
     lastTriedTitle = null;
+    observedTitleRoot = null;
+    loggedNoMatch = false;
+    loggedInvalid = false;
   }
 
   /** 恢复被我们改过的标题。 */
@@ -166,11 +174,20 @@
 
     const outcome = TitleRule.applyTitleRules({ titleRule: rule }, current);
     if (!outcome.ok || !outcome.matched) {
-      if (!outcome.ok) console.warn('[TabPilot] 标题规则无效', outcome.error || outcome.reason);
-      else console.info('[TabPilot] 标题规则未命中：', outcome.reason, '（等页面设置标题后会重试）');
+      if (!outcome.ok) {
+        if (!loggedInvalid) {
+          loggedInvalid = true;
+          console.warn('[TabPilot] 标题规则无效', outcome.error || outcome.reason);
+        }
+      } else if (!loggedNoMatch) {
+        loggedNoMatch = true;
+        console.info('[TabPilot] 标题规则未命中：', outcome.reason, '（等页面设置标题后会重试）');
+      }
       return false;
     }
 
+    loggedNoMatch = false;
+    loggedInvalid = false;
     titleState.input = current;
     titleState.applied = outcome.result;
     if (current !== outcome.result) {
@@ -180,26 +197,58 @@
     return true;
   }
 
+  /** 观察 <head> 即可覆盖 <title> 的文本变化与替换，回调频率远低于整个文档。 */
+  function ensureTitleObserver() {
+    const target = document.head || document.documentElement;
+    if (!target) return;
+    if (!titleObserver) titleObserver = new MutationObserver(() => attemptTitle());
+    if (target === observedTitleRoot) return;
+    titleObserver.disconnect();
+    titleObserver.observe(target, {
+      subtree: true,
+      childList: true,
+      characterData: true
+    });
+    observedTitleRoot = target;
+  }
+
   /**
    * 监听标题变化并持续尝试。
    * 只要分组开启了标题规则就启动，不管当前标题是否命中——
    * 页面常在加载后才把标题改成最终值。
    */
   function watchTitleChanges(titleRule) {
+    const signature = JSON.stringify(titleRule);
+
+    // 同一页面切换规则时，旧标题是旧规则改的，先还原再按新规则应用。
+    if (
+      watchedRuleSignature !== null &&
+      signature !== watchedRuleSignature &&
+      titleState.applied !== null &&
+      document.title === titleState.applied
+    ) {
+      document.title = titleState.input;
+      titleState.input = null;
+      titleState.applied = null;
+    }
+
+    if (signature !== watchedRuleSignature) {
+      watchedRuleSignature = signature;
+      loggedNoMatch = false;
+      loggedInvalid = false;
+    }
+
     watchedTitleRule = titleRule;
     lastTriedTitle = null;
 
-    if (!titleObserver && document.documentElement) {
-      titleObserver = new MutationObserver(() => attemptTitle());
-      titleObserver.observe(document.documentElement, {
-        subtree: true,
-        childList: true,
-        characterData: true
-      });
-    }
+    ensureTitleObserver();
 
     if (!titleWatchdog) {
-      titleWatchdog = setInterval(() => attemptTitle(), 1500);
+      titleWatchdog = setInterval(() => {
+        // 页面可能整体替换 <head>，定期把观察器重新挂到当前的 head 上
+        ensureTitleObserver();
+        attemptTitle();
+      }, 1500);
     }
 
     attemptTitle();
