@@ -306,10 +306,31 @@
   }
 
   // 配置页是独立上下文，保存后通过消息请求一次全量同步
-  browser.runtime.onMessage.addListener((message, sender) => {
+  // 用 sendResponse + return true 的写法：Firefox 和 Chromium 都支持，
+  // 避免依赖「监听器返回 Promise」这种只在 Firefox 生效的行为。
+  browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (!message || typeof message !== 'object') return undefined;
-    if (message.type === 'sync-all') return syncAll();
-    if (message.type === 'page-style') return resolvePageStyle(sender && sender.tab, message.url);
+
+    if (message.type === 'sync-all') {
+      syncAll()
+        .then((stats) => sendResponse(stats))
+        .catch((err) => {
+          Logger.error('手动同步失败', String(err));
+          sendResponse(null);
+        });
+      return true;
+    }
+
+    if (message.type === 'page-style') {
+      resolvePageStyle(sender && sender.tab, message.url)
+        .then((style) => sendResponse(style))
+        .catch((err) => {
+          Logger.error('页面标识查询失败', String(err));
+          sendResponse(null);
+        });
+      return true;
+    }
+
     return undefined;
   });
 

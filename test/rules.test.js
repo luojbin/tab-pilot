@@ -13,7 +13,7 @@ const {
   expandPattern,
   expandPatterns,
   DEFAULT_MIN_TABS
-} = require('../src/rules.js');
+} = require('../src/core/rules.js');
 
 function tab(id, url, windowId = 1) {
   return { id, url, windowId, groupId: -1 };

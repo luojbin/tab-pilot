@@ -7,7 +7,7 @@ const {
   compileEntry,
   applyTitleRules,
   applyTitleBatch
-} = require('../src/title-rule.js');
+} = require('../src/core/title-rule.js');
 
 function spec(rules, extras) {
   return {

@@ -2,9 +2,10 @@
 
 <img src="icons/icon-128.png" width="96" height="96" alt="TabPilot 图标" align="right">
 
-Firefox 标签页管理器：按规则自动把页面归入分组、给分组上色，还能在页面内显示分组标识、按规则改写标签页标题。
+标签页管理器：按规则自动把页面归入分组、给分组上色，还能在页面内显示分组标识、按规则改写标签页标题。
 
-- **适用**：Firefox 140 及以上（依赖 `tabGroups` API 与数据收集声明字段）
+- **适用**：Firefox 140+、Chrome / Edge（Chromium 116+）
+- **依赖**：`tabGroups` API（各浏览器版本要求不同）
 - **运行方式**：纯本地，无网络请求、不上传任何数据
 - **配置**：全部在可视化配置页里完成，支持导入 / 导出 JSON
 
@@ -26,11 +27,23 @@ Firefox 标签页管理器：按规则自动把页面归入分组、给分组上
 
 > 正式版 Firefox 只允许安装已签名的扩展。未签名的 zip 无法安装，只能在下一步里临时加载。
 
-### 临时加载（开发 / 自用）
+### 从源码构建（开发 / 本地测试）
 
-1. `about:support` 确认 Firefox ≥ 140
-2. 打开 `about:debugging#/runtime/this-firefox`
-3. 「临时载入附加组件」→ 选择本目录的 `manifest.json`
+```bash
+npm install
+npm run build
+```
+
+会生成两个目录和两个压缩包：
+
+| 目标 | 目录 | 压缩包 |
+|---|---|---|
+| Firefox | `dist/firefox/` | `output/tabpilot-<version>-firefox.zip` |
+| Chrome / Edge | `dist/chromium/` | `output/tabpilot-<version>-chromium.zip` |
+
+**Firefox 临时加载**：`about:debugging#/runtime/this-firefox` → 「临时载入附加组件」→ 选择 `dist/firefox/manifest.json`。
+
+**Chrome / Edge 加载**：打开 `chrome://extensions`（Edge 为 `edge://extensions`）→ 打开「开发者模式」→ 「加载已解压的扩展程序」→ 选择 `dist/chromium` 目录。
 
 临时加载的扩展在**浏览器重启或重新载入后消失，配置也会清空**。先用「导出 JSON」备份，重载后再「导入 JSON…」恢复。
 
@@ -246,7 +259,7 @@ Firefox 标签页管理器：按规则自动把页面归入分组、给分组上
 
 ## 已知限制
 
-- 目前仅支持 **Firefox 140+**；Chrome / Edge 兼容已列入 v1.1 规划
+- 支持 **Firefox 140+** 与 **Chrome / Edge（Chromium 116+）**；Chromium 侧是新支持的平台，`tabGroups` 的折叠等细节可能与 Firefox 略有差异
 - 页面内标识在少数强制改写 `z-index` 或使用顶层 iframe 的页面可能被遮住
 - 标签页改名靠改 `document.title`：页面自己反复改标题时会跟着重新应用；正则**不支持标志位**（固定区分大小写、只替换第一个匹配），需要忽略大小写可以用 `[Jj]ira` 这种写法
 - 不区分 Firefox 容器（Container Tabs）：同一 URL 在不同容器里仍进同一分组

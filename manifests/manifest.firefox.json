@@ -1,0 +1,22 @@
+{
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "tabpilot@local",
+      "strict_min_version": "140.0",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
+    }
+  },
+  "background": {
+    "scripts": [
+      "src/core/highlight.js",
+      "src/core/title-rule.js",
+      "src/app/store.js",
+      "src/core/logger.js",
+      "src/core/rules.js",
+      "src/app/actions.js",
+      "src/app/background.js"
+    ]
+  }
+}

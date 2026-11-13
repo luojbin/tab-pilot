@@ -100,7 +100,7 @@
       return [
         {
           ok: false,
-          error: '当前 Firefox 不支持 tabs.group / tabGroups API（需要 Firefox 139+）'
+          error: '当前浏览器不支持 tabs.group / tabGroups API（Firefox 140+ / Chromium 116+）'
         }
       ];
     }

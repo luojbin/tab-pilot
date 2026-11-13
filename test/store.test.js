@@ -11,7 +11,7 @@ const {
   parseConfigText,
   colorOf,
   clone
-} = require('../src/store.js');
+} = require('../src/app/store.js');
 
 function validConfig() {
   return clone(DEFAULT_CONFIG);

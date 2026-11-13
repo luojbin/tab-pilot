@@ -10,7 +10,7 @@ const {
   borderStyle,
   bannerMetrics,
   bannerStyle
-} = require('../src/highlight.js');
+} = require('../src/core/highlight.js');
 
 test('normalizeHighlight：缺省时给出一份「关闭」规格', () => {
   assert.deepEqual(normalizeHighlight({}), DEFAULT_HIGHLIGHT);

@@ -1,12 +1,12 @@
-# PRD：Firefox 个人环境标签管理器（项目名：TabPilot）
+# PRD：多浏览器环境标签管理器（项目名：TabPilot）
 
 | 项         | 内容                                                         |
 | ---------- | ------------------------------------------------------------ |
-| 版本       | v1.0.1（重新上传）                                             |
+| 版本       | v1.1.0（多浏览器）                                             |
 | 作者       | 你                                                           |
-| 状态       | 已发布，进入自用验收                                          |
-| 目标浏览器 | Firefox 140+（仅此，多浏览器为后续计划）                     |
-| 技术栈     | 原生 WebExtensions（HTML/CSS/JS）+ Manifest V3，无构建、无框架 |
+| 状态       | v1.1.0 开发中：Firefox 已发布，Chromium 待实测                  |
+| 目标浏览器 | Firefox 140+、Chrome / Edge（Chromium 116+）                  |
+| 技术栈     | 原生 WebExtensions（HTML/CSS/JS）+ Manifest V3，无框架；构建用 Node 脚本 |
 | 存储       | `browser.storage.local`，封装存储层                          |
 
 版本号遵循 [SemVer 2.0](https://semver.org/lang/zh-CN/) 三段式 `MAJOR.MINOR.PATCH`；插件版本与配置格式版本 `schemaVersion` 相互独立：前者表示功能演进，后者只在配置 JSON 结构发生不兼容变更时递增。
@@ -22,7 +22,7 @@
 3. **不可迁移**：配置无法备份/恢复，换机器成本高。
 4. **权限冗余**：多个插件叠加申请权限，隐私面扩大。
 
-目标：用一个自制 Firefox 插件，以**统一规则引擎**收编 80% 高频场景，其余低频操作保留手动。
+目标：用一个自制浏览器扩展，以**统一规则引擎**收编 80% 高频场景，其余低频操作保留手动。
 
 ## 2. 目标与非目标
 
@@ -46,7 +46,7 @@
 
 ## 3. 用户与场景
 
-**唯一目标用户**：你自己（后端开发者，Firefox 主力，日常多环境切换）。
+**目标用户**：需要频繁在多环境之间切换的开发者，日常使用 Firefox / Chrome / Edge。
 
 核心场景：
 
@@ -231,9 +231,9 @@ manifest.json      MV3，background.scripts（非 service worker）+ content_scr
 | v0.3.0   | 配置导入/导出：工具栏「导出 JSON」「导入 JSON…」，导入校验（v1 自动迁移）、覆盖确认、导入后自动同步；日志页取消（改为控制台辅助） | 换机器 / 重载后可恢复配置 |
 | v0.4.0   | 页面内标识：分组开关；边框（上下左右可选、宽度可调、颜色取自分组）；banner（上下左右 + 四角斜向、显示分组名、尺寸/字号可调）；配置结构升级到 `schemaVersion 3` 并自动迁移 | 命中分组的页面无刷新即显示标识 |
 | v0.5.0   | 标签页名规则：每个分组可配置多条命名规则（源文本 / 目标文本 / 描述），按顺序匹配、命中第一条即停止；配置页多行测试并保存测试文本；配置结构升级到 `schemaVersion 5` 并自动迁移 | 命中页面的标题按首条命中规则改写，测试文本可复用 |
-| v1.0.0   | 正式发布：功能集合与 v0.5.0 相同；配置格式重新基线为 `schemaVersion 1`，开发期过渡格式（2–5）作废、不再迁移 | 发布 + 连续自用一周、卸载一个旧插件 |
+| v1.0.0   | 正式发布：功能集合与 v0.5.0 相同；配置格式重新基线为 `schemaVersion 1`，开发期过渡格式（2–5）作废、不再迁移 | 发布 + 连续使用一周、卸载一个旧插件 |
 | v1.0.1   | 重新打包上传：AMO 上 1.0.0 已上传过并删除，版本号不可复用；内容与 1.0.0 相同 | 与 1.0.0 相同 |
-| v1.1.0   | 多浏览器兼容（Chrome / Edge）与多目标构建：共享 `src/`，按目标生成 manifest；Firefox 用 web-ext，Chromium 用通用 zip；兼容 `browser` 命名空间、MV3 service worker、tabGroups 差异 | Chrome / Edge 上规则、分组、标识、标题规则行为与 Firefox 一致 |
+| v1.1.0   | 多浏览器兼容（Chrome / Edge）与多目标构建：`manifests/base.json` + 目标覆盖；`browser` shim；Chromium service worker 入口；`archiver` 双目标打包 | 已实现；Firefox 通过 lint，Chromium 待实机验证 |
 | v1.2.0+  | 页面内标识的更多样式；标题规则支持正则标志位等增强           | 不阻塞主线              |
 
 > v0.1–v0.5 中出现的 `schemaVersion` 递增与迁移链已在 v1.0.0 移除：1.0 起配置格式基线重新从 1 算起，历史格式不再兼容（见 §5 基线说明）。表中的“自动迁移”仅记录当时的实现。
@@ -243,7 +243,7 @@ manifest.json      MV3，background.scripts（非 service worker）+ content_scr
 - 第 1 周：v0.1.0 + v0.2.0（周末 2h 集中 + 2 个晚 20min）
 - 第 2 周：v0.3.0
 - 第 3 周：v0.4.0
-- 第 4 周：v1.0.0 自用验证 + 复盘
+- 第 4 周：v1.0.0 使用验证 + 复盘
 - 每周稳定 3–4 小时，不占用睡眠。
 
 ## 10. 风险与开放问题
@@ -251,7 +251,7 @@ manifest.json      MV3，background.scripts（非 service worker）+ content_scr
 | 风险                                     | 应对                                                         |
 | ---------------------------------------- | ------------------------------------------------------------ |
 | Firefox 版本 < 140 无 `tabGroups` / 不支持数据收集声明 | 开工前 `about:support` 确认；低于则升级或降级为高亮/标签管理 |
-| `tabGroups` 折叠行为与未来 Chrome 不一致 | 本版仅 Firefox，记录差异，迁移时处理                         |
+| `tabGroups` 折叠行为在不同浏览器不一致 | 记录差异，按浏览器分支补兼容                         |
 | 标签页名规则被页面覆盖                 | 页面加载/路由变化后重新应用；关闭规则时恢复原标题；已知限制写进 README |
 | 规则冲突导致抖动                         | 优先级 + 单分组规则 + 幂等 + 日志                            |
 | 碎片时间导致中断                         | `NEXT.md` 记录下一步；每晚最低 5 分钟不断线                  |
@@ -289,49 +289,63 @@ manifest.json      MV3，background.scripts（非 service worker）+ content_scr
 ### 13.1 目录与分层
 
 ```
-manifest.json          MV3，background.scripts（非 service worker）+ content_scripts
+manifests/
+  base.json            共享 manifest 字段
+  manifest.firefox.json  浏览器专用字段：background.scripts + browser_specific_settings
+  manifest.chromium.json Chromium 专用字段：background.service_worker
 src/
-  background.js        事件监听 + 防抖调度：唯一做编排的地方；也负责回答页面标识 / 标题规则查询
-  rules.js             纯函数规则引擎：match / explain，可脱离浏览器单测
-  actions.js           动作执行：唯一调用 tabs.group / tabGroups.* 的层
-  store.js             存储封装：storage.local 读写 + schema 校验 + 默认配置（基线 schemaVersion 1）
-  highlight.js         页面内标识规格：默认值、边界收敛、几何（background / content / 配置页共用）
-  title-rule.js        标签页名规则：正则编译与替换（background / content / 配置页共用）
-  content.js           content script：绘制边框与 banner、改写页面标题
-  logger.js            日志：控制台 + 内存环形缓冲（开发调试辅助，不做独立日志页）
-  options.html         配置页：两栏布局（左分组列表 / 右分组详情）
-  options.js           配置页逻辑（选中、排序、删除、路径补全、页面内标识、标题规则、校验提示、保存后同步）
+  core/                纯逻辑，不依赖 browser / DOM
+    rules.js           规则引擎：match / explain，可脱离浏览器单测
+    highlight.js       页面内标识规格：默认值、边界收敛、几何
+    title-rule.js      标签页名规则：正则编译与替换
+    logger.js          日志：控制台 + 内存环形缓冲
+  app/                 业务与浏览器 API
+    store.js           存储封装：storage.local 读写 + schema 校验 + 默认配置（基线 schemaVersion 1）
+    actions.js         动作执行：唯一调用 tabs.group / tabGroups.* 的层
+    background.js      事件监听 + 防抖调度：唯一做编排的地方
+    content.js         content script：绘制边框与 banner、改写页面标题
+  ui/
+    options.html       配置页：两栏布局（左分组列表 / 右分组详情）
+    options.js         配置页逻辑（选中、排序、删除、路径补全、页面内标识、标题规则、校验提示、保存后同步）
+  platform/
+    chromium/
+      browser-shim.js  把 chrome 命名空间暴露为 browser（仅 Chromium 加载）
+      background.js    Chromium MV3 service worker 入口（importScripts 加载 core/app）
 test/
   rules.test.js        规则匹配、顺序优先级、阈值、窗口隔离、路径补全
   store.test.js        配置校验（minTabs / 颜色 / highlight / titleRule）与默认值
   highlight.test.js    页面内标识规格：默认值、边界收敛、过滤去重、几何
   title-rule.test.js   命名规则：顺序匹配、捕获组重排、非法正则、多行批处理
   background.test.js   编排链路：事件、同步、工具栏、消息、页面标识、标题规则、调试入口
-web-ext-config.mjs     web-ext 配置：打包忽略规则、产物目录
-package-lock.json      锁定 web-ext 版本（devDependency）
+scripts/build-targets.mjs 多目标构建：合并 manifest、复制 dist、archiver 打包
+package-lock.json      锁定构建依赖版本（web-ext / archiver）
+dist/                  构建产物（gitignored）：dist/firefox、dist/chromium
 icons/                 扩展图标：icon-{16,32,48,96,128}.png
 docs/PRD.md            本文件
 ```
 
-分层意图：规则引擎与 `browser.*` 解耦（只吃 tab / rules / context），存储层可整体替换，动作为唯一直接碰浏览器分组 API 的地方。以后换 IndexedDB、加 Chrome 兼容层都只改一层。
+分层意图：规则引擎与 `browser.*` 解耦（只吃 tab / rules / context），存储层可整体替换，动作为唯一直接碰浏览器分组 API 的地方。以后换 IndexedDB、加新的浏览器平台都只改对应一层。
 
 ### 13.2 常用命令
 
 ```bash
-npm install     # 安装开发依赖（web-ext）
-npm test        # 119 个单测（node:test）
-npm run build   # web-ext build，生成 output/tabpilot-<version>.zip
-npm run lint    # web-ext lint，检查 manifest / API 兼容性等
+npm install           # 安装开发依赖（web-ext / archiver）
+npm test              # 119 个单测（node:test）
+npm run build         # 构建 Firefox + Chromium 两个目标
+npm run build:firefox # 只构建 Firefox
+npm run build:chromium# 只构建 Chromium
+npm run lint          # web-ext lint 检查 dist/firefox
 ```
 
-- 无依赖、无构建，浏览器里也可以直接加载源码目录。
-- 改版本号时同步 `manifest.json` 与 `package.json` 两处。
+- 版本号只在 `package.json` 维护，构建时注入各目标的 manifest。
+- Firefox 与 Chromium 共用 `src/`，差异只在 `manifests/` 和构建脚本里。
 - 有单测的是纯逻辑（规则引擎、配置校验、编排链路、标识规格、标题规则）；`options.js` 是纯 DOM 绑定，改动后手动确认页面与保存流程。
 
 ### 13.3 本地加载与验证
 
 1. `about:support` 确认 Firefox 版本 ≥ 140（`tabGroups` API 与 `data_collection_permissions` 字段依赖）。
-2. 打开 `about:debugging#/runtime/this-firefox` → 「临时载入附加组件」→ 选择 `manifest.json`（或 `npm run build` 生成的 zip）。
+2. 运行 `npm run build`，打开 `about:debugging#/runtime/this-firefox` → 「临时载入附加组件」→ 选择 `dist/firefox/manifest.json`。
+   Chromium 则在 `chrome://extensions` / `edge://extensions` 打开开发者模式，加载 `dist/chromium` 目录。
 3. 打开 3 个 `localhost` 页面，预期全部进入「开发」组且为绿色。
 4. 在 `about:debugging` 里点插件的「检查」，控制台应能看到每次命中的日志。
 5. `about:addons` → TabPilot → 首选项打开配置页，加一条 github 规则并保存，确认已打开标签立刻被同步。
@@ -380,13 +394,14 @@ npm run lint    # web-ext lint，检查 manifest / API 兼容性等
 
 ### 13.6 打包与发布
 
-- `npm run build` 使用官方 `web-ext build` 打包：只收 `manifest.json`、`LICENSE`、`src/`、`icons/`，产物为 `output/tabpilot-<version>.zip`；忽略规则写在 `web-ext-config.mjs`。
-- `npm run lint` 调用 `web-ext lint`，用于提交 AMO 前检查 manifest 与 API 兼容性问题。
+- `npm run build` 生成两个目标：`dist/firefox/` + `output/tabpilot-<version>-firefox.zip`，`dist/chromium/` + `output/tabpilot-<version>-chromium.zip`。
+- Firefox 继续用 `web-ext lint` / AMO 签名；Chromium 包是普通 zip，不需要签名，同一份可上传 Chrome Web Store 和 Edge Add-ons。
+- `npm run lint` 只检查 `dist/firefox`，Chromium manifest 的合法性由上传时的商店校验兜底。
 - 正式版 Firefox 只安装已签名扩展：未签名 zip 只能临时加载；正常安装需提交 AMO 签名（listed 上架或 unlisted 自分发），下载签名后的 `.xpi` 安装。
 - manifest 已声明 `browser_specific_settings.gecko.data_collection_permissions.required = ["none"]`（AMO 新扩展必填）。
 - 每次上传新版本必须递增版本号，且 `manifest.json` 与 `package.json` 保持一致。
 
-## 14. 多浏览器兼容与多目标构建（v1.1.0 规划）
+## 14. 多浏览器兼容与多目标构建（v1.1.0）
 
 ### 14.1 目标与范围
 
@@ -394,31 +409,32 @@ npm run lint    # web-ext lint，检查 manifest / API 兼容性等
 - 新增 **Chrome / Edge**（Chromium MV3）支持；Safari 暂不涉及。
 - 目标是同一套规则、同一份配置，在三个浏览器上行为一致（受各浏览器 tabGroups 能力差异约束）。
 
-### 14.2 兼容层
+### 14.2 兼容层（已实现）
 
 | 差异点 | 处理方式 |
 |---|---|
-| `browser` vs `chrome` 命名空间 | 引入轻量 shim（`globalThis.browser = globalThis.browser ?? chrome`）或 `webextension-polyfill`，优先 shim，避免额外运行时依赖 |
-| 后台形态 | Firefox 用 `background.scripts`；Chromium MV3 用 `background.service_worker`。按目标生成 manifest，后台逻辑保持单文件入口 |
-| manifest 差异 | Firefox 的 `browser_specific_settings`（id、`data_collection_permissions`、`strict_min_version`）只进 Firefox 包；Chromium 包移除，避免未知字段警告 |
-| tabGroups API | 两边都声明 `tabGroups` 权限；按 `chrome.tabGroups` / `browser.tabGroups` 的实际行为补齐差异（颜色枚举、折叠、`tabs.group` 参数） |
-| options 页 | `options_ui.open_in_tab` 两边都支持，页面代码无需拆分 |
-| content script | 页面标识与标题规则复用现有 `content.js`，仅注意 Chromium 的注入时机与服务端渲染页面 |
+| `browser` vs `chrome` 命名空间 | `src/platform/chromium/browser-shim.js` 只在 Chromium 目标加载：后台由 service worker 入口先加载，content script 由 Chromium manifest 单独声明，options 页由构建脚本注入；Firefox 包不含这个文件 |
+| 后台形态 | Firefox 用 `background.scripts`；Chromium 用 `src/platform/chromium/background.js` 作为 service worker，`importScripts` 按同样顺序加载后台代码 |
+| 消息协议 | 后台的 `runtime.onMessage` 改为 `sendResponse` + `return true`，Firefox 与 Chromium 都支持；不再依赖「监听器返回 Promise」 |
+| manifest 差异 | Firefox 的 `browser_specific_settings` 与 `background.scripts` 只进 Firefox manifest；Chromium manifest 使用 `service_worker` + `minimum_chrome_version`，并单独声明带 shim 的 `content_scripts` |
+| tabGroups API | 两边都声明 `tabGroups` 权限，共用 `actions.js`；折叠等行为差异待 Chromium 实测确认 |
+| options 页 / content script | 同一份 `options.html` 与 `content.js`，只额外加载 shim |
 
-### 14.3 构建结构
+### 14.3 构建结构（已实现）
 
 ```
-src/                        共享代码（现有分层不变）
-manifests/
-  manifest.firefox.json     含 browser_specific_settings
-  manifest.chrome.json      含 service_worker，移除 Firefox 专有字段
-scripts/build-targets.mjs   生成 dist/firefox、dist/chrome 并分别打包
+manifests/base.json           共享字段（name、permissions、action、icons、content_scripts）
+manifests/manifest.firefox.json   background.scripts + browser_specific_settings
+manifests/manifest.chromium.json  service_worker + minimum_chrome_version
+scripts/build-targets.mjs      合并 manifest、复制 src/icons/LICENSE 到 dist、archiver 打包
 ```
 
-- Firefox：继续 `web-ext build` / `web-ext lint` / AMO 签名。
-- Chromium：通用 zip（如 `archiver` 或 `bestzip`），不需要签名；发布走 Chrome Web Store / Edge Partner Center。
-- 版本号在 `package.json` 维护，构建时写入各目标的 manifest，避免三处手改。
-- `npm run build` 默认只出 Firefox；`npm run build:all` 同时出两个目标。
+- 版本号只在 `package.json` 维护，构建时注入两份 manifest。
+- 目标专用文件在复制后按目标剔除：Firefox 包不含整个 `src/platform/chromium/`（含 shim 与 service worker 入口），Chromium 包保留。
+- Chromium 的配置页由构建脚本在 `options.html` 中注入 shim 的 `<script>`，共享源码里的 `options.html` 保持无平台依赖。
+- 产物：`dist/firefox` + `output/tabpilot-<version>-firefox.zip`；`dist/chromium` + `output/tabpilot-<version>-chromium.zip`。
+- Firefox 用 `web-ext lint` / AMO 签名；Chromium 是普通 zip，同一份上传 Chrome Web Store 和 Edge Add-ons，不需要区分包。
+- `npm run build` 构建两个目标；`build:firefox` / `build:chromium` 单独构建。
 
 ### 14.4 验收
 
@@ -426,6 +442,8 @@ scripts/build-targets.mjs   生成 dist/firefox、dist/chrome 并分别打包
 2. 页面内标识与标签页名规则在 Chromium 上可用（含 SPA 标题变化、页面刷新）。
 3. 两个目标包都能通过各自商店的校验：Firefox `web-ext lint` 无错误，Chrome / Edge 上传无 manifest 错误。
 4. 版本号、仓库 tag、商店版本三者一致。
+
+当前状态：构建与 Firefox lint 已通过（0 error / 1 条 Android 版本警告）；Chromium 需在 Chrome 或 Edge 里实际加载 `dist/chromium` 验证分组、标识、标题规则后再算完成。
 
 ### 14.5 风险
 

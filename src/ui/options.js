@@ -31,7 +31,7 @@
   if (!Store || !Rules || !Highlight || !TitleRule) {
     els.status.className = 'status error';
     els.status.textContent =
-      'store.js / rules.js / highlight.js / title-rule.js 未加载，无法读写配置。';
+      '核心脚本未加载，无法读写配置。';
     return;
   }
 

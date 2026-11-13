@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "TabPilot",
+  "version": "0.0.0",
+  "description": "标签页管理器：按规则自动归组、上色，并可在页面内显示分组标识。",
+  "permissions": ["tabs", "tabGroups", "storage"],
+  "action": {
+    "default_title": "TabPilot：立即同步标签页",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png"
+    }
+  },
+  "options_ui": {
+    "page": "src/ui/options.html",
+    "open_in_tab": true
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "96": "icons/icon-96.png",
+    "128": "icons/icon-128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*/*"],
+      "js": ["src/core/highlight.js", "src/core/title-rule.js", "src/app/content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

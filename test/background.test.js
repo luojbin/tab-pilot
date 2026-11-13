@@ -9,12 +9,12 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 // 按 manifest.json 中 background.scripts 的顺序加载，确保全局层已就绪
-require('../src/highlight.js');
-require('../src/title-rule.js');
-require('../src/store.js');
-require('../src/logger.js');
-require('../src/rules.js');
-require('../src/actions.js');
+require('../src/core/highlight.js');
+require('../src/core/title-rule.js');
+require('../src/app/store.js');
+require('../src/core/logger.js');
+require('../src/core/rules.js');
+require('../src/app/actions.js');
 
 const state = {
   tabsByWindow: {},
@@ -26,6 +26,14 @@ const state = {
 };
 
 const listeners = { created: [], updated: [], actionClicked: [], message: [], configChanged: [] };
+
+/** 按浏览器消息协议调用监听器：支持 sendResponse + return true 的异步回复。 */
+function sendMessage(message, sender) {
+  return new Promise((resolve) => {
+    const returned = listeners.message[0](message, sender, resolve);
+    if (returned !== true) resolve(returned);
+  });
+}
 
 globalThis.browser = {
   storage: {
@@ -81,7 +89,7 @@ globalThis.browser = {
   }
 };
 
-require('../src/background.js');
+require('../src/app/background.js');
 
 const Background = globalThis.TabPilotBackground;
 const Debug = globalThis.TabPilotDebug;
@@ -415,7 +423,7 @@ test('收到 sync-all 消息时执行同步并返回统计', async () => {
   reset();
   state.tabsByWindow[6] = [{ id: 13, windowId: 6, url: 'http://localhost:3000/', groupId: -1 }];
 
-  const stats = await listeners.message[0]({ type: 'sync-all' });
+  const stats = await sendMessage({ type: 'sync-all' });
 
   assert.equal(stats.grouped, 1);
   assert.equal(state.groupCalls.length, 1);
@@ -423,7 +431,7 @@ test('收到 sync-all 消息时执行同步并返回统计', async () => {
 
 test('无关消息不触发同步', async () => {
   reset();
-  const result = await listeners.message[0]({ type: 'something-else' });
+  const result = await sendMessage({ type: 'something-else' });
   assert.equal(result, undefined);
   assert.equal(state.groupCalls.length, 0);
 });
@@ -486,7 +494,7 @@ test('page-style：命中的分组开启标识时返回渲染规格', async () =
   };
   state.tabsByWindow[1] = [{ id: 1, windowId: 1, url: 'http://localhost:3000/', groupId: -1 }];
 
-  const style = await listeners.message[0](
+  const style = await sendMessage(
     { type: 'page-style', url: 'http://localhost:3000/x' },
     { tab: { id: 1, windowId: 1, url: 'http://localhost:3000/x' } }
   );
@@ -529,7 +537,7 @@ test('page-style：只启用标题规则时也返回配置', async () => {
   };
   state.tabsByWindow[1] = [{ id: 1, windowId: 1, url: 'http://localhost:3000/' }];
 
-  const style = await listeners.message[0](
+  const style = await sendMessage(
     { type: 'page-style', url: 'http://localhost:3000/' },
     { tab: { id: 1, windowId: 1 } }
   );
@@ -557,13 +565,13 @@ test('page-style：标识未开启或未命中时返回 null', async () => {
     ]
   };
 
-  const disabled = await listeners.message[0](
+  const disabled = await sendMessage(
     { type: 'page-style', url: 'http://localhost:3000/' },
     { tab: { id: 1, windowId: 1 } }
   );
   assert.equal(disabled, null);
 
-  const noMatch = await listeners.message[0](
+  const noMatch = await sendMessage(
     { type: 'page-style', url: 'https://example.com/' },
     { tab: { id: 1, windowId: 1 } }
   );
