@@ -253,6 +253,23 @@ Firefox 标签页管理器：按规则自动把页面归入分组、给分组上
 - 不处理 `about:`、扩展商店等受限页面
 - MV3 后台是事件页，会被回收；日志只在控制台和内存里，不落盘
 
+## 致谢
+
+本项目的功能与交互设计从以下 Firefox 扩展中获得启发，感谢作者们的分享：
+
+- **Tab Rename** —— 启发了「标签页标题可以按需改写」的思路。
+  [AMO](https://addons.mozilla.org/zh-CN/firefox/addon/tab-rename/) ·
+  [GitHub](https://github.com/trickypr/tab-rename)
+- **Auto Tab Groups** —— 启发了「按地址匹配规则自动分组」的设计。
+  [AMO](https://addons.mozilla.org/zh-CN/firefox/addon/auto-tab-groups/) ·
+  [GitHub](https://github.com/nitzanpap/auto-tab-groups)
+- **TabTint** —— 启发了「用页面边框标识当前环境」的呈现方式。
+  [AMO](https://addons.mozilla.org/zh-CN/firefox/addon/tabtint/)
+- **Environment Marker** —— 启发了「在页面上添加彩色标签」的视觉形式。
+  [AMO](https://addons.mozilla.org/zh-CN/firefox/addon/environment-marker-extension/)
+
+以上项目仅作为设计与功能上的参考；本项目为独立实现，未复制或包含它们的源代码。
+
 ## 许可证
 
 [MIT](LICENSE)
