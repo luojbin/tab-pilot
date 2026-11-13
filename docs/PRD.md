@@ -5,7 +5,7 @@
 | 版本       | v1.0.1（重新上传）                                             |
 | 作者       | 你                                                           |
 | 状态       | 已发布，进入自用验收                                          |
-| 目标浏览器 | Firefox 139+（仅此，多浏览器为后续计划）                     |
+| 目标浏览器 | Firefox 140+（仅此，多浏览器为后续计划）                     |
 | 技术栈     | 原生 WebExtensions（HTML/CSS/JS）+ Manifest V3，无构建、无框架 |
 | 存储       | `browser.storage.local`，封装存储层                          |
 
@@ -249,7 +249,7 @@ manifest.json      MV3，background.scripts（非 service worker）+ content_scr
 
 | 风险                                     | 应对                                                         |
 | ---------------------------------------- | ------------------------------------------------------------ |
-| Firefox 版本 < 139 无 `tabGroups`        | 开工前 `about:support` 确认；低于则升级或降级为高亮/标签管理 |
+| Firefox 版本 < 140 无 `tabGroups` / 不支持数据收集声明 | 开工前 `about:support` 确认；低于则升级或降级为高亮/标签管理 |
 | `tabGroups` 折叠行为与未来 Chrome 不一致 | 本版仅 Firefox，记录差异，迁移时处理                         |
 | 标签页名规则被页面覆盖                 | 页面加载/路由变化后重新应用；关闭规则时恢复原标题；已知限制写进 README |
 | 规则冲突导致抖动                         | 优先级 + 单分组规则 + 幂等 + 日志                            |
@@ -306,7 +306,8 @@ test/
   highlight.test.js    页面内标识规格：默认值、边界收敛、过滤去重、几何
   title-rule.test.js   命名规则：顺序匹配、捕获组重排、非法正则、多行批处理
   background.test.js   编排链路：事件、同步、工具栏、消息、页面标识、标题规则、调试入口
-scripts/build.mjs      零依赖打包脚本（生成 output/tabpilot-<version>.zip）
+web-ext-config.mjs     web-ext 配置：打包忽略规则、产物目录
+package-lock.json      锁定 web-ext 版本（devDependency）
 icons/                 扩展图标：icon-{16,32,48,96,128}.png
 docs/PRD.md            本文件
 ```
@@ -316,8 +317,10 @@ docs/PRD.md            本文件
 ### 13.2 常用命令
 
 ```bash
-npm test        # 119 个单测（node:test，无第三方依赖）
-npm run build   # 生成 output/tabpilot-<version>.zip，供临时加载 / AMO 上传
+npm install     # 安装开发依赖（web-ext）
+npm test        # 119 个单测（node:test）
+npm run build   # web-ext build，生成 output/tabpilot-<version>.zip
+npm run lint    # web-ext lint，检查 manifest / API 兼容性等
 ```
 
 - 无依赖、无构建，浏览器里也可以直接加载源码目录。
@@ -326,7 +329,7 @@ npm run build   # 生成 output/tabpilot-<version>.zip，供临时加载 / AMO �
 
 ### 13.3 本地加载与验证
 
-1. `about:support` 确认 Firefox 版本 ≥ 139（`tabGroups` API 依赖）。
+1. `about:support` 确认 Firefox 版本 ≥ 140（`tabGroups` API 与 `data_collection_permissions` 字段依赖）。
 2. 打开 `about:debugging#/runtime/this-firefox` → 「临时载入附加组件」→ 选择 `manifest.json`（或 `npm run build` 生成的 zip）。
 3. 打开 3 个 `localhost` 页面，预期全部进入「开发」组且为绿色。
 4. 在 `about:debugging` 里点插件的「检查」，控制台应能看到每次命中的日志。
@@ -376,7 +379,8 @@ npm run build   # 生成 output/tabpilot-<version>.zip，供临时加载 / AMO �
 
 ### 13.6 打包与发布
 
-- `npm run build` 用 `scripts/build.mjs` 打包：只收 `manifest.json`、`LICENSE`、`src/`，产物为 `output/tabpilot-<version>.zip`。
+- `npm run build` 使用官方 `web-ext build` 打包：只收 `manifest.json`、`LICENSE`、`src/`、`icons/`，产物为 `output/tabpilot-<version>.zip`；忽略规则写在 `web-ext-config.mjs`。
+- `npm run lint` 调用 `web-ext lint`，用于提交 AMO 前检查 manifest 与 API 兼容性问题。
 - 正式版 Firefox 只安装已签名扩展：未签名 zip 只能临时加载；正常安装需提交 AMO 签名（listed 上架或 unlisted 自分发），下载签名后的 `.xpi` 安装。
 - manifest 已声明 `browser_specific_settings.gecko.data_collection_permissions.required = ["none"]`（AMO 新扩展必填）。
 - 每次上传新版本必须递增版本号，且 `manifest.json` 与 `package.json` 保持一致。
