@@ -1,7 +1,7 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
+import test from 'node:test';
+import assert from 'node:assert/strict';
 
-const {
+import {
   DEFAULT_CONFIG,
   GROUP_COLORS,
   SCHEMA_VERSION,
@@ -11,7 +11,7 @@ const {
   parseConfigText,
   colorOf,
   clone
-} = require('../src/app/store.js');
+} from '../src/app/store.js';
 
 function validConfig() {
   return clone(DEFAULT_CONFIG);

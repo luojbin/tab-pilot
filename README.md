@@ -40,6 +40,10 @@ npm run build:firefox  # 或者只构建其中一个
 npm run build:chromium
 ```
 
+源码使用 ES Module（`import` / `export`），构建脚本通过 esbuild 将后台、网页内容脚本和配置页三个入口分别打包为独立的普通 JS 脚本。浏览器加载的是 `dist/` 中的产物；修改源码后需要重新构建并重载扩展。
+
+新增依赖时在使用它的文件中直接 `import`，无需在 manifest 或 HTML 中维护基础脚本的加载顺序。`src/platform/browser.js` 统一提供 Firefox / Chromium 的浏览器 API；后台保留 `TabPilotDebug` 控制台调试入口。
+
 | 目标 | 目录 | 压缩包 |
 |---|---|---|
 | Firefox | `dist/firefox/` | `output/tabpilot-<version>-firefox.zip` |

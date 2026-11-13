@@ -15,6 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ZipArchive } from 'archiver';
 import { fileURLToPath } from 'node:url';
+import { build as bundle } from 'esbuild';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
@@ -30,32 +31,8 @@ const TARGETS = {
   }
 };
 
-const COPY_ENTRIES = ['src', 'icons', 'LICENSE'];
-
-const CHROMIUM_SHIM_TAG = '<script src="../platform/chromium/browser-shim.js"></script>';
-
-/**
- * Chromium 的配置页需要先加载 browser shim；Firefox 自带 browser，不注入。
- * options.html 是共享文件，这里只在 Chromium 产物里插入一个 script 标签。
- */
-function injectChromiumOptionsShim(distDir) {
-  const page = path.join(distDir, 'src/ui/options.html');
-  let html = fs.readFileSync(page, 'utf8');
-  if (html.includes(CHROMIUM_SHIM_TAG)) return;
-
-  const storeTag = '<script src="../app/store.js"></script>';
-  if (!html.includes(storeTag)) {
-    throw new Error('options.html 缺少 store.js 脚本标签，无法注入 Chromium shim');
-  }
-  html = html.replace(storeTag, `${CHROMIUM_SHIM_TAG}\n${storeTag}`);
-  fs.writeFileSync(page, html, 'utf8');
-}
-
-// 某个目标专用的源文件，不复制到其他目标的产物里
-const TARGET_EXCLUDES = {
-  firefox: ['src/platform/chromium'],
-  chromium: []
-};
+const COPY_ENTRIES = ['icons', 'LICENSE', 'src/ui/options.html'];
+const ENTRY_POINTS = ['src/app/background.js', 'src/app/content.js', 'src/ui/options.js'];
 
 function readJson(relativePath) {
   return JSON.parse(fs.readFileSync(path.join(root, relativePath), 'utf8'));
@@ -95,22 +72,23 @@ async function build(target) {
   );
 
   for (const entry of COPY_ENTRIES) {
+    fs.mkdirSync(path.dirname(path.join(distDir, entry)), { recursive: true });
     fs.cpSync(path.join(root, entry), path.join(distDir, entry), { recursive: true });
   }
 
-  for (const relativePath of TARGET_EXCLUDES[target] || []) {
-    fs.rmSync(path.join(distDir, relativePath), { recursive: true, force: true });
-  }
-
-  // 排除后若 platform 目录已空，一并删掉，避免产物里留空目录
-  const platformDir = path.join(distDir, 'src', 'platform');
-  if (fs.existsSync(platformDir) && fs.readdirSync(platformDir).length === 0) {
-    fs.rmdirSync(platformDir);
-  }
-
-  if (target === 'chromium') {
-    injectChromiumOptionsShim(distDir);
-  }
+  // 源码使用 ESM，三个入口分别打包成普通脚本，供后台/内容脚本/配置页加载。
+  await bundle({
+    absWorkingDir: root,
+    entryPoints: ENTRY_POINTS,
+    outbase: '.',
+    outdir: distDir,
+    bundle: true,
+    format: 'iife',
+    platform: 'browser',
+    target: target === 'firefox' ? 'firefox140' : 'chrome116',
+    charset: 'utf8',
+    minify: false
+  });
 
   const outDir = path.join(root, 'output');
   fs.mkdirSync(outDir, { recursive: true });

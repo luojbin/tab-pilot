@@ -18,133 +18,126 @@
  * 匹配：按数组顺序逐条尝试，第一条 pattern 命中就应用它，后续规则不再匹配；
  * 全部没命中则标题保持不变。
  */
-(function (global) {
-  'use strict';
+const DEFAULT_TITLE_RULE = {
+  enabled: false,
+  rules: [],
+  testText: ''
+};
 
-  const DEFAULT_TITLE_RULE = {
-    enabled: false,
-    rules: [],
-    testText: ''
+function isObject(value) {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function normalizeEntry(raw) {
+  const source = isObject(raw) ? raw : {};
+  return {
+    pattern: typeof source.pattern === 'string' ? source.pattern : '',
+    replacement: typeof source.replacement === 'string' ? source.replacement : '',
+    description: typeof source.description === 'string' ? source.description : ''
   };
+}
 
-  function isObject(value) {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
+function normalizeTitleRule(rule) {
+  const raw = rule && isObject(rule.titleRule) ? rule.titleRule : {};
+  return {
+    enabled: raw.enabled === true,
+    rules: Array.isArray(raw.rules) ? raw.rules.map(normalizeEntry) : [],
+    testText: typeof raw.testText === 'string' ? raw.testText : ''
+  };
+}
+
+/**
+ * 编译单条命名规则。
+ * @returns {{ok: boolean, regex?: RegExp, replacement?: string, reason?: string, error?: string}}
+ */
+function compileEntry(entry) {
+  const spec = normalizeEntry(entry);
+  if (spec.pattern.trim() === '') {
+    return { ok: false, reason: 'empty-pattern' };
   }
-
-  function normalizeEntry(raw) {
-    const source = isObject(raw) ? raw : {};
+  try {
+    // 固定不带 g 标志：只替换第一个匹配
+    const regex = new RegExp(spec.pattern);
+    return { ok: true, regex, replacement: spec.replacement };
+  } catch (err) {
     return {
-      pattern: typeof source.pattern === 'string' ? source.pattern : '',
-      replacement: typeof source.replacement === 'string' ? source.replacement : '',
-      description: typeof source.description === 'string' ? source.description : ''
+      ok: false,
+      reason: 'invalid-regex',
+      error: String((err && err.message) || err)
     };
   }
+}
 
-  function normalizeTitleRule(rule) {
-    const raw = rule && isObject(rule.titleRule) ? rule.titleRule : {};
-    return {
-      enabled: raw.enabled === true,
-      rules: Array.isArray(raw.rules) ? raw.rules.map(normalizeEntry) : [],
-      testText: typeof raw.testText === 'string' ? raw.testText : ''
-    };
+/**
+ * 对一条标题应用整组命名规则（第一条命中的生效）。
+ * @returns {{ok: boolean, matched: boolean, result: string, ruleIndex: number|null, reason: string|null, error: string|null}}
+ */
+function applyTitleRules(rule, text) {
+  const source = typeof text === 'string' ? text : '';
+  const spec = normalizeTitleRule(rule);
+
+  if (!spec.enabled) {
+    return { ok: false, matched: false, result: source, ruleIndex: null, reason: 'disabled', error: null };
+  }
+  if (spec.rules.length === 0) {
+    return { ok: true, matched: false, result: source, ruleIndex: null, reason: 'no-rules', error: null };
   }
 
-  /**
-   * 编译单条命名规则。
-   * @returns {{ok: boolean, regex?: RegExp, replacement?: string, reason?: string, error?: string}}
-   */
-  function compileEntry(entry) {
-    const spec = normalizeEntry(entry);
-    if (spec.pattern.trim() === '') {
-      return { ok: false, reason: 'empty-pattern' };
-    }
-    try {
-      // 固定不带 g 标志：只替换第一个匹配
-      const regex = new RegExp(spec.pattern);
-      return { ok: true, regex, replacement: spec.replacement };
-    } catch (err) {
-      return {
-        ok: false,
-        reason: 'invalid-regex',
-        error: String((err && err.message) || err)
-      };
-    }
-  }
+  let firstError = null;
 
-  /**
-   * 对一条标题应用整组命名规则（第一条命中的生效）。
-   * @returns {{ok: boolean, matched: boolean, result: string, ruleIndex: number|null, reason: string|null, error: string|null}}
-   */
-  function applyTitleRules(rule, text) {
-    const source = typeof text === 'string' ? text : '';
-    const spec = normalizeTitleRule(rule);
-
-    if (!spec.enabled) {
-      return { ok: false, matched: false, result: source, ruleIndex: null, reason: 'disabled', error: null };
+  for (let index = 0; index < spec.rules.length; index += 1) {
+    const compiled = compileEntry(spec.rules[index]);
+    if (!compiled.ok) {
+      if (compiled.reason === 'invalid-regex' && !firstError) firstError = compiled.error;
+      continue;
     }
-    if (spec.rules.length === 0) {
-      return { ok: true, matched: false, result: source, ruleIndex: null, reason: 'no-rules', error: null };
-    }
-
-    let firstError = null;
-
-    for (let index = 0; index < spec.rules.length; index += 1) {
-      const compiled = compileEntry(spec.rules[index]);
-      if (!compiled.ok) {
-        if (compiled.reason === 'invalid-regex' && !firstError) firstError = compiled.error;
-        continue;
-      }
-      if (!compiled.regex.test(source)) continue;
-
-      return {
-        ok: true,
-        matched: true,
-        result: source.replace(compiled.regex, compiled.replacement),
-        ruleIndex: index,
-        reason: null,
-        error: null
-      };
-    }
+    if (!compiled.regex.test(source)) continue;
 
     return {
       ok: true,
-      matched: false,
-      result: source,
-      ruleIndex: null,
-      reason: firstError ? 'invalid-regex' : 'no-match',
-      error: firstError
+      matched: true,
+      result: source.replace(compiled.regex, compiled.replacement),
+      ruleIndex: index,
+      reason: null,
+      error: null
     };
   }
 
-  /** 把多行测试文本按行套用规则，返回每行的结果。空行会被跳过。 */
-  function applyTitleBatch(rule, text) {
-    const lines = String(text == null ? '' : text)
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line !== '');
-
-    return lines.map((line) => {
-      const outcome = applyTitleRules(rule, line);
-      return {
-        source: line,
-        ok: outcome.ok,
-        matched: outcome.matched,
-        result: outcome.result,
-        ruleIndex: outcome.ruleIndex,
-        reason: outcome.reason,
-        error: outcome.error
-      };
-    });
-  }
-
-  const api = {
-    DEFAULT_TITLE_RULE,
-    normalizeTitleRule,
-    compileEntry,
-    applyTitleRules,
-    applyTitleBatch
+  return {
+    ok: true,
+    matched: false,
+    result: source,
+    ruleIndex: null,
+    reason: firstError ? 'invalid-regex' : 'no-match',
+    error: firstError
   };
+}
 
-  global.TabPilotTitleRule = api;
-  if (typeof module !== 'undefined' && module.exports) module.exports = api;
-})(typeof globalThis !== 'undefined' ? globalThis : this);
+/** 把多行测试文本按行套用规则，返回每行的结果。空行会被跳过。 */
+function applyTitleBatch(rule, text) {
+  const lines = String(text == null ? '' : text)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line !== '');
+
+  return lines.map((line) => {
+    const outcome = applyTitleRules(rule, line);
+    return {
+      source: line,
+      ok: outcome.ok,
+      matched: outcome.matched,
+      result: outcome.result,
+      ruleIndex: outcome.ruleIndex,
+      reason: outcome.reason,
+      error: outcome.error
+    };
+  });
+}
+
+export {
+  DEFAULT_TITLE_RULE,
+  normalizeTitleRule,
+  compileEntry,
+  applyTitleRules,
+  applyTitleBatch
+};

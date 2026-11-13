@@ -1,7 +1,7 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
+import test from 'node:test';
+import assert from 'node:assert/strict';
 
-const {
+import {
   BORDER_SIDES,
   BANNER_POSITIONS,
   DEFAULT_HIGHLIGHT,
@@ -10,7 +10,7 @@ const {
   borderStyle,
   bannerMetrics,
   bannerStyle
-} = require('../src/core/highlight.js');
+} from '../src/core/highlight.js';
 
 test('normalizeHighlight：缺省时给出一份「关闭」规格', () => {
   assert.deepEqual(normalizeHighlight({}), DEFAULT_HIGHLIGHT);

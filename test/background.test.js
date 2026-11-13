@@ -5,16 +5,10 @@
  * 匹配 → 执行动作 → 记日志”这条链路，以及幂等、同步与配置回退行为。
  * 真实 tabGroups API 的形态已在 Firefox 实机验证。
  */
-const test = require('node:test');
-const assert = require('node:assert/strict');
+import test from 'node:test';
+import assert from 'node:assert/strict';
 
-// 按 manifest.json 中 background.scripts 的顺序加载，确保全局层已就绪
-require('../src/core/highlight.js');
-require('../src/core/title-rule.js');
-require('../src/app/store.js');
-require('../src/core/logger.js');
-require('../src/core/rules.js');
-require('../src/app/actions.js');
+// 先安装 browser 桩，再动态导入后台及其依赖。
 
 const state = {
   tabsByWindow: {},
@@ -89,11 +83,9 @@ globalThis.browser = {
   }
 };
 
-require('../src/app/background.js');
-
-const Background = globalThis.TabPilotBackground;
-const Debug = globalThis.TabPilotDebug;
-const Logger = globalThis.TabPilotLogger;
+const Background = await import('../src/app/background.js');
+const { Debug } = Background;
+const Logger = await import('../src/core/logger.js');
 
 function reset() {
   state.tabsByWindow = {};

@@ -1,7 +1,7 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
+import test from 'node:test';
+import assert from 'node:assert/strict';
 
-const {
+import {
   match,
   explain,
   globToRegExp,
@@ -13,7 +13,7 @@ const {
   expandPattern,
   expandPatterns,
   DEFAULT_MIN_TABS
-} = require('../src/core/rules.js');
+} from '../src/core/rules.js';
 
 function tab(id, url, windowId = 1) {
   return { id, url, windowId, groupId: -1 };

@@ -1,18 +1,6 @@
 {
   "minimum_chrome_version": "116",
   "background": {
-    "service_worker": "src/platform/chromium/background.js"
-  },
-  "content_scripts": [
-    {
-      "matches": ["*://*/*"],
-      "js": [
-        "src/platform/chromium/browser-shim.js",
-        "src/core/highlight.js",
-        "src/core/title-rule.js",
-        "src/app/content.js"
-      ],
-      "run_at": "document_idle"
-    }
-  ]
+    "service_worker": "src/app/background.js"
+  }
 }

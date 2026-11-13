@@ -1,13 +1,13 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
+import test from 'node:test';
+import assert from 'node:assert/strict';
 
-const {
+import {
   DEFAULT_TITLE_RULE,
   normalizeTitleRule,
   compileEntry,
   applyTitleRules,
   applyTitleBatch
-} = require('../src/core/title-rule.js');
+} from '../src/core/title-rule.js';
 
 function spec(rules, extras) {
   return {
