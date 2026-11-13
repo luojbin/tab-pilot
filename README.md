@@ -15,26 +15,30 @@
 
 ## 安装
 
-### 从扩展中心安装（上架后）
+### Firefox
 
-在 [addons.mozilla.org](https://addons.mozilla.org/) 搜索 **TabPilot**，点「添加到 Firefox」。
+**从 AMO 安装（上架后）**：在 [addons.mozilla.org](https://addons.mozilla.org/) 搜索 **TabPilot**，点「添加到 Firefox」。
 
-### 从文件安装（已签名的 `.xpi`）
+**从文件安装已签名版本**：
 
 1. 打开 `about:addons`
 2. 右上角齿轮 → **从文件安装附加组件**
 3. 选择签名后的 `.xpi`
 
-> 正式版 Firefox 只允许安装已签名的扩展。未签名的 zip 无法安装，只能在下一步里临时加载。
+> 正式版 Firefox 只允许安装已签名的扩展；未签名的 zip 只能在下面临时加载。
+
+### Chrome / Edge
+
+Chrome Web Store / Edge Add-ons 尚未上架。本地测试请先按下一节构建，再加载 `dist/chromium`。
 
 ### 从源码构建（开发 / 本地测试）
 
 ```bash
 npm install
-npm run build
+npm run build          # 同时构建 Firefox 与 Chromium
+npm run build:firefox  # 或者只构建其中一个
+npm run build:chromium
 ```
-
-会生成两个目录和两个压缩包：
 
 | 目标 | 目录 | 压缩包 |
 |---|---|---|
@@ -45,11 +49,11 @@ npm run build
 
 **Chrome / Edge 加载**：打开 `chrome://extensions`（Edge 为 `edge://extensions`）→ 打开「开发者模式」→ 「加载已解压的扩展程序」→ 选择 `dist/chromium` 目录。
 
-临时加载的扩展在**浏览器重启或重新载入后消失，配置也会清空**。先用「导出 JSON」备份，重载后再「导入 JSON…」恢复。
+> Firefox 的临时加载在浏览器重启或重新载入后消失，配置也会清空；Chrome / Edge 的「加载已解压的扩展程序」会一直保留，直到手动移除。Firefox 重载前建议先用「导出 JSON」备份。
 
 ## 快速开始
 
-1. 打开配置页：`about:addons` → TabPilot → **首选项**（也可以直接在扩展详情里打开）
+1. 打开配置页：Firefox 是 `about:addons` → TabPilot → **首选项**；Chrome / Edge 是 `chrome://extensions` / `edge://extensions` → TabPilot → **详细信息** → **扩展选项**
 2. 左栏默认已有一条「开发」规则（`localhost` → 绿色）。点「＋」新建分组，在右栏填：
    - **分组名**、**颜色**
    - **匹配路径**（可以只写域名，保存时自动补全）
@@ -232,17 +236,19 @@ npm run build
 4. **重载扩展后要刷新页面**——content script 只在页面加载时注入
 5. 页面控制台会打印 `[TabPilot] 标题已改写：旧 → 新` 或 `标题规则未命中`
 
-### 安装 zip 时提示「未通过验证」？
+### 安装 Firefox 的 zip 时提示「未通过验证」？
 
-正式版 Firefox 只安装已签名的扩展。未签名的包只能临时加载；要正常安装需先提交 AMO 签名，下载签名后的 `.xpi` 再安装。
+正式版 Firefox 只安装已签名的扩展。未签名的包只能临时加载；要正常安装需先提交 AMO 签名，下载签名后的 `.xpi` 再安装。Chromium 的 `-chromium.zip` 是给商店上传用的，不能直接拖进浏览器；本地请加载 `dist/chromium` 目录。
 
-### 重启 Firefox 后配置没了？
+### 重启浏览器后配置没了？
 
-临时加载的扩展会随浏览器重启消失，配置也随之清空。先用「导出 JSON」备份，重载扩展后「导入 JSON…」。
+Firefox 的临时加载随浏览器重启消失，配置也随之清空；先用「导出 JSON」备份，重载扩展后「导入 JSON…」。
+
+Chrome / Edge 的「加载已解压的扩展程序」不会因重启消失，配置会保留；只有手动移除扩展时才会丢失。
 
 ### 安装时提示「可访问所有网站的数据」？
 
-页面内标识和标签页改名需要 content script 注入页面。插件只用当前网址做匹配，不读取页面内容、不发起网络请求；manifest 里声明了 `data_collection_permissions.required = ["none"]`。
+页面内标识和标签页改名需要 content script 注入页面。插件只用当前网址做匹配，不读取页面内容、不发起网络请求；Firefox 包的 manifest 里声明了 `data_collection_permissions.required = ["none"]`。
 
 ## 隐私与权限
 
@@ -264,11 +270,11 @@ npm run build
 - 标签页改名靠改 `document.title`：页面自己反复改标题时会跟着重新应用；正则**不支持标志位**（固定区分大小写、只替换第一个匹配），需要忽略大小写可以用 `[Jj]ira` 这种写法
 - 不区分 Firefox 容器（Container Tabs）：同一 URL 在不同容器里仍进同一分组
 - 不处理 `about:`、扩展商店等受限页面
-- MV3 后台是事件页，会被回收；日志只在控制台和内存里，不落盘
+- MV3 后台在 Firefox 是事件页、在 Chromium 是 service worker，都可能被回收；日志只在控制台和内存里，不落盘
 
 ## 致谢
 
-本项目的功能与交互设计从以下 Firefox 扩展中获得启发，感谢作者们的分享：
+本项目的功能与交互设计从以下浏览器扩展中获得启发，感谢作者们的分享：
 
 - **Tab Rename** —— 启发了「标签页标题可以按需改写」的思路。
   [AMO](https://addons.mozilla.org/zh-CN/firefox/addon/tab-rename/) ·
