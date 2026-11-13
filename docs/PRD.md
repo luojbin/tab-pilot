@@ -35,7 +35,7 @@
 
 ### 2.2 非目标（本阶段明确不做）
 
-- 多浏览器（Chrome/Edge/Safari）兼容。
+- Safari 兼容（Chrome / Edge 已纳入 v1.1 规划，见 §14）。
 - 更复杂的规则编辑器（条件组合、表达式、自由画布；当前两栏表单已够用）。
 - 云同步、账号体系。
 - 标签页名规则已实现（F6）；更复杂的标题模板语法（条件、函数、多规则串联）不做。
@@ -233,7 +233,8 @@ manifest.json      MV3，background.scripts（非 service worker）+ content_scr
 | v0.5.0   | 标签页名规则：每个分组可配置多条命名规则（源文本 / 目标文本 / 描述），按顺序匹配、命中第一条即停止；配置页多行测试并保存测试文本；配置结构升级到 `schemaVersion 5` 并自动迁移 | 命中页面的标题按首条命中规则改写，测试文本可复用 |
 | v1.0.0   | 正式发布：功能集合与 v0.5.0 相同；配置格式重新基线为 `schemaVersion 1`，开发期过渡格式（2–5）作废、不再迁移 | 发布 + 连续自用一周、卸载一个旧插件 |
 | v1.0.1   | 重新打包上传：AMO 上 1.0.0 已上传过并删除，版本号不可复用；内容与 1.0.0 相同 | 与 1.0.0 相同 |
-| v1.1.0+  | 页面内标识的更多样式；标题规则支持正则标志位等增强           | 不阻塞主线              |
+| v1.1.0   | 多浏览器兼容（Chrome / Edge）与多目标构建：共享 `src/`，按目标生成 manifest；Firefox 用 web-ext，Chromium 用通用 zip；兼容 `browser` 命名空间、MV3 service worker、tabGroups 差异 | Chrome / Edge 上规则、分组、标识、标题规则行为与 Firefox 一致 |
+| v1.2.0+  | 页面内标识的更多样式；标题规则支持正则标志位等增强           | 不阻塞主线              |
 
 > v0.1–v0.5 中出现的 `schemaVersion` 递增与迁移链已在 v1.0.0 移除：1.0 起配置格式基线重新从 1 算起，历史格式不再兼容（见 §5 基线说明）。表中的“自动迁移”仅记录当时的实现。
 
@@ -385,3 +386,50 @@ npm run lint    # web-ext lint，检查 manifest / API 兼容性等
 - manifest 已声明 `browser_specific_settings.gecko.data_collection_permissions.required = ["none"]`（AMO 新扩展必填）。
 - 每次上传新版本必须递增版本号，且 `manifest.json` 与 `package.json` 保持一致。
 
+## 14. 多浏览器兼容与多目标构建（v1.1.0 规划）
+
+### 14.1 目标与范围
+
+- 保持 Firefox 140+ 为第一优先级，现有功能与配置格式不变。
+- 新增 **Chrome / Edge**（Chromium MV3）支持；Safari 暂不涉及。
+- 目标是同一套规则、同一份配置，在三个浏览器上行为一致（受各浏览器 tabGroups 能力差异约束）。
+
+### 14.2 兼容层
+
+| 差异点 | 处理方式 |
+|---|---|
+| `browser` vs `chrome` 命名空间 | 引入轻量 shim（`globalThis.browser = globalThis.browser ?? chrome`）或 `webextension-polyfill`，优先 shim，避免额外运行时依赖 |
+| 后台形态 | Firefox 用 `background.scripts`；Chromium MV3 用 `background.service_worker`。按目标生成 manifest，后台逻辑保持单文件入口 |
+| manifest 差异 | Firefox 的 `browser_specific_settings`（id、`data_collection_permissions`、`strict_min_version`）只进 Firefox 包；Chromium 包移除，避免未知字段警告 |
+| tabGroups API | 两边都声明 `tabGroups` 权限；按 `chrome.tabGroups` / `browser.tabGroups` 的实际行为补齐差异（颜色枚举、折叠、`tabs.group` 参数） |
+| options 页 | `options_ui.open_in_tab` 两边都支持，页面代码无需拆分 |
+| content script | 页面标识与标题规则复用现有 `content.js`，仅注意 Chromium 的注入时机与服务端渲染页面 |
+
+### 14.3 构建结构
+
+```
+src/                        共享代码（现有分层不变）
+manifests/
+  manifest.firefox.json     含 browser_specific_settings
+  manifest.chrome.json      含 service_worker，移除 Firefox 专有字段
+scripts/build-targets.mjs   生成 dist/firefox、dist/chrome 并分别打包
+```
+
+- Firefox：继续 `web-ext build` / `web-ext lint` / AMO 签名。
+- Chromium：通用 zip（如 `archiver` 或 `bestzip`），不需要签名；发布走 Chrome Web Store / Edge Partner Center。
+- 版本号在 `package.json` 维护，构建时写入各目标的 manifest，避免三处手改。
+- `npm run build` 默认只出 Firefox；`npm run build:all` 同时出两个目标。
+
+### 14.4 验收
+
+1. 同一份导出 JSON 在 Firefox / Chrome / Edge 导入后，规则、分组颜色、阈值行为一致。
+2. 页面内标识与标签页名规则在 Chromium 上可用（含 SPA 标题变化、页面刷新）。
+3. 两个目标包都能通过各自商店的校验：Firefox `web-ext lint` 无错误，Chrome / Edge 上传无 manifest 错误。
+4. 版本号、仓库 tag、商店版本三者一致。
+
+### 14.5 风险
+
+- Chromium 的 `tabGroups` 与 Firefox 存在行为差异，可能需要按浏览器分支少量逻辑。
+- MV3 service worker 会被回收，现有事件页的防抖/内存状态假设需要复核。
+- 两套 manifest 带来维护成本，必须用脚本生成而不是手改。
+- 商店审核策略不同：Firefox 关注数据收集声明，Chrome / Edge 关注权限最小化与隐私说明。
