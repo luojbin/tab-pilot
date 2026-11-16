@@ -102,6 +102,8 @@ npm run build:chromium
 
 ### 匹配路径
 
+![](screenshot/tabPilot-1-自动分组.png)
+
 `patterns` 是匹配路径列表，**任意一条命中即算命中**，同一个分组可以覆盖多个站点。
 
 路径可以直接写简写，离开输入框或保存时会自动补全：
@@ -137,6 +139,10 @@ npm run build:chromium
 
 ## 页面内标识
 
+![](screenshot/tabPilot-2-页面内标识.png)
+
+![](screenshot/tabPilot-2-页面内标识2.png)
+
 给分组开启后，命中该分组的页面会显示：
 
 - **边框**：上 / 右 / 下 / 左任选，宽度 1–24px，颜色自动取分组颜色，可调不透明度
@@ -148,6 +154,8 @@ npm run build:chromium
 > 新建分组的默认值是「四边边框 + 左上角 banner」，但标识总开关默认关闭——需要手动打开。
 
 ## 标签页名规则
+
+![](screenshot/tabPilot-3-标签页重命名.png)
 
 每个分组可以配置一组**命名规则**，按顺序匹配当前标签页标题，**命中第一条就停止**：
 
@@ -166,6 +174,8 @@ npm run build:chromium
 示例：`^\[工作\]\s*(.*)$` → `W· $1`，把 `[工作] Jira - 看板` 变成 `W· Jira - 看板`。
 
 ## 配置页说明
+
+![](screenshot/tabPilot-5-配置页.png)
 
 ### 左栏：分组列表（只读）
 
