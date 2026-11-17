@@ -207,6 +207,7 @@
 
 - [README](../README.md)：安装、配置与使用说明。
 - [CONTRIBUTING](../CONTRIBUTING.md)：环境、架构、构建、测试、调试与发布。
+- [插件简介（中文）](plugin-intro.zh.md) / [Plugin overview (English)](plugin-intro.en.md)：面向用户与商店描述的功能概览。
 
 ## 8. 版本规划
 
