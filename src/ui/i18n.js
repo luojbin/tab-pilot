@@ -2,11 +2,8 @@
  * TabPilot 配置页文案
  *
  * 语言只影响配置页的展示，不改变分组名、匹配路径、备注等用户数据。
- * 默认跟随浏览器语言，也可以在左栏「全局配置」里手动切换。
+ * 语言偏好属于配置本身（`config.language`），随保存 / 导入导出。
  */
-
-export const LANGUAGE_KEY = 'tabpilot:language';
-export const LANGUAGE_AUTO = 'auto';
 
 const EN = {
   // 页面框架
@@ -31,6 +28,13 @@ const EN = {
   '配置管理': 'Config management',
   '全局开关': 'Global switch',
   '全局选项': 'Global options',
+  '点击插件图标': 'Icon click behavior',
+  '仅同步（检查未归组的标签）': 'Sync only (check for ungrouped tabs)',
+  '同步并按规则折叠分组': 'Sync and collapse groups by rule',
+  '同步并折叠非活动分组': 'Sync and collapse inactive groups',
+  '同步并折叠所有分组': 'Sync and collapse all groups',
+  '点图标时先同步，再按所选方式折叠分组；折叠只影响点击时所在的窗口。':
+    'On click: sync first, then collapse as selected; collapsing only affects the window you clicked in.',
   '导出已保存的配置，或从 JSON 文件导入并替换配置。':
     'Export the saved config, or import and replace it from a JSON file.',
   '有未保存的修改，请先「保存并同步」或「放弃修改」再导出。':
@@ -39,6 +43,27 @@ const EN = {
     'Delete the saved config and restore the built-in defaults',
   '以后可以在这里增加更多全局选项。':
     'More global options can be added here later.',
+
+  // 权限提示
+  '网站访问权限': 'Site access permission',
+  '页面内标识和标签页改名需要「访问所有网站」的权限。':
+    'In-page highlights and tab renaming require permission to access all websites.',
+  '当前没有该权限，这两项功能不会生效。':
+    'This permission is not granted, so these features will not work.',
+  '已获得访问所有网站的权限。': 'Permission to access all websites is granted.',
+  '没有访问网站的权限，页面内标识不会生效。请到全局配置中按提示申请权限。':
+    'No permission to access websites; in-page highlights will not be applied. Request the permission from Global settings.',
+  '没有访问网站的权限，标签页标题不会被改写。请到全局配置中按提示申请权限。':
+    'No permission to access websites; tab titles will not be rewritten. Request the permission from Global settings.',
+  '申请授权': 'Request permission',
+  '取消授权': 'Revoke permission',
+  '已获得访问网站的权限，请刷新已打开的页面让页面内标识生效':
+    'Permission granted. Reload open pages so in-page highlights take effect.',
+  '未获得访问网站的权限，页面内标识和标签页改名暂时不会生效':
+    'Permission not granted. In-page highlights and tab renaming stay disabled for now.',
+  '已撤销访问网站的权限，页面内标识和标签页改名将停用（刷新已打开的页面后完全停止）':
+    'Permission revoked. In-page highlights and tab renaming are disabled (fully after reloading open pages).',
+  '访问网站的权限未被撤销': 'Permission to access websites was not revoked.',
   '顶部「全局配置」管理全局开关、语言和配置导入导出；下方分组列表用于选中分组，重命名、改颜色、启用 / 停用在右侧完成。⋯ 菜单可以调整顺序或删除。':
     'The top "Global settings" item manages the global switch, language, and config import/export. The group list below selects groups; rename, recolor, enable/disable on the right. Use the ⋯ menu to reorder or delete.',
 
@@ -191,6 +216,8 @@ const PATTERNS = [
   [/^保存失败：(.+)$/, 'Save failed: $1'],
   [/^读取失败：(.+)$/, 'Load failed: $1'],
   [/^恢复默认失败：(.+)$/, 'Restore failed: $1'],
+  [/^权限请求失败：(.+)$/, 'Permission request failed: $1'],
+  [/^撤销权限失败：(.+)$/, 'Permission revoke failed: $1'],
   [/^读取文件失败：(.+)$/, 'Failed to read file: $1'],
   [/^读取配置失败：(.+)$/, 'Failed to load config: $1'],
   [
@@ -217,6 +244,8 @@ const PATTERNS = [
     'schemaVersion must be $1, got $2'
   ],
   [/^globalEnabled 必须是布尔值$/, 'globalEnabled must be a boolean'],
+  [/^clickAction 必须是 (.+) 之一$/, 'clickAction must be one of $1'],
+  [/^language 必须是 (.+) 之一$/, 'language must be one of $1'],
   [
     /^(.+) 必须是 (\d+)~(\d+) 的整数$/,
     '$1 must be an integer between $2 and $3'

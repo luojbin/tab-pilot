@@ -60,7 +60,7 @@ output/                扩展 ZIP 等本地产物（不提交 Git）
 
 源码使用 `import` / `export`，`package.json` 声明 `"type": "module"`。新增依赖直接在使用它的文件中导入，不需要在 manifest 或 HTML 中排列基础脚本顺序；仍需避免循环依赖和错误的异步初始化顺序。
 
-配置页语言偏好保存在 `storage.local` 的 `tabpilot:language`（`auto` / `zh` / `en`）；manifest 的名称、描述和工具栏标题通过 `_locales/en`、`_locales/zh_CN` 与 `__MSG_*` 占位符由浏览器语言决定，不受配置页手动切换影响。
+配置页语言偏好是配置的一部分（`config.language`：`auto` / `zh` / `en`），随保存、导入导出一起迁移；manifest 的名称、描述和工具栏标题通过 `_locales/en`、`_locales/zh_CN` 与 `__MSG_*` 占位符由浏览器语言决定，不受配置页手动切换影响。
 
 esbuild 将以下三个入口及其依赖分别打包为普通 IIFE 脚本：
 
@@ -91,7 +91,7 @@ npm run build:chromium  # 仅 Chromium
 |---|---|
 | API 命名空间 | 需要 API 的模块导入 `src/platform/browser.js`，不修改全局命名空间 |
 | 后台 | Firefox 使用事件页 `background.scripts`；Chromium 使用 `background.service_worker`，都指向打包后的后台入口 |
-| Manifest | Firefox 专用 ID、最低版本和数据收集声明；Chromium 专用 `minimum_chrome_version`；内容脚本和权限共享 |
+| Manifest | Firefox 专用 ID、最低版本、数据收集声明和 `optional_host_permissions`（host 权限在 Firefox 可撤销）；Chromium 专用 `minimum_chrome_version`，其 content script 站点访问在安装时即为必需权限，故不声明 `optional_host_permissions` |
 | 消息响应 | 后台使用 `sendResponse` + `return true` 异步回复 |
 | 分组 API | 共用动作层；真实浏览器仍需验证折叠、窗口隔离及已分组标签行为 |
 

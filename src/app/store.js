@@ -35,6 +35,21 @@ const GROUP_COLORS = [
 const DEFAULT_COLOR = 'grey';
 const DEFAULT_MIN_TABS = 1;
 
+/**
+ * 点击工具栏图标的行为：
+ *   sync                  仅同步（默认，也是 v1.2.0 之前的行为）
+ *   syncRuleCollapse      同步后按规则里的「命中后折叠」折叠分组
+ *   syncCollapseInactive  同步后折叠不含活动标签的分组
+ *   syncCollapseAll       同步后折叠所有分组
+ * 折叠只影响点击时所在的窗口。
+ */
+const CLICK_ACTIONS = ['sync', 'syncRuleCollapse', 'syncCollapseInactive', 'syncCollapseAll'];
+const DEFAULT_CLICK_ACTION = 'sync';
+
+/** 配置页语言：auto 跟随浏览器，zh 中文，en English。 */
+const LANGUAGES = ['auto', 'zh', 'en'];
+const DEFAULT_LANGUAGE = 'auto';
+
 /** 分组颜色的实际色值（页面内标识需要真实颜色，不是色名）。 */
 const GROUP_COLOR_HEX = {
   grey: '#9aa0a6',
@@ -54,6 +69,8 @@ const GROUP_COLOR_HEX = {
 const DEFAULT_CONFIG = {
   schemaVersion: SCHEMA_VERSION,
   globalEnabled: true,
+  clickAction: DEFAULT_CLICK_ACTION,
+  language: DEFAULT_LANGUAGE,
   rules: [
     {
       id: 'dev-localhost',
@@ -122,6 +139,12 @@ function validateConfig(raw, options) {
   }
   if (typeof raw.globalEnabled !== 'boolean') {
     errors.push('globalEnabled 必须是布尔值');
+  }
+  if (raw.clickAction !== undefined && !CLICK_ACTIONS.includes(raw.clickAction)) {
+    errors.push(`clickAction 必须是 ${CLICK_ACTIONS.join('/')} 之一`);
+  }
+  if (raw.language !== undefined && !LANGUAGES.includes(raw.language)) {
+    errors.push(`language 必须是 ${LANGUAGES.join('/')} 之一`);
   }
   if (!Array.isArray(raw.rules)) {
     errors.push('rules 必须是数组');
@@ -340,16 +363,28 @@ async function resetConfig() {
   return clone(DEFAULT_CONFIG);
 }
 
+/** 读取点击行为配置，未知值回退到「仅同步」。 */
+function normalizeClickAction(value) {
+  return CLICK_ACTIONS.includes(value) ? value : DEFAULT_CLICK_ACTION;
+}
+
+/** 读取语言配置，未知值回退到跟随浏览器。 */
+function normalizeLanguage(value) {
+  return LANGUAGES.includes(value) ? value : DEFAULT_LANGUAGE;
+}
+
 /**
- * 由「全局开关 + 规则数组」组装出可保存的配置。
+ * 由「全局开关 + 点击行为 + 语言 + 规则数组」组装出可保存的配置。
  * 放在存储层是为了让字段映射有单测兜底——之前配置页自己组对象，
  * 漏掉过 highlight 字段，导致页面内标识保存后丢失。
  */
-function buildConfigFromRules(globalEnabled, rules) {
+function buildConfigFromRules(globalEnabled, rules, clickAction, language) {
   const list = Array.isArray(rules) ? rules : [];
   return {
     schemaVersion: SCHEMA_VERSION,
     globalEnabled: globalEnabled !== false,
+    clickAction: normalizeClickAction(clickAction),
+    language: normalizeLanguage(language),
     rules: list.map((rule) => {
       const normalized = {
         id: String(rule && rule.id != null ? rule.id : ''),
@@ -396,11 +431,17 @@ export {
   SCHEMA_VERSION,
   GROUP_COLORS,
   GROUP_COLOR_HEX,
+  CLICK_ACTIONS,
+  DEFAULT_CLICK_ACTION,
+  LANGUAGES,
+  DEFAULT_LANGUAGE,
   DEFAULT_COLOR,
   DEFAULT_MIN_TABS,
   DEFAULT_CONFIG,
   clone,
   validateConfig,
+  normalizeClickAction,
+  normalizeLanguage,
   buildConfigFromRules,
   parseConfigText,
   loadConfig,

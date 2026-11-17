@@ -81,7 +81,7 @@ node --test --test-isolation=none `
   (Get-ChildItem test\*.test.js -Exclude bundle.test.js).FullName
 ```
 
-当前是 **122 项通过**。
+当前是 **131 项通过**。
 
 ### 完整测试（需要完整权限）
 
@@ -90,7 +90,7 @@ $env:npm_config_cache = Join-Path (Get-Location) 'output\.npm-cache'
 npm test
 ```
 
-完整测试是 **124 项**：上面的 122 项 + `test/bundle.test.js` 的 2 项打包冒烟测试。后者需要 esbuild 子进程，只能在允许 spawn 的环境执行。
+完整测试是 **133 项**：上面的 131 项 + `test/bundle.test.js` 的 2 项打包冒烟测试。后者需要 esbuild 子进程，只能在允许 spawn 的环境执行。
 
 ### 不要做的事
 

@@ -7,6 +7,8 @@ import {
   SCHEMA_VERSION,
   validateConfig,
   buildConfigFromRules,
+  normalizeClickAction,
+  normalizeLanguage,
   colorForIndex,
   parseConfigText,
   colorOf,
@@ -343,4 +345,64 @@ test('colorForIndex：按序号循环取色，9 个颜色一轮', () => {
   assert.equal(colorForIndex(-1), GROUP_COLORS[1]);
   assert.equal(colorForIndex('2'), GROUP_COLORS[2]);
   assert.equal(colorForIndex('x'), GROUP_COLORS[0]);
+});
+
+test('clickAction：四个取值均可通过校验，未知值被拒绝', () => {
+  for (const action of ['sync', 'syncRuleCollapse', 'syncCollapseInactive', 'syncCollapseAll']) {
+    const config = validConfig();
+    config.clickAction = action;
+    assert.equal(validateConfig(config).ok, true, `${action} 应被接受`);
+  }
+
+  const bad = validConfig();
+  bad.clickAction = 'collapseEverything';
+  const result = validateConfig(bad);
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join('\n'), /clickAction/);
+});
+
+test('clickAction：缺省或未知值回退到 sync，构建配置会补上默认值', () => {
+  const legacy = validConfig();
+  delete legacy.clickAction;
+  assert.equal(validateConfig(legacy).ok, true, '旧配置没有该字段也能读取');
+
+  assert.equal(normalizeClickAction(undefined), 'sync');
+  assert.equal(normalizeClickAction('collapseEverything'), 'sync');
+  assert.equal(normalizeClickAction('syncCollapseAll'), 'syncCollapseAll');
+
+  const built = buildConfigFromRules(
+    true,
+    [{ id: 'a', name: 'A', patterns: ['*://a/*'] }],
+    'syncCollapseAll'
+  );
+  assert.equal(built.clickAction, 'syncCollapseAll');
+  assert.equal(buildConfigFromRules(true, []).clickAction, 'sync');
+});
+
+test('language：auto / zh / en 通过校验，未知值被拒绝', () => {
+  for (const language of ['auto', 'zh', 'en']) {
+    const config = validConfig();
+    config.language = language;
+    assert.equal(validateConfig(config).ok, true, `${language} 应被接受`);
+  }
+
+  const bad = validConfig();
+  bad.language = 'fr';
+  const result = validateConfig(bad);
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join('\n'), /language/);
+});
+
+test('language：缺省或未知值回退到 auto，构建配置会写入默认值', () => {
+  const legacy = validConfig();
+  delete legacy.language;
+  assert.equal(validateConfig(legacy).ok, true, '旧配置没有该字段也能读取');
+
+  assert.equal(normalizeLanguage(undefined), 'auto');
+  assert.equal(normalizeLanguage('fr'), 'auto');
+  assert.equal(normalizeLanguage('en'), 'en');
+
+  const built = buildConfigFromRules(true, [], 'sync', 'en');
+  assert.equal(built.language, 'en');
+  assert.equal(buildConfigFromRules(true, []).language, 'auto');
 });

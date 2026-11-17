@@ -7,8 +7,7 @@ import {
   applyI18n,
   resolveLanguage,
   setLanguage,
-  t,
-  LANGUAGE_KEY
+  t
 } from './i18n.js';
 
 /**
@@ -28,6 +27,22 @@ const els = {
   reload: document.getElementById('reload'),
   addRule: document.getElementById('addRule')
 };
+
+/** 访问所有网站的 host 权限：content script 注入依赖它。 */
+const HOST_PERMISSION = { origins: ['*://*/*'] };
+
+/**
+ * 是否由扩展自己管理 host 权限。只有 Firefox 需要：
+ * Chromium 在安装时就把 content_scripts 的站点访问当作必需权限授予，
+ * permissions.contains 查不到（会误报无权限），permissions.remove 也会报
+ * "You cannot remove required permissions"。runtime.getBrowserInfo 是 Firefox 独有接口。
+ */
+const CAN_MANAGE_HOST_PERMISSION = Boolean(
+  browser.runtime && typeof browser.runtime.getBrowserInfo === 'function'
+);
+
+/** 权限状态：默认按已授权处理，启动时用 permissions.contains 校正。 */
+let permissionGranted = true;
 
 const COLOR_HEX = {
   grey: '#9aa0a6',
@@ -58,8 +73,7 @@ const GLOBAL_ID = '__global__';
 /** 有未保存修改时禁止导出，提示文案在按钮提示与状态栏共用。 */
 const UNSAVED_EXPORT_HINT = '有未保存的修改，请先「保存并同步」或「放弃修改」再导出。';
 
-let state = { globalEnabled: true, rules: [], selectedId: null };
-let languagePreference = 'auto';
+let state = { globalEnabled: true, clickAction: 'sync', language: 'auto', rules: [], selectedId: null };
 let savedSnapshot = '';
 let busy = false;
 let previewRefresh = null;
@@ -74,7 +88,12 @@ function colorHex(color) {
 }
 
 function snapshot() {
-  return JSON.stringify({ globalEnabled: state.globalEnabled, rules: state.rules });
+  return JSON.stringify({
+    globalEnabled: state.globalEnabled,
+    clickAction: state.clickAction,
+    language: state.language,
+    rules: state.rules
+  });
 }
 
 function selectedRule() {
@@ -179,6 +198,7 @@ function renderList() {
     empty.textContent = '还没有分组，点右上角 ＋ 添加。';
     els.list.appendChild(empty);
     applyI18n(els.list);
+    syncDirtyState();
     return;
   }
 
@@ -241,6 +261,7 @@ function renderList() {
     els.list.appendChild(item);
   });
   applyI18n(els.list);
+  syncDirtyState();
 }
 
 /**
@@ -557,6 +578,14 @@ function createTitleRuleCard(rule, spec, entry, index) {
   return card;
 }
 
+/** 缺少 host 权限时的红色提醒；显示时机由调用方控制。 */
+function permissionWarning(text) {
+  const warning = document.createElement('p');
+  warning.className = 'hint small permission-warning';
+  warning.textContent = text;
+  return warning;
+}
+
 function createTitleRuleSection(rule) {
   const spec = ensureTitleRule(rule);
 
@@ -577,6 +606,11 @@ function createTitleRuleSection(rule) {
   toggleTrack.setAttribute('aria-hidden', 'true');
   toggleSlot.append(toggleInput, toggleTrack);
   toggleLabel.append(toggleSlot);
+
+  // 没有 host 权限时，标题改写不会生效；只在规则启用时提示
+  const warning = permissionGranted
+    ? null
+    : permissionWarning('没有访问网站的权限，标签页标题不会被改写。请到全局配置中按提示申请权限。');
 
   const hint = document.createElement('p');
   hint.className = 'hint small';
@@ -681,6 +715,7 @@ function createTitleRuleSection(rule) {
   function syncEnabledState() {
     const disabled = !spec.enabled;
     section.classList.toggle('disabled', disabled);
+    if (warning) warning.hidden = disabled;
     section.querySelectorAll('input, button, textarea').forEach((element) => {
       if (element === toggleInput) return;
       element.disabled = disabled;
@@ -695,7 +730,10 @@ function createTitleRuleSection(rule) {
 
   syncEnabledState();
 
-  section.append(toggleLabel, hint, list, addButton, testBox);
+  const parts = [toggleLabel];
+  if (warning) parts.push(warning);
+  parts.push(hint, list, addButton, testBox);
+  section.append(...parts);
   return section;
 }
 
@@ -876,6 +914,12 @@ function createHighlightSection(rule) {
   slot.append(toggleInput, track);
   toggleLabel.append(slot);
 
+  // 没有 host 权限时，页面内标识不会绘制；只在开关打开时提示
+  const warning = permissionGranted
+    ? null
+    : permissionWarning('没有访问网站的权限，页面内标识不会生效。请到全局配置中按提示申请权限。');
+  if (warning) warning.hidden = !spec.enabled;
+
   const body = document.createElement('div');
   body.className = 'highlight-body';
   body.classList.toggle('disabled', !spec.enabled);
@@ -884,6 +928,7 @@ function createHighlightSection(rule) {
     spec.enabled = toggleInput.checked;
     commit();
     body.classList.toggle('disabled', !spec.enabled);
+    if (warning) warning.hidden = !spec.enabled;
   });
 
   // 边框
@@ -988,7 +1033,10 @@ function createHighlightSection(rule) {
   bannerBlock.append(bannerLabel, bannerChecks, bannerNums);
 
   body.append(borderBlock, bannerBlock);
-  section.append(preview.box, toggleLabel, body);
+  const parts = [preview.box, toggleLabel];
+  if (warning) parts.push(warning);
+  parts.push(body);
+  section.append(...parts);
   return section;
 }
 
@@ -1092,6 +1140,7 @@ function renderDetail() {
       : '从左侧选择一个分组，查看并编辑它的详细配置。';
     els.detail.appendChild(empty);
     applyI18n(els.detail);
+    syncDirtyState();
     return;
   }
 
@@ -1313,6 +1362,7 @@ function renderDetail() {
     tabTitleSection
   );
   applyI18n(els.detail);
+  syncDirtyState();
 }
 
 function renderGlobalDetail() {
@@ -1367,11 +1417,85 @@ function renderGlobalDetail() {
     option.textContent = label;
     languageSelect.append(option);
   }
-  languageSelect.value = languagePreference;
+  languageSelect.value = state.language;
   languageSelect.addEventListener('change', () => changeLanguage(languageSelect.value));
   languageField.append(languageSelect);
   firstRow.append(switchField, languageField);
+
+  // 网站访问权限（host 权限）：只有 Firefox 需要/可以管理。
+  // Chromium 在安装时把 content_scripts 的站点访问当作必需权限授予，
+  // permissions.contains/remove 对它无意义（remove 会报 required permissions）。
+  let permissionBlock = null;
+  if (CAN_MANAGE_HOST_PERMISSION) {
+    permissionBlock = document.createElement('div');
+    permissionBlock.className = 'fieldset permission-config';
+    const permissionTitle = document.createElement('h3');
+    permissionTitle.textContent = '网站访问权限';
+    const permissionHint = document.createElement('p');
+    permissionHint.className = 'hint small';
+    permissionHint.textContent = '页面内标识和标签页改名需要「访问所有网站」的权限。';
+
+    const permissionStatus = document.createElement('p');
+    permissionStatus.className = permissionGranted
+      ? 'hint small'
+      : 'hint small permission-warning';
+    permissionStatus.textContent = permissionGranted
+      ? '已获得访问所有网站的权限。'
+      : '当前没有该权限，这两项功能不会生效。';
+
+    const permissionActions = document.createElement('div');
+    permissionActions.className = 'global-actions';
+
+    const grantButton = document.createElement('button');
+    grantButton.type = 'button';
+    grantButton.textContent = '申请授权';
+    grantButton.disabled = permissionGranted;
+    grantButton.addEventListener('click', requestHostPermission);
+
+    const revokeButton = document.createElement('button');
+    revokeButton.type = 'button';
+    revokeButton.textContent = '取消授权';
+    revokeButton.disabled = !permissionGranted;
+    revokeButton.addEventListener('click', revokeHostPermission);
+
+    permissionActions.append(grantButton, revokeButton);
+    permissionBlock.append(permissionTitle, permissionHint, permissionStatus, permissionActions);
+  }
+
   body.append(firstRow);
+
+  // 点击插件图标的行为
+  const actionRow = document.createElement('div');
+  actionRow.className = 'detail-row';
+  const actionField = document.createElement('label');
+  actionField.className = 'field field-click-action';
+  actionField.append(document.createTextNode('点击插件图标'));
+  const actionSelect = document.createElement('select');
+  actionSelect.className = 'click-action-select';
+  for (const [value, label] of [
+    ['sync', '仅同步（检查未归组的标签）'],
+    ['syncRuleCollapse', '同步并按规则折叠分组'],
+    ['syncCollapseInactive', '同步并折叠非活动分组'],
+    ['syncCollapseAll', '同步并折叠所有分组']
+  ]) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    actionSelect.append(option);
+  }
+  actionSelect.value = state.clickAction;
+  actionSelect.addEventListener('change', () => {
+    state.clickAction = actionSelect.value;
+    syncDirtyState();
+  });
+  actionField.append(actionSelect);
+  actionRow.append(actionField);
+
+  const actionHint = document.createElement('p');
+  actionHint.className = 'hint small';
+  actionHint.textContent = '点图标时先同步，再按所选方式折叠分组；折叠只影响点击时所在的窗口。';
+  body.append(actionRow, actionHint);
+  if (permissionBlock) body.append(permissionBlock);
 
   // 配置管理
   const configBlock = document.createElement('div');
@@ -1439,7 +1563,7 @@ function renderGlobalDetail() {
   const section = createSection('global', '全局选项', body, { defaultOpen: true });
   els.detail.append(head, section);
   applyI18n(els.detail);
-  syncExportState();
+  syncDirtyState();
 }
 
 function addPatternRow(rule) {
@@ -1488,7 +1612,12 @@ function normalizeAllPatterns() {
 }
 
 function buildConfig() {
-  return Store.buildConfigFromRules(state.globalEnabled, state.rules);
+  return Store.buildConfigFromRules(
+    state.globalEnabled,
+    state.rules,
+    state.clickAction,
+    state.language
+  );
 }
 
 // ---------------- 保存 / 载入 ----------------
@@ -1555,8 +1684,9 @@ async function persist(label) {
 
   markInvalid([]);
   savedSnapshot = snapshot();
-  // 保存后回到“无未保存修改”，导出按钮应恢复可用
-  syncExportState();
+  // 保存后回到“无未保存修改”：保存 / 放弃修改 / 导出都应变回不可用
+  syncDirtyState();
+
   const stats = await sendSync();
   const summary = stats && typeof stats.grouped === 'number'
     ? `；同步完成：归组 ${stats.grouped} 个，跳过 ${stats.skipped} 个，失败 ${stats.failed} 个`
@@ -1567,21 +1697,34 @@ async function persist(label) {
 
 async function save() {
   if (busy) return;
+  // 没有未保存修改时按钮本就是禁用态，键盘快捷键也按同样规则处理
+  if (snapshot() === savedSnapshot) return;
   busy = true;
-  els.save.disabled = true;
+  syncDirtyState();
   try {
     await persist('保存');
   } finally {
     busy = false;
-    els.save.disabled = false;
+    syncDirtyState();
   }
 }
 
 // ---------------- 备份与迁移 ----------------
 
 /**
+ * 保存 / 放弃修改 / 导出的可用状态都由「当前状态 vs 已保存状态」决定：
+ * 没有未保存的修改时三个按钮都不可用，避免空点；保存过程中也保持禁用防重复提交。
+ */
+function syncDirtyState() {
+  const dirty = snapshot() !== savedSnapshot;
+  els.save.disabled = busy || !dirty;
+  els.reload.disabled = busy || !dirty;
+  syncExportState();
+}
+
+/**
  * 导出只针对**已保存**的配置：页面上有未保存修改时禁用导出按钮，并显示提示。
- * 配置页不会因为每次输入就重绘，所以在渲染全局面板、切全局开关、保存成功后主动同步状态。
+ * 配置页不会因为每次输入就重绘，所以由 syncDirtyState 统一驱动。
  */
 function syncExportState() {
   const block = els.detail.querySelector('.global-config');
@@ -1633,6 +1776,10 @@ function exportToFile() {
 
 function applyConfig(config) {
   state.globalEnabled = config.globalEnabled !== false;
+  state.clickAction = Store.normalizeClickAction(config.clickAction);
+  state.language = Store.normalizeLanguage(config.language);
+  setLanguage(resolveLanguage(state.language));
+  applyI18n(document);
   state.rules = config.rules.map((rule) => ({
     ...rule,
     patterns: Array.isArray(rule.patterns) ? rule.patterns.slice() : ['']
@@ -1663,40 +1810,24 @@ async function importFromText(text, label) {
   applyConfig(config);
   if (busy) return;
   busy = true;
-  els.save.disabled = true;
+  syncDirtyState();
   try {
     await persist('导入');
   } finally {
     busy = false;
-    els.save.disabled = false;
+    syncDirtyState();
   }
-}
-
-async function initLanguage() {
-  let preference = 'auto';
-  try {
-    const stored = await browser.storage.local.get(LANGUAGE_KEY);
-    const value = stored && stored[LANGUAGE_KEY];
-    if (value === 'auto' || value === 'zh' || value === 'en') preference = value;
-  } catch (err) {
-    // 读取失败时按系统语言显示
-  }
-
-  languagePreference = preference;
-  setLanguage(resolveLanguage(preference));
-  applyI18n(document);
 }
 
 function changeLanguage(preference) {
   if (preference !== 'auto' && preference !== 'zh' && preference !== 'en') return;
-  languagePreference = preference;
+  // 只改内存状态并立即生效，随「保存并同步」一起落盘
+  state.language = preference;
   setLanguage(resolveLanguage(preference));
-  browser.storage.local
-    .set({ [LANGUAGE_KEY]: preference })
-    .catch((err) => setStatus('warn', String(err)));
   applyI18n(document);
   renderList();
   renderDetail();
+  syncDirtyState();
 }
 
 async function load() {
@@ -1704,6 +1835,7 @@ async function load() {
 
   state = {
     globalEnabled: config.globalEnabled !== false,
+    clickAction: Store.normalizeClickAction(config.clickAction),
     rules: config.rules.map((rule) => ({
       ...rule,
       patterns: Array.isArray(rule.patterns) ? rule.patterns.slice() : ['']
@@ -1716,10 +1848,17 @@ async function load() {
     : (state.rules[0] ? state.rules[0].id : GLOBAL_ID);
   persistSelected();
 
+  // 语言属于配置，直接取 config.language（缺省或未知值回退 auto）
+  const language = Store.normalizeLanguage(config.language);
+  state.language = language;
+  setLanguage(resolveLanguage(language));
+  applyI18n(document);
+
   closeMenus();
+  // 先更新快照再渲染：导出按钮的可用状态取决于“当前状态 vs 已保存状态”
+  savedSnapshot = snapshot();
   renderList();
   renderDetail();
-  savedSnapshot = snapshot();
   markInvalid([]);
 
   if (errors && errors.length > 0) {
@@ -1730,6 +1869,7 @@ async function load() {
       `当前配置：${source === 'storage' ? '来自 storage' : '内置默认'}，共 ${config.rules.length} 个分组`
     );
   }
+  syncDirtyState();
 }
 
 async function reset() {
@@ -1738,6 +1878,57 @@ async function reset() {
   await load();
   await sendSync();
   setStatus('ok', '已恢复默认配置，并同步了已打开的标签页');
+}
+
+// ---------------- host 权限 ----------------
+
+/**
+ * 没有「访问所有网站」的 host 权限时，content script 不会注入，
+ * 页面内标识和标签页改名会静默失效。权限状态变化后重绘当前详情面板：
+ * 全局配置里显示授权入口，分组详情里按开关显示红色提醒。
+ */
+async function syncPermissionState() {
+  if (!CAN_MANAGE_HOST_PERMISSION) return;
+  let granted = true;
+  try {
+    granted = await browser.permissions.contains(HOST_PERMISSION);
+  } catch (err) {
+    // 没有 permissions API 时不打扰用户
+    granted = true;
+  }
+  if (granted === permissionGranted) return;
+  permissionGranted = granted;
+  renderDetail();
+}
+
+function requestHostPermission() {
+  browser.permissions
+    .request(HOST_PERMISSION)
+    .then(async (granted) => {
+      await syncPermissionState();
+      setStatus(
+        granted ? 'ok' : 'warn',
+        granted
+          ? '已获得访问网站的权限，请刷新已打开的页面让页面内标识生效'
+          : '未获得访问网站的权限，页面内标识和标签页改名暂时不会生效'
+      );
+    })
+    .catch((err) => setStatus('error', `权限请求失败：${String(err)}`));
+}
+
+function revokeHostPermission() {
+  browser.permissions
+    .remove(HOST_PERMISSION)
+    .then(async (removed) => {
+      await syncPermissionState();
+      setStatus(
+        removed ? 'ok' : 'warn',
+        removed
+          ? '已撤销访问网站的权限，页面内标识和标签页改名将停用（刷新已打开的页面后完全停止）'
+          : '访问网站的权限未被撤销'
+      );
+    })
+    .catch((err) => setStatus('error', `撤销权限失败：${String(err)}`));
 }
 
 // ---------------- 事件绑定 ----------------
@@ -1749,6 +1940,17 @@ els.reload.addEventListener('click', () => {
   load().catch((err) => setStatus('error', `读取失败：${String(err)}`));
 });
 els.addRule.addEventListener('click', addRule);
+
+// 用户在浏览器设置里手动授予 / 撤销权限时同步界面提示
+if (browser.permissions) {
+  if (browser.permissions.onAdded) browser.permissions.onAdded.addListener(syncPermissionState);
+  if (browser.permissions.onRemoved) browser.permissions.onRemoved.addListener(syncPermissionState);
+}
+
+// 任意输入 / 选择变化后重新计算按钮可用状态；元素自身的处理器会先更新 state，
+// 这里用冒泡阶段监听即可拿到最新状态。
+document.addEventListener('input', syncDirtyState);
+document.addEventListener('change', syncDirtyState);
 
 
 // 点空白处或按 Esc 收起颜色面板
@@ -1774,6 +1976,6 @@ document.addEventListener('keydown', (event) => {
 });
 
 els.version.textContent = `v${browser.runtime.getManifest().version}`;
-initLanguage()
-  .then(() => load())
+load()
+  .then(() => syncPermissionState())
   .catch((err) => setStatus('error', `读取配置失败：${String(err)}`));

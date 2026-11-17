@@ -150,6 +150,10 @@
   .switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
   .switch input { width: 16px; height: 16px; margin: 0; }
 
+  /* 缺少 host 权限时的提示：全局配置里有一块权限区域，分组详情里按开关显示 */
+  .hint.small.permission-warning { color: var(--error); }
+  .permission-config { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--divider); }
+
   /* 整体分栏：左侧分组列表 + 右侧详情，中间一条竖线 */
   .layout {
     display: grid;
@@ -261,6 +265,7 @@
   }
   .field-name { flex: 0 1 240px; min-width: 140px; }
   .field-language { flex: 1 1 220px; min-width: 180px; }
+  .field-click-action { flex: 1 1 320px; min-width: 220px; }
   .global-first-row { align-items: flex-start; }
   .global-first-row .field-switch .switch-slot { min-height: 0; padding-top: 8px; }
   .field-color { flex: none; }
@@ -654,8 +659,8 @@
 
   <div class="toolbar">
     <span class="spacer"></span>
-    <button id="save" class="primary" type="button">保存并同步</button>
-    <button id="reload" type="button">放弃修改</button>
+    <button id="save" class="primary" type="button" disabled>保存并同步</button>
+    <button id="reload" type="button" disabled>放弃修改</button>
   </div>
 
   <div class="layout">

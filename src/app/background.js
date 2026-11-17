@@ -220,6 +220,90 @@ async function syncAll(options) {
   return stats;
 }
 
+/**
+ * 折叠分组。只处理 windowId 指定的窗口（点击发生时所在的窗口）；
+ * 没有窗口信息时退化为所有窗口。
+ *
+ * @param {'syncRuleCollapse'|'syncCollapseInactive'|'syncCollapseAll'} mode
+ * @param {object} config 生效配置，`syncRuleCollapse` 需要里面的规则
+ * @param {number} [windowId]
+ * @returns {Promise<number>} 实际折叠的分组数
+ */
+async function collapseGroups(mode, config, windowId) {
+  const scope = typeof windowId === 'number' ? { windowId } : {};
+  const rules = Array.isArray(config && config.rules) ? config.rules : [];
+
+  // 只有“按规则折叠”需要规则；规则里的 collapsed 就是基础配置的「命中后折叠」
+  const ruleCollapsedNames = new Set(
+    rules
+      .filter((rule) => rule && rule.enabled !== false && rule.collapsed === true)
+      .map((rule) => rule.name)
+  );
+
+  // “非活动分组”= 不含当前活动标签的分组
+  const keepGroupIds = new Set();
+  if (mode === 'syncCollapseInactive') {
+    try {
+      const activeTabs = await browser.tabs.query({ active: true, ...scope });
+      for (const tab of activeTabs) {
+        if (tab && typeof tab.groupId === 'number' && tab.groupId !== -1) {
+          keepGroupIds.add(tab.groupId);
+        }
+      }
+    } catch (err) {
+      Logger.warn('读取活动标签失败，跳过折叠', String(err));
+      return 0;
+    }
+  }
+
+  let groups;
+  try {
+    groups = await browser.tabGroups.query(scope);
+  } catch (err) {
+    Logger.warn('读取分组列表失败，跳过折叠', String(err));
+    return 0;
+  }
+
+  let collapsed = 0;
+  for (const group of groups) {
+    if (!group || group.collapsed === true) continue;
+    if (keepGroupIds.has(group.id)) continue;
+    if (mode === 'syncRuleCollapse' && !ruleCollapsedNames.has(group.title)) continue;
+
+    try {
+      await browser.tabGroups.update(group.id, { collapsed: true });
+      collapsed += 1;
+    } catch (err) {
+      // 单个分组失败不影响其他分组
+      Logger.warn('折叠分组失败', { groupId: group.id, error: String(err) });
+    }
+  }
+
+  return collapsed;
+}
+
+/**
+ * 点击工具栏图标的入口：先同步，再按全局配置里的 clickAction 决定是否折叠。
+ * 同步和以前一样覆盖所有窗口；折叠只影响点击时所在的窗口。
+ */
+async function handleToolbarClick(tab) {
+  const stats = await syncAll();
+
+  const { config } = await Store.loadConfig();
+  if (config.globalEnabled === false) return stats;
+
+  const action = Store.normalizeClickAction(config.clickAction);
+  if (action === 'sync') return stats;
+
+  const windowId = tab && typeof tab.windowId === 'number' ? tab.windowId : undefined;
+  const collapsed = await collapseGroups(action, config, windowId);
+  Logger.info(
+    `点击行为：${action}，折叠 ${collapsed} 个分组${typeof windowId === 'number' ? `（窗口 ${windowId}）` : ''}`,
+    { action, windowId, collapsed }
+  );
+  return { ...stats, action, collapsed };
+}
+
 browser.tabs.onCreated.addListener((tab) => {
   schedule(tab);
 });
@@ -340,13 +424,13 @@ browser.storage.onChanged.addListener((changes, areaName) => {
 
 // 工具栏按钮：点一下就把当前窗口/所有窗口的标签页按规则同步一遍
 if (browser.action && browser.action.onClicked) {
-  browser.action.onClicked.addListener(() => {
-    syncAll().catch((err) => Logger.error('手动同步失败', String(err)));
+  browser.action.onClicked.addListener((tab) => {
+    handleToolbarClick(tab).catch((err) => Logger.error('工具栏按钮处理失败', String(err)));
   });
 }
 
 // 测试直接导入编排接口；控制台调试使用下方的 TabPilotDebug。
-export { flush, schedule, syncAll };
+export { flush, schedule, syncAll, collapseGroups, handleToolbarClick };
 
 /**
  * v0.1.0 还没有配置界面，用它在扩展控制台里改配置：

@@ -1,4 +1,7 @@
 {
+  "optional_host_permissions": [
+    "*://*/*"
+  ],
   "browser_specific_settings": {
     "gecko": {
       "id": "tabpilot@local",

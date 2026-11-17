@@ -46,11 +46,12 @@ globalThis.browser = {
   },
   tabs: {
     async query(queryInfo) {
-      const windowId = queryInfo ? queryInfo.windowId : undefined;
-      if (windowId === undefined) {
-        return Object.keys(state.tabsByWindow).flatMap((key) => state.tabsByWindow[key]);
-      }
-      return state.tabsByWindow[windowId] || [];
+      const info = queryInfo || {};
+      const tabs = info.windowId === undefined
+        ? Object.keys(state.tabsByWindow).flatMap((key) => state.tabsByWindow[key])
+        : (state.tabsByWindow[info.windowId] || []);
+      if (info.active === true) return tabs.filter((tab) => tab.active === true);
+      return tabs;
     },
     async group(options) {
       state.groupCalls.push(options);
@@ -63,8 +64,12 @@ globalThis.browser = {
     }
   },
   tabGroups: {
-    async query() {
-      return state.existingGroups;
+    async query(queryInfo) {
+      const info = queryInfo || {};
+      if (info.windowId === undefined) return state.existingGroups;
+      return state.existingGroups.filter(
+        (group) => group.windowId === undefined || group.windowId === info.windowId
+      );
     },
     async update(id, patch) {
       state.updateCalls.push({ id, patch });
@@ -582,4 +587,82 @@ test('配置变化会通知所有页面刷新标识', async () => {
 
   assert.equal(state.pageMessages.length, 2);
   assert.deepEqual(state.pageMessages[0], { tabId: 7, message: { type: 'tabpilot:refresh' } });
+});
+
+test('点击行为：默认仅同步，不折叠任何分组', async () => {
+  reset();
+  state.storedConfig = configWith([rule({})]);
+  state.existingGroups = [{ id: 1, title: '开发', collapsed: false, windowId: 3 }];
+
+  const result = await Background.handleToolbarClick({ windowId: 3 });
+
+  assert.equal(result.action, undefined, '仅同步不返回折叠信息');
+  assert.deepEqual(state.updateCalls, []);
+});
+
+test('点击行为：syncCollapseAll 折叠点击窗口内的所有分组', async () => {
+  reset();
+  state.storedConfig = { ...configWith([]), clickAction: 'syncCollapseAll' };
+  state.existingGroups = [
+    { id: 1, title: 'A', collapsed: false, windowId: 3 },
+    { id: 2, title: 'B', collapsed: true, windowId: 3 },
+    { id: 3, title: 'C', collapsed: false, windowId: 4 }
+  ];
+
+  const result = await Background.handleToolbarClick({ windowId: 3 });
+
+  assert.equal(result.collapsed, 1, '已折叠的不重复处理');
+  assert.deepEqual(state.updateCalls, [{ id: 1, patch: { collapsed: true } }]);
+});
+
+test('点击行为：syncCollapseInactive 跳过包含活动标签的分组', async () => {
+  reset();
+  state.storedConfig = { ...configWith([]), clickAction: 'syncCollapseInactive' };
+  state.existingGroups = [
+    { id: 1, title: 'A', collapsed: false, windowId: 3 },
+    { id: 2, title: 'B', collapsed: false, windowId: 3 }
+  ];
+  state.tabsByWindow[3] = [
+    { id: 10, windowId: 3, url: 'about:blank', groupId: 2, active: true },
+    { id: 11, windowId: 3, url: 'about:blank', groupId: 1, active: false }
+  ];
+
+  const result = await Background.handleToolbarClick({ windowId: 3 });
+
+  assert.equal(result.collapsed, 1);
+  assert.deepEqual(state.updateCalls, [{ id: 1, patch: { collapsed: true } }]);
+});
+
+test('点击行为：syncRuleCollapse 只折叠开启了「命中后折叠」的规则分组', async () => {
+  reset();
+  state.storedConfig = {
+    schemaVersion: 1,
+    globalEnabled: true,
+    clickAction: 'syncRuleCollapse',
+    rules: [
+      rule({ id: 'dev', name: '开发', collapsed: true }),
+      rule({ id: 'code', name: '代码', collapsed: false, patterns: ['*://*.github.com/*'] })
+    ]
+  };
+  state.existingGroups = [
+    { id: 1, title: '开发', collapsed: false, windowId: 3 },
+    { id: 2, title: '代码', collapsed: false, windowId: 3 },
+    { id: 3, title: '手动分组', collapsed: false, windowId: 3 }
+  ];
+
+  const result = await Background.handleToolbarClick({ windowId: 3 });
+
+  assert.equal(result.collapsed, 1);
+  assert.deepEqual(state.updateCalls, [{ id: 1, patch: { collapsed: true } }]);
+});
+
+test('点击行为：全局暂停时不折叠任何分组', async () => {
+  reset();
+  state.storedConfig = { ...configWith([], false), clickAction: 'syncCollapseAll' };
+  state.existingGroups = [{ id: 1, title: 'A', collapsed: false, windowId: 3 }];
+
+  await Background.handleToolbarClick({ windowId: 3 });
+
+  assert.deepEqual(state.updateCalls, []);
+  assert.equal(state.groupCalls.length, 0);
 });
