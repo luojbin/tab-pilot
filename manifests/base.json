@@ -1,15 +1,16 @@
 {
   "manifest_version": 3,
-  "name": "TabPilot",
+  "name": "__MSG_extensionName__",
   "version": "0.0.0",
-  "description": "标签页管理器：按规则自动归组、上色，并可在页面内显示分组标识。",
+  "description": "__MSG_extensionDescription__",
+  "default_locale": "en",
   "permissions": [
     "tabs",
     "tabGroups",
     "storage"
   ],
   "action": {
-    "default_title": "TabPilot：立即同步标签页",
+    "default_title": "__MSG_actionTitle__",
     "default_icon": {
       "16": "icons/icon-16.png",
       "32": "icons/icon-32.png"

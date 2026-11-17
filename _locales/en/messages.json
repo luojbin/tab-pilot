@@ -1,0 +1,11 @@
+{
+  "extensionName": {
+    "message": "TabPilot"
+  },
+  "extensionDescription": {
+    "message": "Rule-based tab manager: auto-group tabs, color groups, highlight pages, and rewrite tab titles."
+  },
+  "actionTitle": {
+    "message": "TabPilot: sync tabs now"
+  }
+}

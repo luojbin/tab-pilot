@@ -33,11 +33,15 @@ src/
     content.js         网页入口：边框、banner、标题改写与监听
   ui/
     options.html       配置页结构与样式
-    options.js         配置页入口：编辑、预览、导入导出与保存
+    options.js         配置页入口：编辑、预览、导入导出、保存与语言切换
+    i18n.js            配置页中英文案与语言解析（中文 / English）
   platform/
     browser.js         导出 globalThis.browser ?? globalThis.chrome
+_locales/
+  en/messages.json     manifest 英文名称 / 描述 / 工具栏标题
+  zh_CN/messages.json  manifest 中文名称 / 描述 / 工具栏标题
 manifests/
-  base.json            共享 manifest 模板
+  base.json            共享 manifest 模板（名称与描述使用 __MSG_ 占位符）
   manifest.firefox.json Firefox 后台与专用声明
   manifest.chromium.json Chromium service worker 与最低版本
 scripts/build-targets.mjs 构建、manifest 合并、静态资源复制与 ZIP 打包
@@ -55,6 +59,8 @@ output/                扩展 ZIP 等本地产物（不提交 Git）
 ## ES Module 与构建
 
 源码使用 `import` / `export`，`package.json` 声明 `"type": "module"`。新增依赖直接在使用它的文件中导入，不需要在 manifest 或 HTML 中排列基础脚本顺序；仍需避免循环依赖和错误的异步初始化顺序。
+
+配置页语言偏好保存在 `storage.local` 的 `tabpilot:language`（`auto` / `zh` / `en`）；manifest 的名称、描述和工具栏标题通过 `_locales/en`、`_locales/zh_CN` 与 `__MSG_*` 占位符由浏览器语言决定，不受配置页手动切换影响。
 
 esbuild 将以下三个入口及其依赖分别打包为普通 IIFE 脚本：
 
@@ -75,7 +81,7 @@ npm run build:chromium  # 仅 Chromium
 | Firefox | `dist/firefox/` | `output/tabpilot-<version>-firefox.zip` |
 | Chromium | `dist/chromium/` | `output/tabpilot-<version>-chromium.zip` |
 
-构建前会清理对应目标的 `dist` 目录，再合并 manifest、注入 `package.json` 的版本、打包 JS、复制 HTML / 图标 / LICENSE 并生成 ZIP。只修改源码和模板，不直接编辑 `dist/`。当前不提供 watch 或 sourcemap，修改源码后需重新构建。
+构建前会清理对应目标的 `dist` 目录，再合并 manifest、注入 `package.json` 的版本、打包 JS、复制 HTML / 图标 / LICENSE / `_locales` 并生成 ZIP。只修改源码和模板，不直接编辑 `dist/`。当前不提供 watch 或 sourcemap，修改源码后需重新构建。
 
 两个目标分别使用 `firefox140`、`chrome116` 作为语法兼容目标。当前版本的三个 JS 产物相同，差异在 manifest；以后使用新语法时，两个目标的 JS 输出可能不同。
 

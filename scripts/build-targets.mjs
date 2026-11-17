@@ -31,7 +31,7 @@ const TARGETS = {
   }
 };
 
-const COPY_ENTRIES = ['icons', 'LICENSE', 'src/ui/options.html'];
+const COPY_ENTRIES = ['_locales', 'icons', 'LICENSE', 'src/ui/options.html'];
 const ENTRY_POINTS = ['src/app/background.js', 'src/app/content.js', 'src/ui/options.js'];
 
 function readJson(relativePath) {

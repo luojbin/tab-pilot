@@ -183,6 +183,19 @@
   }
   .panel-head h2 { margin: 0; font-size: 13px; font-weight: 600; color: var(--muted); }
 
+  /* 全局配置单独置顶，与分组列表用分隔线隔开 */
+  .global-list {
+    list-style: none;
+    margin: 0 0 12px;
+    padding: 0 0 12px;
+    border-bottom: 1px solid var(--divider);
+  }
+  .global-item .group-name { font-weight: 600; }
+
+  .global-actions { display: flex; gap: 8px; margin: 10px 0 6px; }
+  .global-actions button { flex: 1 1 auto; padding: 6px 8px; font-size: 12px; }
+  .global-config { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--divider); }
+
   /* ---------- 左栏：分组列表（列表行，不是卡片） ---------- */
   .group-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
   .group-item { border-radius: 6px; }
@@ -223,6 +236,8 @@
   .hint { color: var(--muted); font-size: 12.5px; margin: 0; }
   .hint.small { font-size: 12px; margin-top: 10px; }
   .hint code { background: var(--panel); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
+  /* 导出被未保存修改挡住时的提示：用错误色，比普通 hint 更醒目 */
+  .hint.small.export-blocked { color: var(--error); }
 
   /* ---------- 右栏：分组详情 ---------- */
   .detail-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
@@ -245,11 +260,15 @@
     color: var(--muted);
   }
   .field-name { flex: 0 1 240px; min-width: 140px; }
+  .field-language { flex: 1 1 220px; min-width: 180px; }
+  .global-first-row { align-items: flex-start; }
+  .global-first-row .field-switch .switch-slot { min-height: 0; padding-top: 8px; }
   .field-color { flex: none; }
   .field-threshold { flex: none; width: 110px; }
   .field input[type="text"],
   .field input[type="number"],
   .field textarea,
+  .field select,
   .field .color-select {
     min-width: 0;
     padding: 7px 10px;
@@ -261,7 +280,8 @@
   }
   .field input[type="text"],
   .field input[type="number"],
-  .field textarea { width: 100%; }
+  .field textarea,
+  .field select { width: 100%; }
   .field input:focus,
   .field textarea:focus,
   .field .color-select:focus-visible { outline: none; border-color: var(--accent); }
@@ -633,28 +653,21 @@
   </header>
 
   <div class="toolbar">
-    <label class="switch">
-      <input type="checkbox" id="globalEnabled">
-      <span>启用自动归组</span>
-    </label>
     <span class="spacer"></span>
     <button id="save" class="primary" type="button">保存并同步</button>
     <button id="reload" type="button">放弃修改</button>
-    <button id="reset" type="button">恢复默认</button>
-    <button id="exportFile" type="button" title="把当前配置（含未保存的编辑）导出为 JSON 文件">导出 JSON</button>
-    <button id="importFile" type="button" title="从 JSON 文件导入配置，校验通过后替换当前配置并同步">导入 JSON…</button>
-    <input type="file" id="importInput" accept="application/json,.json" hidden>
   </div>
 
   <div class="layout">
     <aside class="groups">
+      <ul id="globalList" class="global-list"></ul>
       <div class="panel-head">
         <h2>分组</h2>
         <button id="addRule" class="icon" type="button" title="添加分组规则" aria-label="添加分组规则">＋</button>
       </div>
       <ul id="groupList" class="group-list"></ul>
       <p class="hint small">
-        左栏只用于查看和选中分组；重命名、改颜色、启用 / 停用在右侧完成。⋯ 菜单可以调整顺序或删除。
+        顶部「全局配置」管理全局开关、语言和配置导入导出；下方分组列表用于选中分组，重命名、改颜色、启用 / 停用在右侧完成。⋯ 菜单可以调整顺序或删除。
       </p>
     </aside>
 

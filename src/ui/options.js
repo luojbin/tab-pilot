@@ -3,6 +3,13 @@ import * as Store from '../app/store.js';
 import * as Rules from '../core/rules.js';
 import * as Highlight from '../core/highlight.js';
 import * as TitleRule from '../core/title-rule.js';
+import {
+  applyI18n,
+  resolveLanguage,
+  setLanguage,
+  t,
+  LANGUAGE_KEY
+} from './i18n.js';
 
 /**
  * TabPilot 配置页逻辑（两栏：左侧分组列表 + 右侧分组详情）
@@ -12,18 +19,14 @@ import * as TitleRule from '../core/title-rule.js';
  * 也为后续的标签页重命名、页面内高亮预留了位置。
  */
 const els = {
+  globalList: document.getElementById('globalList'),
   list: document.getElementById('groupList'),
   detail: document.getElementById('detail'),
   status: document.getElementById('status'),
   version: document.getElementById('version'),
-  globalEnabled: document.getElementById('globalEnabled'),
   save: document.getElementById('save'),
   reload: document.getElementById('reload'),
-  reset: document.getElementById('reset'),
-  addRule: document.getElementById('addRule'),
-  exportFile: document.getElementById('exportFile'),
-  importFile: document.getElementById('importFile'),
-  importInput: document.getElementById('importInput')
+  addRule: document.getElementById('addRule')
 };
 
 const COLOR_HEX = {
@@ -51,8 +54,12 @@ const COLOR_LABEL = {
 };
 
 const SELECTED_KEY = 'tabpilot:selected-rule-id';
+const GLOBAL_ID = '__global__';
+/** 有未保存修改时禁止导出，提示文案在按钮提示与状态栏共用。 */
+const UNSAVED_EXPORT_HINT = '有未保存的修改，请先「保存并同步」或「放弃修改」再导出。';
 
 let state = { globalEnabled: true, rules: [], selectedId: null };
+let languagePreference = 'auto';
 let savedSnapshot = '';
 let busy = false;
 let previewRefresh = null;
@@ -108,6 +115,7 @@ function setStatus(kind, message, details) {
     }
     els.status.appendChild(list);
   }
+  applyI18n(els.status);
 }
 
 // ---------------- 左侧：分组列表 ----------------
@@ -125,7 +133,44 @@ function menuButton(label, onClick, disabled, extraClass) {
   return element;
 }
 
+function createGlobalListItem() {
+  const item = document.createElement('li');
+  item.className = 'group-item global-item';
+  if (state.selectedId === GLOBAL_ID) item.classList.add('selected');
+
+  const row = document.createElement('div');
+  row.className = 'group-row';
+
+  const name = document.createElement('span');
+  name.className = 'group-name';
+  name.textContent = t('全局配置');
+
+  const track = document.createElement('span');
+  track.className = 'switch-ui';
+  track.setAttribute('aria-hidden', 'true');
+  if (state.globalEnabled) track.classList.add('on');
+  track.title = state.globalEnabled ? '已启用（在右侧停用）' : '已停用（在右侧启用）';
+
+  row.append(name, track);
+  item.append(row);
+  item.addEventListener('click', selectGlobal);
+  return item;
+}
+
+function selectGlobal() {
+  if (state.selectedId === GLOBAL_ID) return;
+  state.selectedId = GLOBAL_ID;
+  persistSelected();
+  closeMenus();
+  renderList();
+  renderDetail();
+}
+
 function renderList() {
+  els.globalList.textContent = '';
+  els.globalList.appendChild(createGlobalListItem());
+  applyI18n(els.globalList);
+
   els.list.textContent = '';
 
   if (state.rules.length === 0) {
@@ -133,6 +178,7 @@ function renderList() {
     empty.className = 'empty';
     empty.textContent = '还没有分组，点右上角 ＋ 添加。';
     els.list.appendChild(empty);
+    applyI18n(els.list);
     return;
   }
 
@@ -153,8 +199,9 @@ function renderList() {
 
     const name = document.createElement('span');
     name.className = 'group-name';
-    name.textContent = rule.name || '未命名分组';
-    name.title = rule.name || '未命名分组';
+    name.setAttribute('data-i18n-skip', '');
+    name.textContent = rule.name || t('未命名分组');
+    name.title = rule.name || t('未命名分组');
 
     // 只读的 iOS 风格拨杆：表示启用状态，切换在右栏
     const stateSwitch = document.createElement('span');
@@ -193,15 +240,27 @@ function renderList() {
     item.append(row, menu);
     els.list.appendChild(item);
   });
+  applyI18n(els.list);
+}
+
+/**
+ * 左栏选中态：全局配置条目与分组条目互斥。
+ * 点分组时只改类、不重建列表（保住 ⋯ 菜单状态），所以两块列表都要手动同步。
+ */
+function syncSelection() {
+  for (const item of els.list.querySelectorAll('.group-item')) {
+    item.classList.toggle('selected', item.dataset.id === state.selectedId);
+  }
+  for (const item of els.globalList.querySelectorAll('.global-item')) {
+    item.classList.toggle('selected', state.selectedId === GLOBAL_ID);
+  }
 }
 
 function selectRule(id) {
   if (state.selectedId === id) return;
   state.selectedId = id;
   persistSelected();
-  for (const item of els.list.querySelectorAll('.group-item')) {
-    item.classList.toggle('selected', item.dataset.id === id);
-  }
+  syncSelection();
   renderDetail();
 }
 
@@ -219,8 +278,8 @@ function updateListItem(rule) {
 
   const name = item.querySelector('.group-name');
   if (name) {
-    name.textContent = rule.name || '未命名分组';
-    name.title = rule.name || '未命名分组';
+    name.textContent = rule.name || t('未命名分组');
+    name.title = rule.name || t('未命名分组');
   }
 
   const swatch = item.querySelector('.swatch');
@@ -296,7 +355,7 @@ function removeRule(id) {
 
   if (state.selectedId === id) {
     const next = state.rules[Math.min(index, state.rules.length - 1)];
-    state.selectedId = next ? next.id : null;
+    state.selectedId = next ? next.id : GLOBAL_ID;
     persistSelected();
   }
   renderList();
@@ -590,6 +649,7 @@ function createTitleRuleSection(rule) {
 
       const source = document.createElement('span');
       source.className = 'title-test-src';
+      source.setAttribute('data-i18n-skip', '');
       source.textContent = row.source;
 
       const arrow = document.createElement('span');
@@ -600,6 +660,7 @@ function createTitleRuleSection(rule) {
       target.className = 'title-test-dst';
 
       if (row.matched) {
+        target.setAttribute('data-i18n-skip', '');
         target.textContent = row.result;
       } else if (row.reason === 'invalid-regex') {
         target.classList.add('warn');
@@ -1020,12 +1081,17 @@ function renderDetail() {
   const rule = selectedRule();
 
   if (!rule) {
+    if (state.selectedId === GLOBAL_ID) {
+      renderGlobalDetail();
+      return;
+    }
     const empty = document.createElement('p');
     empty.className = 'empty';
     empty.textContent = state.rules.length === 0
       ? '左侧还没有分组。点「＋」新建一个分组，再把要匹配的地址填进来。'
       : '从左侧选择一个分组，查看并编辑它的详细配置。';
     els.detail.appendChild(empty);
+    applyI18n(els.detail);
     return;
   }
 
@@ -1246,6 +1312,134 @@ function renderDetail() {
     highlightSection,
     tabTitleSection
   );
+  applyI18n(els.detail);
+}
+
+function renderGlobalDetail() {
+  els.detail.textContent = '';
+
+  const head = document.createElement('div');
+  head.className = 'detail-head';
+  const title = document.createElement('h2');
+  title.textContent = '全局配置';
+  head.append(title);
+
+  const body = document.createElement('div');
+  const firstRow = document.createElement('div');
+  firstRow.className = 'detail-row global-first-row';
+
+  // 全局开关
+  const switchField = document.createElement('label');
+  switchField.className = 'field field-switch';
+  switchField.append(document.createTextNode('全局开关'));
+  const switchSlot = document.createElement('span');
+  switchSlot.className = 'switch-slot';
+  const switchInput = document.createElement('input');
+  switchInput.type = 'checkbox';
+  switchInput.checked = state.globalEnabled;
+  switchInput.setAttribute('aria-label', t('全局开关'));
+  const switchTrack = document.createElement('span');
+  switchTrack.className = 'switch-ui';
+  // 外观交给 CSS 的 `input:checked + .switch-ui`，不要再挂静态 .on：
+  // .on 一旦写死在初始状态上就不会随点击移除，关闭时拨杆会一直停在启用色。
+  switchInput.addEventListener('change', () => {
+    state.globalEnabled = switchInput.checked;
+    renderList();
+    // 全局开关也是配置的一部分：改动后导出应立即变为不可用
+    syncExportState();
+  });
+  switchSlot.append(switchInput, switchTrack);
+  switchField.append(switchSlot);
+
+  // 语言
+  const languageField = document.createElement('label');
+  languageField.className = 'field field-language';
+  languageField.append(document.createTextNode('语言'));
+  const languageSelect = document.createElement('select');
+  languageSelect.className = 'language-select';
+  for (const [value, label] of [
+    ['auto', '自动（跟随浏览器）'],
+    ['zh', '中文'],
+    ['en', 'English']
+  ]) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    languageSelect.append(option);
+  }
+  languageSelect.value = languagePreference;
+  languageSelect.addEventListener('change', () => changeLanguage(languageSelect.value));
+  languageField.append(languageSelect);
+  firstRow.append(switchField, languageField);
+  body.append(firstRow);
+
+  // 配置管理
+  const configBlock = document.createElement('div');
+  configBlock.className = 'fieldset global-config';
+  const configTitle = document.createElement('h3');
+  configTitle.textContent = '配置管理';
+  const configHint = document.createElement('p');
+  configHint.className = 'hint small';
+  configHint.textContent = '导出已保存的配置，或从 JSON 文件导入并替换配置。';
+  const actions = document.createElement('div');
+  actions.className = 'global-actions';
+
+  const exportButton = document.createElement('button');
+  exportButton.type = 'button';
+  exportButton.className = 'export-config';
+  exportButton.textContent = '导出 JSON';
+  exportButton.title = '把已保存的配置导出为 JSON 文件';
+  exportButton.addEventListener('click', exportToFile);
+
+  const importButton = document.createElement('button');
+  importButton.type = 'button';
+  importButton.textContent = '导入 JSON…';
+  importButton.title = '从 JSON 文件导入配置，校验通过后替换当前配置并同步';
+
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.accept = 'application/json,.json';
+  fileInput.hidden = true;
+  fileInput.addEventListener('change', () => {
+    const file = fileInput.files && fileInput.files[0];
+    fileInput.value = '';
+    if (!file) return;
+    file
+      .text()
+      .then((value) => importFromText(value, file.name))
+      .catch((err) => setStatus('error', `读取文件失败：${String(err)}`));
+  });
+  importButton.addEventListener('click', () => fileInput.click());
+
+  const resetButton = document.createElement('button');
+  resetButton.type = 'button';
+  resetButton.textContent = '恢复默认';
+  resetButton.title = '删除已保存的配置，回到内置默认规则';
+  resetButton.addEventListener('click', () => {
+    reset().catch((err) => setStatus('error', `恢复默认失败：${String(err)}`));
+  });
+
+  actions.append(exportButton, importButton, resetButton, fileInput);
+
+  // 有未保存的修改时导出不可用，提示先保存或放弃
+  const exportBlocked = document.createElement('p');
+  exportBlocked.className = 'hint small export-blocked';
+  exportBlocked.textContent = UNSAVED_EXPORT_HINT;
+  exportBlocked.hidden = true;
+
+  configBlock.append(configTitle, configHint, actions, exportBlocked);
+
+  const future = document.createElement('p');
+  future.className = 'hint small';
+  future.textContent = '以后可以在这里增加更多全局选项。';
+  configBlock.append(future);
+
+  body.append(configBlock);
+
+  const section = createSection('global', '全局选项', body, { defaultOpen: true });
+  els.detail.append(head, section);
+  applyI18n(els.detail);
+  syncExportState();
 }
 
 function addPatternRow(rule) {
@@ -1307,8 +1501,11 @@ function markInvalid(errors) {
 
   const indexes = new Set();
   for (const error of errors) {
-    const found = /^rules\[(\d+)\]/.exec(String(error));
-    if (found) indexes.add(Number(found[1]));
+    // 一条错误可能同时点名两个分组（例如重名：`rules[1].name 重复：…（与 rules[0] 同名）`），
+    // 把这些分组都高亮出来。
+    for (const found of String(error).matchAll(/rules\[(\d+)\]/g)) {
+      indexes.add(Number(found[1]));
+    }
   }
   if (indexes.size === 0) return;
 
@@ -1358,6 +1555,8 @@ async function persist(label) {
 
   markInvalid([]);
   savedSnapshot = snapshot();
+  // 保存后回到“无未保存修改”，导出按钮应恢复可用
+  syncExportState();
   const stats = await sendSync();
   const summary = stats && typeof stats.grouped === 'number'
     ? `；同步完成：归组 ${stats.grouped} 个，跳过 ${stats.skipped} 个，失败 ${stats.failed} 个`
@@ -1380,7 +1579,22 @@ async function save() {
 
 // ---------------- 备份与迁移 ----------------
 
-/** 导出的是页面当前内容（含尚未保存的编辑）。 */
+/**
+ * 导出只针对**已保存**的配置：页面上有未保存修改时禁用导出按钮，并显示提示。
+ * 配置页不会因为每次输入就重绘，所以在渲染全局面板、切全局开关、保存成功后主动同步状态。
+ */
+function syncExportState() {
+  const block = els.detail.querySelector('.global-config');
+  if (!block) return;
+
+  const blocked = snapshot() !== savedSnapshot;
+  const button = block.querySelector('.export-config');
+  if (button) button.disabled = blocked;
+  const hint = block.querySelector('.export-blocked');
+  if (hint) hint.hidden = !blocked;
+}
+
+/** 导出内容：调用前已确认没有未保存的修改，所以与存储里的配置一致。 */
 function exportableConfig() {
   normalizeAllPatterns();
   return buildConfig();
@@ -1393,6 +1607,13 @@ function exportFileName() {
 }
 
 function exportToFile() {
+  // 双保险：按钮已禁用，但状态可能因键盘操作变化，这里再拦一次
+  if (snapshot() !== savedSnapshot) {
+    setStatus('error', UNSAVED_EXPORT_HINT);
+    syncExportState();
+    return;
+  }
+
   const config = exportableConfig();
   const text = `${JSON.stringify(config, null, 2)}\n`;
   const blob = new Blob([text], { type: 'application/json' });
@@ -1416,8 +1637,7 @@ function applyConfig(config) {
     ...rule,
     patterns: Array.isArray(rule.patterns) ? rule.patterns.slice() : ['']
   }));
-  els.globalEnabled.checked = state.globalEnabled;
-  state.selectedId = state.rules[0] ? state.rules[0].id : null;
+  state.selectedId = state.rules[0] ? state.rules[0].id : GLOBAL_ID;
   persistSelected();
   closeMenus();
   renderList();
@@ -1433,7 +1653,7 @@ async function importFromText(text, label) {
 
   const config = parsed.config;
   const confirmed = window.confirm(
-    `用导入的配置替换当前配置？\n\n来源：${label}\n分组数：${config.rules.length}`
+    t(`用导入的配置替换当前配置？\n\n来源：${label}\n分组数：${config.rules.length}`)
   );
   if (!confirmed) {
     setStatus('info', '已取消导入');
@@ -1452,6 +1672,33 @@ async function importFromText(text, label) {
   }
 }
 
+async function initLanguage() {
+  let preference = 'auto';
+  try {
+    const stored = await browser.storage.local.get(LANGUAGE_KEY);
+    const value = stored && stored[LANGUAGE_KEY];
+    if (value === 'auto' || value === 'zh' || value === 'en') preference = value;
+  } catch (err) {
+    // 读取失败时按系统语言显示
+  }
+
+  languagePreference = preference;
+  setLanguage(resolveLanguage(preference));
+  applyI18n(document);
+}
+
+function changeLanguage(preference) {
+  if (preference !== 'auto' && preference !== 'zh' && preference !== 'en') return;
+  languagePreference = preference;
+  setLanguage(resolveLanguage(preference));
+  browser.storage.local
+    .set({ [LANGUAGE_KEY]: preference })
+    .catch((err) => setStatus('warn', String(err)));
+  applyI18n(document);
+  renderList();
+  renderDetail();
+}
+
 async function load() {
   const { config, source, errors } = await Store.loadConfig();
 
@@ -1463,12 +1710,10 @@ async function load() {
     })),
     selectedId: null
   };
-  els.globalEnabled.checked = state.globalEnabled;
-
   const remembered = loadSelected();
-  state.selectedId = state.rules.some((rule) => rule.id === remembered)
+  state.selectedId = remembered === GLOBAL_ID || state.rules.some((rule) => rule.id === remembered)
     ? remembered
-    : (state.rules[0] ? state.rules[0].id : null);
+    : (state.rules[0] ? state.rules[0].id : GLOBAL_ID);
   persistSelected();
 
   closeMenus();
@@ -1488,7 +1733,7 @@ async function load() {
 }
 
 async function reset() {
-  if (!window.confirm('删除自定义配置并恢复内置默认规则？')) return;
+  if (!window.confirm(t('删除自定义配置并恢复内置默认规则？'))) return;
   await Store.resetConfig();
   await load();
   await sendSync();
@@ -1503,29 +1748,8 @@ els.save.addEventListener('click', () => {
 els.reload.addEventListener('click', () => {
   load().catch((err) => setStatus('error', `读取失败：${String(err)}`));
 });
-els.reset.addEventListener('click', () => {
-  reset().catch((err) => setStatus('error', `恢复默认失败：${String(err)}`));
-});
 els.addRule.addEventListener('click', addRule);
-els.globalEnabled.addEventListener('change', () => {
-  state.globalEnabled = els.globalEnabled.checked;
-});
 
-els.exportFile.addEventListener('click', () => {
-  exportToFile();
-});
-els.importFile.addEventListener('click', () => {
-  els.importInput.click();
-});
-els.importInput.addEventListener('change', () => {
-  const file = els.importInput.files && els.importInput.files[0];
-  els.importInput.value = '';
-  if (!file) return;
-  file
-    .text()
-    .then((text) => importFromText(text, file.name))
-    .catch((err) => setStatus('error', `读取文件失败：${String(err)}`));
-});
 
 // 点空白处或按 Esc 收起颜色面板
 document.addEventListener('click', () => {
@@ -1550,4 +1774,6 @@ document.addEventListener('keydown', (event) => {
 });
 
 els.version.textContent = `v${browser.runtime.getManifest().version}`;
-load().catch((err) => setStatus('error', `读取配置失败：${String(err)}`));
+initLanguage()
+  .then(() => load())
+  .catch((err) => setStatus('error', `读取配置失败：${String(err)}`));

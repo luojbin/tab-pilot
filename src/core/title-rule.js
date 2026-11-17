@@ -47,6 +47,15 @@ function normalizeTitleRule(rule) {
 }
 
 /**
+ * 编译缓存：content script 在页面每次改标题、以及 1.5s 轮询时都会重跑整组规则，
+ * 同一个 pattern 反复 new RegExp 是纯粹的浪费。键只用 pattern 本身，
+ * 替换串不参与编译，改替换串也不会让缓存失效。
+ * 上限只防一次性 pattern（例如大段测试文本）把缓存撑大，超过后整体清空即可。
+ */
+const regexCache = new Map();
+const REGEX_CACHE_LIMIT = 200;
+
+/**
  * 编译单条命名规则。
  * @returns {{ok: boolean, regex?: RegExp, replacement?: string, reason?: string, error?: string}}
  */
@@ -55,9 +64,17 @@ function compileEntry(entry) {
   if (spec.pattern.trim() === '') {
     return { ok: false, reason: 'empty-pattern' };
   }
+
+  const cached = regexCache.get(spec.pattern);
+  if (cached) {
+    return { ok: true, regex: cached, replacement: spec.replacement };
+  }
+
   try {
     // 固定不带 g 标志：只替换第一个匹配
     const regex = new RegExp(spec.pattern);
+    if (regexCache.size >= REGEX_CACHE_LIMIT) regexCache.clear();
+    regexCache.set(spec.pattern, regex);
     return { ok: true, regex, replacement: spec.replacement };
   } catch (err) {
     return {

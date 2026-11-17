@@ -102,9 +102,15 @@ function checkInteger(value, min, max, path, errors) {
 /**
  * 校验配置对象。返回 { ok: true, config } 或 { ok: false, errors: string[] }。
  * 错误信息带字段路径，配置页直接展示。
+ *
+ * @param {object} raw 待校验配置
+ * @param {{allowDuplicateNames?: boolean}} [options] 仅供 loadConfig 放宽重名校验：
+ *   历史配置里可能已经存在同名分组，读取时放行以免整份配置回退默认值；
+ *   保存与导入仍然严格拒绝。
  */
-function validateConfig(raw) {
+function validateConfig(raw, options) {
   const errors = [];
+  const opts = options || {};
 
   if (!isPlainObject(raw)) {
     return { ok: false, errors: ['配置必须是一个对象'] };
@@ -123,6 +129,9 @@ function validateConfig(raw) {
   }
 
   const seenIds = new Set();
+  // 同名分组会在浏览器里落到同一个原生分组（actions.js 按分组标题复用），
+  // 颜色 / 折叠会互相覆盖，因此保存与导入时拒绝重名；比较用 trim 后的名字。
+  const seenNames = new Map();
   raw.rules.forEach((rule, index) => {
     const where = `rules[${index}]`;
     if (!isPlainObject(rule)) {
@@ -140,6 +149,16 @@ function validateConfig(raw) {
 
     if (typeof rule.name !== 'string' || rule.name.trim() === '') {
       errors.push(`${where}.name 必须是非空字符串`);
+    }
+    const trimmedName = typeof rule.name === 'string' ? rule.name.trim() : '';
+    if (trimmedName !== '') {
+      const firstIndex = seenNames.get(trimmedName);
+      if (firstIndex === undefined) {
+        seenNames.set(trimmedName, index);
+      } else if (opts.allowDuplicateNames !== true) {
+        // 只报后面那条：配置页据此高亮需要改名的分组
+        errors.push(`${where}.name 重复：${trimmedName}（与 rules[${firstIndex}] 同名）`);
+      }
     }
     if (rule.color !== undefined && !GROUP_COLORS.includes(rule.color)) {
       errors.push(`${where}.color 必须是 ${GROUP_COLORS.join('/')} 之一`);
@@ -298,7 +317,9 @@ async function loadConfig() {
     return { config: clone(DEFAULT_CONFIG), source: 'default' };
   }
 
-  const result = validateConfig(stored);
+  // 读取时放宽重名校验：历史配置可能已经存在同名分组，
+  // 直接判失败会整份回退默认值，反而让用户以为配置丢了。
+  const result = validateConfig(stored, { allowDuplicateNames: true });
   if (!result.ok) {
     return { config: clone(DEFAULT_CONFIG), source: 'default', errors: result.errors };
   }
