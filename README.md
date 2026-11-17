@@ -4,13 +4,12 @@
 
 标签页管理器：按规则自动把页面归入分组、给分组上色，还能在页面内显示分组标识、按规则改写标签页标题。
 
-- **适用**：Firefox 140+、Chrome / Edge（Chromium 116+）
-- **依赖**：`tabGroups` API（各浏览器版本要求不同）
+- **适用**：Firefox 140+、Edge / Chrome（Chromium 116+）
 - **运行方式**：纯本地，无网络请求、不上传任何数据
 - **配置**：全部在可视化配置页里完成，支持导入 / 导出 JSON
 - **界面**：中英双语，默认跟随浏览器语言，也可在配置页手动切换
 
-> 开发、构建、调试及发布见 [CONTRIBUTING.md](CONTRIBUTING.md)；产品需求与验收见 [docs/PRD.md](docs/PRD.md)。
+> 从源码构建、调试及发布见 [CONTRIBUTING.md](CONTRIBUTING.md)；产品需求与验收见 [docs/PRD.md](docs/PRD.md)。
 
 ---
 
@@ -18,7 +17,7 @@
 
 ### Firefox
 
-**从 AMO 安装（上架后）**：在 [addons.mozilla.org](https://addons.mozilla.org/) 搜索 **TabPilot**，点「添加到 Firefox」。
+**从 AMO 安装**（预留）：上架后在 [addons.mozilla.org](https://addons.mozilla.org/) 搜索 TabPilot，点「添加到 Firefox」。
 
 **从文件安装已签名版本**：
 
@@ -26,30 +25,22 @@
 2. 右上角齿轮 → **从文件安装附加组件**
 3. 选择签名后的 `.xpi`
 
-> 正式版 Firefox 只允许安装已签名的扩展；未签名的 zip 只能在下面临时加载。
+> 正式版 Firefox 只接受已签名的扩展，未签名的包无法安装。
 
-### Chrome / Edge
+### Edge
 
-Chrome Web Store / Edge Add-ons 尚未上架。本地测试请先按下一节构建，再加载 `dist/chromium`。
+**从 Edge Add-ons 安装**（预留）：上架后在 Edge 加载项商店搜索 TabPilot。
 
-### 从源码构建（开发 / 本地测试）
+**从 zip 包解压安装**：
 
-```bash
-npm ci
-npm run build          # 同时构建 Firefox 与 Chromium
-npm run build:firefox  # 或者只构建其中一个
-npm run build:chromium
-```
+1. 解压 `tabpilot-<version>-chromium.zip` 到任意目录
+2. 打开 `edge://extensions`
+3. 打开「开发人员模式」
+4. 点「加载解压缩的扩展」，选择解压后的目录
 
-构建完成后，Firefox 加载 `dist/firefox/manifest.json`，Chrome / Edge 加载 `dist/chromium/`。扩展 ZIP 输出到 `output/`。修改源码后需要重新构建、重载扩展并刷新目标网页。
+> Chrome 使用同一个 zip，步骤相同（`chrome://extensions`）。解压后的目录不要删除或移动，否则扩展会失效。
 
-架构、测试、产物说明及 Mozilla 审核人员的重建步骤见 [开发指南](CONTRIBUTING.md)。发布使用 GitHub 自动提供的源码 ZIP，签名后的 Firefox XPI 补充到对应 Release；详细步骤见 [发布与 Mozilla 源码审核](CONTRIBUTING.md#发布与-mozilla-源码审核)。
-
-**Firefox 临时加载**：`about:debugging#/runtime/this-firefox` → 「临时载入附加组件」→ 选择 `dist/firefox/manifest.json`。
-
-**Chrome / Edge 加载**：打开 `chrome://extensions`（Edge 为 `edge://extensions`）→ 打开「开发者模式」→ 「加载已解压的扩展程序」→ 选择 `dist/chromium` 目录。
-
-> Firefox 的临时扩展在浏览器重启后会被卸载，不应依赖其配置长期保留；Chrome / Edge 的「加载已解压的扩展程序」会一直保留，直到手动移除。Firefox 重载前建议先用「导出 JSON」备份。
+从源码构建、临时加载与调试见 [开发指南](CONTRIBUTING.md#加载与调试)。
 
 ## 快速开始
 
@@ -75,32 +66,7 @@ npm run build:chromium
 
 ### 一条规则 = 一个分组
 
-配置页左侧是分组列表，选中某个分组后在右侧编辑。一条规则对应的 JSON（导入 / 导出格式，`schemaVersion: 1`）示例：
-
-```json
-{
-  "id": "code-github",
-  "enabled": true,
-  "name": "代码",
-  "color": "blue",
-  "collapsed": false,
-  "minTabs": 3,
-  "note": "代码托管：攒够 3 个再归组",
-  "patterns": ["*://*.github.com/*", "*://gitlab.com/*"],
-  "highlight": {
-    "enabled": true,
-    "border": { "sides": ["top", "bottom"], "width": 6, "opacity": 100 },
-    "banner": { "positions": ["topRight"], "size": 34, "fontSize": 15, "opacity": 60 }
-  },
-  "titleRule": {
-    "enabled": true,
-    "rules": [
-      { "pattern": "^\\[(.*?)\\]\\s*(.*)$", "replacement": "W· $2", "description": "去掉前缀并加标记" }
-    ],
-    "testText": "[工作] Jira - 看板"
-  }
-}
-```
+配置页左侧是分组列表，选中某个分组后在右侧编辑。每条规则对应一个标签页分组，可以设置分组名、颜色、匹配路径、阈值、是否折叠，以及页面内标识和标签页名规则。
 
 **分组名在同一份配置里必须唯一**：浏览器原生分组按标题复用，重名会让两条规则落进同一个分组，颜色和折叠互相覆盖。保存 / 导入时会被拒绝，并同时高亮这两个分组。
 
@@ -108,7 +74,7 @@ npm run build:chromium
 
 ![](screenshot/tabPilot-1-自动分组.png)
 
-`patterns` 是匹配路径列表，**任意一条命中即算命中**，同一个分组可以覆盖多个站点。
+「匹配路径」是一组 URL 模式，**任意一条命中即算命中**，同一个分组可以覆盖多个站点。
 
 路径可以直接写简写，离开输入框或保存时会自动补全：
 
@@ -127,7 +93,7 @@ npm run build:chromium
 
 分组列表的顺序就是匹配顺序，**靠上的先匹配**。一个标签页最多进入一个分组。用左栏的 ⋯ 菜单上移 / 下移调整。
 
-### 阈值（`minTabs`）
+### 阈值
 
 默认 `1`，即命中就归组。设为 N 时：
 
@@ -229,7 +195,7 @@ npm run build:chromium
 
 如果页面上还有未保存的修改，导出按钮会禁用并提示先「保存并同步」或「放弃修改」，避免导出的文件和实际生效的配置不一致。
 
-导入时会校验 `schemaVersion` 与字段；不合法会逐条提示且**不改动现有配置**。注意：1.0 起配置格式基线为 `schemaVersion 1`，开发期（0.x）导出的旧文件不兼容。
+导入时会校验文件格式；不合法会逐条提示且**不改动现有配置**。旧版本（0.x）导出的文件不兼容，需要重新配置或重新导出。
 
 ## 常见问题
 
@@ -239,7 +205,7 @@ npm run build:chromium
 
 1. 分组和全局开关是否都开着
 2. 当前 URL 是否命中分组里的某条匹配路径（简写保存后会被展开，可在右栏匹配路径中查看实际模式）
-3. 是否设置了 `minTabs` 而当前窗口内命中数量不够
+3. 是否设置了「阈值」而当前窗口内命中数量不够
 4. 标签页是否已经在**别的**分组里（插件不会把已分组的标签拽走）
 5. 页面是保存配置之前就打开的？点一下工具栏的 TabPilot 按钮补同步，或刷新页面
 
@@ -264,13 +230,11 @@ npm run build:chromium
 
 ### 安装 Firefox 的 zip 时提示「未通过验证」？
 
-正式版 Firefox 只安装已签名的扩展。未签名的包只能临时加载；要正常安装需先提交 AMO 签名，下载签名后的 `.xpi` 再安装。Chromium 的 `-chromium.zip` 是给商店上传用的，不能直接拖进浏览器；本地请加载 `dist/chromium` 目录。
+正式版 Firefox 只安装已签名的扩展，请使用签名后的 `.xpi`，未签名的包无法安装。Edge / Chrome 的 `tabpilot-<version>-chromium.zip` 需要先解压，再在扩展页加载解压后的目录，不能直接把 zip 拖进浏览器。
 
 ### 重启浏览器后配置没了？
 
-Firefox 的临时扩展在浏览器重启后会被卸载，不应依赖其配置长期保留；先用「导出 JSON」备份，重载扩展后「导入 JSON…」。
-
-Chrome / Edge 的「加载已解压的扩展程序」不会因重启消失，配置会保留；只有手动移除扩展时才会丢失。
+正常安装（Firefox 签名 xpi / Edge 解压加载）后配置会保留，只有卸载扩展或清除扩展数据时才会丢失。开发调试时用 Firefox 临时加载的扩展会在浏览器重启后被卸载，这种情况需要先「导出 JSON」备份，重载后再「导入 JSON…」。
 
 ### 安装时提示「可访问所有网站的数据」？
 
@@ -296,12 +260,11 @@ Chrome / Edge 的「加载已解压的扩展程序」不会因重启消失，配
 
 ## 已知限制
 
-- 支持 **Firefox 140+** 与 **Chrome / Edge（Chromium 116+）**；Chromium 侧是新支持的平台，`tabGroups` 的折叠等细节可能与 Firefox 略有差异
+- 支持 **Firefox 140+** 与 **Edge / Chrome（Chromium 116+）**；Chromium 侧是新支持的平台，`tabGroups` 的折叠等细节可能与 Firefox 略有差异
 - 页面内标识在少数强制改写 `z-index` 或使用顶层 iframe 的页面可能被遮住
 - 标签页改名靠改 `document.title`：页面自己反复改标题时会跟着重新应用；正则**不支持标志位**（固定区分大小写、只替换第一个匹配），需要忽略大小写可以用 `[Jj]ira` 这种写法
 - 不区分 Firefox 容器（Container Tabs）：同一 URL 在不同容器里仍进同一分组
 - 不处理 `about:`、扩展商店等受限页面
-- MV3 后台在 Firefox 是事件页、在 Chromium 是 service worker，都可能被回收；日志只在控制台和内存里，不落盘
 
 ## 致谢
 

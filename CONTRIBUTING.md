@@ -97,6 +97,45 @@ npm run build:chromium  # 仅 Chromium
 
 事件页和 service worker 都可能被回收。内存日志及待处理队列不持久化，不能将进程一直存活作为业务前提。标题改写通过 MutationObserver 监听，并使用 1.5 秒间隔检查兜底。
 
+## 配置格式
+
+配置保存在 `browser.storage.local` 的 `tabpilot:config`（见 `src/app/store.js`），导入 / 导出文件使用同一结构，基线为 `schemaVersion: 1`。一条规则对应一个标签页分组，`patterns` 里多个匹配路径任一命中即归组，数组顺序即优先级：
+
+```json
+{
+  "schemaVersion": 1,
+  "globalEnabled": true,
+  "clickAction": "sync",
+  "language": "auto",
+  "rules": [
+    {
+      "id": "code-github",
+      "enabled": true,
+      "name": "代码",
+      "color": "blue",
+      "collapsed": false,
+      "minTabs": 3,
+      "note": "代码托管：攒够 3 个再归组",
+      "patterns": ["*://*.github.com/*", "*://gitlab.com/*"],
+      "highlight": {
+        "enabled": true,
+        "border": { "sides": ["top", "bottom"], "width": 6, "opacity": 100 },
+        "banner": { "positions": ["topRight"], "size": 34, "fontSize": 15, "opacity": 60 }
+      },
+      "titleRule": {
+        "enabled": true,
+        "rules": [
+          { "pattern": "^\\[(.*?)\\]\\s*(.*)$", "replacement": "W· $2", "description": "去掉前缀并加标记" }
+        ],
+        "testText": "[工作] Jira - 看板"
+      }
+    }
+  ]
+}
+```
+
+字段含义、取值范围和校验规则见 [PRD 数据模型](docs/PRD.md#5-数据模型)；校验入口是 `src/app/store.js` 的 `validateConfig`。`schemaVersion` 只在配置结构不兼容变更时递增，与插件版本号解耦；`highlight` / `titleRule` 缺省时由配置页按默认值补齐。
+
 ## 测试与本地验证
 
 `npm test` 使用 Node 测试运行器，测试文件默认在独立子进程执行：
