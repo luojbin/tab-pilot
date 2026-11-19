@@ -406,3 +406,15 @@ test('language：缺省或未知值回退到 auto，构建配置会写入默认�
   assert.equal(built.language, 'en');
   assert.equal(buildConfigFromRules(true, []).language, 'auto');
 });
+
+test('groupsFirst：缺省关闭，校验布尔值并保留配置往返', () => {
+  const config = validConfig();
+  delete config.groupsFirst;
+  assert.equal(validateConfig(config).ok, true);
+  assert.equal(buildConfigFromRules(true, []).groupsFirst, false);
+  config.groupsFirst = 'true';
+  assert.equal(validateConfig(config).ok, false);
+  config.groupsFirst = true;
+  assert.equal(parseConfigText(JSON.stringify(config)).config.groupsFirst, true);
+  assert.equal(buildConfigFromRules(true, [], 'sync', 'auto', true).groupsFirst, true);
+});

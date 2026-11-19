@@ -1,4 +1,6 @@
 import browser from '../platform/browser.js';
+import packageInfo from '../../package.json' with { type: 'json' };
+import { copyRule } from '../core/copy-rule.js';
 import * as Store from '../app/store.js';
 import * as Rules from '../core/rules.js';
 import * as Highlight from '../core/highlight.js';
@@ -73,7 +75,7 @@ const GLOBAL_ID = '__global__';
 /** 有未保存修改时禁止导出，提示文案在按钮提示与状态栏共用。 */
 const UNSAVED_EXPORT_HINT = '有未保存的修改，请先「保存并同步」或「放弃修改」再导出。';
 
-let state = { globalEnabled: true, clickAction: 'sync', language: 'auto', rules: [], selectedId: null };
+let state = { globalEnabled: true, clickAction: 'sync', language: 'auto', groupsFirst: false, rules: [], selectedId: null };
 let savedSnapshot = '';
 let busy = false;
 let previewRefresh = null;
@@ -92,6 +94,7 @@ function snapshot() {
     globalEnabled: state.globalEnabled,
     clickAction: state.clickAction,
     language: state.language,
+    groupsFirst: state.groupsFirst,
     rules: state.rules
   });
 }
@@ -236,7 +239,7 @@ function renderList() {
     menuToggle.type = 'button';
     menuToggle.className = 'menu-toggle';
     menuToggle.textContent = '⋯';
-    menuToggle.title = '调整顺序或删除';
+    menuToggle.title = '复制、调整顺序或删除';
     menuToggle.setAttribute('aria-label', '分组操作菜单');
     menuToggle.setAttribute('aria-expanded', String(openMenus.has(rule.id)));
     menuToggle.addEventListener('click', (event) => {
@@ -252,6 +255,7 @@ function renderList() {
     menu.append(
       menuButton('↑ 上移', () => moveRule(rule.id, -1), index === 0),
       menuButton('↓ 下移', () => moveRule(rule.id, 1), index === state.rules.length - 1),
+      menuButton('复制', () => duplicateRule(rule.id)),
       menuButton('✕ 删除', () => removeRule(rule.id), false, 'delete')
     );
 
@@ -365,6 +369,22 @@ function addRule() {
     nameInput.focus();
     nameInput.select();
   }
+}
+
+function duplicateRule(id) {
+  const index = state.rules.findIndex(rule => rule.id === id);
+  if (index === -1) return;
+  let copyId;
+  do { copyId = newRuleId(); } while (state.rules.some(rule => rule.id === copyId));
+  const copy = copyRule(state.rules[index], state.rules, copyId, t('副本'), Store.colorForIndex(state.rules.length));
+  state.rules.push(copy);
+  state.selectedId = copy.id;
+  persistSelected();
+  closeMenus();
+  renderList();
+  renderDetail();
+  setStatus('info', '已复制到末尾：请按需修改匹配路径，并启用后保存。');
+  els.detail.querySelector('.field-name-input')?.focus();
 }
 
 function removeRule(id) {
@@ -1494,7 +1514,14 @@ function renderGlobalDetail() {
   const actionHint = document.createElement('p');
   actionHint.className = 'hint small';
   actionHint.textContent = '点图标时先同步，再按所选方式折叠分组；折叠只影响点击时所在的窗口。';
-  body.append(actionRow, actionHint);
+  const orderField = checkOption('分组置前', state.groupsFirst, (checked) => {
+    state.groupsFirst = checked;
+    syncDirtyState();
+  });
+  const orderHint = document.createElement('p');
+  orderHint.className = 'hint small';
+  orderHint.textContent = '同步后按固定标签、分组、游离标签排序，保留各自顺序；自动归组时不重排。';
+  body.append(actionRow, actionHint, orderField, orderHint);
   if (permissionBlock) body.append(permissionBlock);
 
   // 配置管理
@@ -1616,7 +1643,8 @@ function buildConfig() {
     state.globalEnabled,
     state.rules,
     state.clickAction,
-    state.language
+    state.language,
+    state.groupsFirst
   );
 }
 
@@ -1776,6 +1804,7 @@ function exportToFile() {
 
 function applyConfig(config) {
   state.globalEnabled = config.globalEnabled !== false;
+  state.groupsFirst = config.groupsFirst === true;
   state.clickAction = Store.normalizeClickAction(config.clickAction);
   state.language = Store.normalizeLanguage(config.language);
   setLanguage(resolveLanguage(state.language));
@@ -1835,6 +1864,7 @@ async function load() {
 
   state = {
     globalEnabled: config.globalEnabled !== false,
+    groupsFirst: config.groupsFirst === true,
     clickAction: Store.normalizeClickAction(config.clickAction),
     rules: config.rules.map((rule) => ({
       ...rule,
@@ -1975,7 +2005,7 @@ document.addEventListener('keydown', (event) => {
   }
 });
 
-els.version.textContent = `v${browser.runtime.getManifest().version}`;
+els.version.textContent = `v${packageInfo.version}`;
 load()
   .then(() => syncPermissionState())
   .catch((err) => setStatus('error', `读取配置失败：${String(err)}`));

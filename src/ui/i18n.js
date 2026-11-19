@@ -6,6 +6,15 @@
  */
 
 const EN = {
+  '分组置前': 'Groups first',
+  '同步后按固定标签、分组、游离标签排序，保留各自顺序；自动归组时不重排。':
+    'After sync, arrange pinned tabs, groups, then ungrouped tabs, preserving their relative order. Auto-grouping does not reorder tabs.',
+  '复制': 'Duplicate',
+  '副本': 'Copy',
+  '复制、调整顺序或删除': 'Duplicate, reorder or delete',
+  '已复制到末尾：请按需修改匹配路径，并启用后保存。':
+    'Group duplicated at the end. Adjust match patterns as needed, enable it, then save.',
+
   // 页面框架
   'TabPilot 设置': 'TabPilot Settings',
   '启用自动归组': 'Enable auto-grouping',
@@ -64,8 +73,8 @@ const EN = {
   '已撤销访问网站的权限，页面内标识和标签页改名将停用（刷新已打开的页面后完全停止）':
     'Permission revoked. In-page highlights and tab renaming are disabled (fully after reloading open pages).',
   '访问网站的权限未被撤销': 'Permission to access websites was not revoked.',
-  '顶部「全局配置」管理全局开关、语言和配置导入导出；下方分组列表用于选中分组，重命名、改颜色、启用 / 停用在右侧完成。⋯ 菜单可以调整顺序或删除。':
-    'The top "Global settings" item manages the global switch, language, and config import/export. The group list below selects groups; rename, recolor, enable/disable on the right. Use the ⋯ menu to reorder or delete.',
+  '顶部「全局配置」管理全局开关、语言和配置导入导出；下方分组列表用于选中分组，重命名、改颜色、启用 / 停用在右侧完成。⋯ 菜单可以复制、调整顺序或删除。':
+    'The top "Global settings" item manages the global switch, language, and config import/export. The group list below selects groups; rename, recolor, enable/disable on the right. Use the ⋯ menu to duplicate, reorder or delete.',
 
   // 左栏 / 分组列表
   '分组': 'Groups',
@@ -79,8 +88,8 @@ const EN = {
   '↓ 下移': '↓ Move down',
   '✕ 删除': '✕ Delete',
   '新分组': 'New group',
-  '左栏只用于查看和选中分组；重命名、改颜色、启用 / 停用在右侧完成。⋯ 菜单可以调整顺序或删除。':
-    'The left column is for viewing and selecting groups. Rename, recolor, enable/disable on the right. Use the ⋯ menu to reorder or delete.',
+  '左栏只用于查看和选中分组；重命名、改颜色、启用 / 停用在右侧完成。⋯ 菜单可以复制、调整顺序或删除。':
+    'The left column is for viewing and selecting groups. Rename, recolor, enable/disable on the right. Use the ⋯ menu to duplicate, reorder or delete.',
   '左侧还没有分组。点「＋」新建一个分组，再把要匹配的地址填进来。':
     'No groups on the left. Click + to create one, then add the address to match.',
   '从左侧选择一个分组，查看并编辑它的详细配置。':

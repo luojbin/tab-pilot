@@ -1,4 +1,5 @@
 import browser from '../platform/browser.js';
+import { groupsFirst } from './tab-order.js';
 import * as Rules from '../core/rules.js';
 import * as Store from './store.js';
 import * as Actions from './actions.js';
@@ -211,6 +212,11 @@ async function syncAll(options) {
         Logger.error('同步标签页异常', { tabId: tab.id, error: String(err) });
       }
     }
+  }
+
+  if (config.groupsFirst === true) {
+    const order = await groupsFirst();
+    Logger.info('分组置前完成', order);
   }
 
   Logger.info(

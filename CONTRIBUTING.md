@@ -218,7 +218,7 @@ npm run build:chromium  # 仅 Chromium
 
 ## 发布与 Mozilla 源码审核
 
-版本号只在 `package.json` 中维护，由构建脚本注入 manifest。配置格式版本 `schemaVersion` 独立维护，不能随插件版本机械递增。
+版本号只在 `package.json` 中维护，由构建脚本注入 manifest。manifest、配置页与 ZIP 文件名均使用 package.json 中的同一个数字版本，不添加预发布后缀或 version_name。配置格式版本 `schemaVersion` 独立维护，不能随插件版本机械递增。
 
 本项目以用户可见功能和配置兼容性作为版本判断依据：兼容的维护修复和不改变行为的内部重构使用补丁版本，新增兼容功能使用次版本，不兼容变更使用主版本。本次从已发布的 `1.1.0` 升到 `1.1.1`，不新增功能、不改变配置格式；已发布 tag 保持不变。修改版本号时同步更新 `package-lock.json` 的根版本及根包版本。
 

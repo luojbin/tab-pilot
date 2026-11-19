@@ -16,6 +16,7 @@ const state = {
   storedConfig: null,
   groupCalls: [],
   updateCalls: [],
+  moveCalls: [],
   pageMessages: []
 };
 
@@ -45,6 +46,7 @@ globalThis.browser = {
     onChanged: { addListener(fn) { listeners.configChanged.push(fn); } }
   },
   tabs: {
+    async move(ids, options) { state.moveCalls.push({ ids, ...options }); return ids.map(id => ({ id })); },
     async query(queryInfo) {
       const info = queryInfo || {};
       const tabs = info.windowId === undefined
@@ -64,6 +66,7 @@ globalThis.browser = {
     }
   },
   tabGroups: {
+    async move(groupId, options) { state.moveCalls.push({ groupId, ...options }); return { id: groupId }; },
     async query(queryInfo) {
       const info = queryInfo || {};
       if (info.windowId === undefined) return state.existingGroups;
@@ -99,6 +102,7 @@ function reset() {
   state.groupCalls = [];
   state.updateCalls = [];
   state.pageMessages = [];
+  state.moveCalls = [];
   Logger.clear();
 }
 
@@ -665,4 +669,23 @@ test('点击行为：全局暂停时不折叠任何分组', async () => {
 
   assert.deepEqual(state.updateCalls, []);
   assert.equal(state.groupCalls.length, 0);
+});
+
+
+test('syncAll：开启分组置前才整理，暂停时不整理', async () => {
+  reset();
+  state.tabsByWindow = { 1: [
+    { id: 1, windowId: 1, index: 0, pinned: true, groupId: -1, url: 'about:blank' },
+    { id: 2, windowId: 1, index: 1, groupId: -1, url: 'about:blank' },
+    { id: 3, windowId: 1, index: 2, groupId: 8, url: 'https://example.com' }
+  ] };
+  state.storedConfig = configWith([]);
+  await Background.syncAll();
+  assert.equal(state.moveCalls.length, 0);
+  state.storedConfig.groupsFirst = true;
+  await Background.syncAll();
+  assert.deepEqual(state.moveCalls, [{ groupId: 8, windowId: 1, index: 1 }]);
+  state.storedConfig.globalEnabled = false;
+  await Background.syncAll();
+  assert.equal(state.moveCalls.length, 1);
 });

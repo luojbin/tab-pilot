@@ -70,6 +70,7 @@ const DEFAULT_CONFIG = {
   schemaVersion: SCHEMA_VERSION,
   globalEnabled: true,
   clickAction: DEFAULT_CLICK_ACTION,
+  groupsFirst: false,
   language: DEFAULT_LANGUAGE,
   rules: [
     {
@@ -139,6 +140,9 @@ function validateConfig(raw, options) {
   }
   if (typeof raw.globalEnabled !== 'boolean') {
     errors.push('globalEnabled 必须是布尔值');
+  }
+  if (raw.groupsFirst !== undefined && typeof raw.groupsFirst !== 'boolean') {
+    errors.push('groupsFirst 必须是布尔值');
   }
   if (raw.clickAction !== undefined && !CLICK_ACTIONS.includes(raw.clickAction)) {
     errors.push(`clickAction 必须是 ${CLICK_ACTIONS.join('/')} 之一`);
@@ -378,13 +382,14 @@ function normalizeLanguage(value) {
  * 放在存储层是为了让字段映射有单测兜底——之前配置页自己组对象，
  * 漏掉过 highlight 字段，导致页面内标识保存后丢失。
  */
-function buildConfigFromRules(globalEnabled, rules, clickAction, language) {
+function buildConfigFromRules(globalEnabled, rules, clickAction, language, groupsFirst = false) {
   const list = Array.isArray(rules) ? rules : [];
   return {
     schemaVersion: SCHEMA_VERSION,
     globalEnabled: globalEnabled !== false,
     clickAction: normalizeClickAction(clickAction),
     language: normalizeLanguage(language),
+    groupsFirst: groupsFirst === true,
     rules: list.map((rule) => {
       const normalized = {
         id: String(rule && rule.id != null ? rule.id : ''),
