@@ -1320,6 +1320,7 @@ function renderDetail() {
 
   const collapsedLabel = document.createElement('label');
   collapsedLabel.className = 'field field-switch';
+  collapsedLabel.title = '当前活动标签在原分组内跳转并再次命中时，保持已展开的分组。';
   collapsedLabel.append(document.createTextNode('命中后折叠'));
   const collapsedSlot = document.createElement('span');
   collapsedSlot.className = 'switch-slot';

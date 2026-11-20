@@ -6,6 +6,7 @@
  */
 
 const EN = {
+  '当前活动标签在原分组内跳转并再次命中时，保持已展开的分组。': 'Keep an expanded group open when its active tab navigates and still matches the same group rule.',
   '新建空白规则': 'New blank rule',
   '从当前窗口分组创建规则': 'Create rules from groups in this window',
   '当前窗口没有可生成规则的分组：已有同名规则，或组内没有可用的网站。': 'No groups to import in this window: matching rules already exist, or the groups have no supported websites.',

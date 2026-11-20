@@ -24,7 +24,7 @@ registerToolbarMenu(browser, error => Logger.warn('图标选项菜单操作失�
 const DEBOUNCE_MS = 50;
 const IGNORED_PREFIXES = ['about:', 'moz-extension:', 'chrome:', 'resource:', 'view-source:'];
 
-/** tabId -> tab，同一标签在防抖窗口内的多次事件只处理最后一次状态。 */
+/** tabId -> { tab, preserveExpandedGroup }，合并最新状态与导航保护标记。 */
 const pending = new Map();
 let flushTimer = null;
 let configLogged = false;
@@ -58,9 +58,9 @@ function isIgnorable(url) {
   return IGNORED_PREFIXES.some((prefix) => url.startsWith(prefix));
 }
 
-function schedule(tab) {
+function schedule(tab, options = {}) {
   if (!tab || typeof tab.id !== 'number') return;
-  pending.set(tab.id, tab);
+  pending.set(tab.id, { tab, preserveExpandedGroup: options.preserveExpandedGroup === true || pending.get(tab.id)?.preserveExpandedGroup === true });
   if (flushTimer !== null) return;
   flushTimer = setTimeout(() => {
     flushTimer = null;
@@ -78,7 +78,7 @@ async function tabsInWindow(windowId) {
   }
 }
 
-async function processTab(tab, rules, allTabs) {
+async function processTab(tab, rules, allTabs, preserveExpandedGroup = false) {
   const { matched, steps } = Rules.explain(tab, rules, {
     tabs: allTabs,
     windowId: tab.windowId
@@ -96,7 +96,7 @@ async function processTab(tab, rules, allTabs) {
   // 配了阈值的规则：达成时把同窗口内命中该规则的标签一起归组，
   // 否则“攒够 3 个再归组”会退化成“只归组第 3 个”。
   const tabIds = matched.minTabs > 1 ? matched.tabIds : [tab.id];
-  const results = await Actions.apply(matched.rule, tab, { tabs: allTabs, tabIds });
+  const results = await Actions.apply(matched.rule, tab, { tabs: allTabs, tabIds, preserveExpandedGroup });
   const failed = results.filter((r) => r.ok === false);
 
   if (failed.length > 0) {
@@ -129,23 +129,24 @@ async function flush() {
   }
 
   const byWindow = new Map();
-  for (const tab of batch) {
+  for (const entry of batch) {
+    const { tab } = entry;
     if (isIgnorable(tab.url || tab.pendingUrl) && !config.strictMode) continue;
     const list = byWindow.get(tab.windowId);
-    if (list) list.push(tab);
-    else byWindow.set(tab.windowId, [tab]);
+    if (list) list.push(entry);
+    else byWindow.set(tab.windowId, [entry]);
   }
 
   for (const [windowId, tabs] of byWindow) {
     const allTabs = await tabsInWindow(windowId);
-    for (const tab of tabs) {
+    for (const { tab, preserveExpandedGroup } of tabs) {
       try {
         if (await enforceStrictGroup(browser, config, tab)) {
           Logger.info('严格模式：网址不匹配当前分组，已移出', { tabId: tab.id, groupId: tab.groupId });
           continue;
         }
         if (isIgnorable(tab.url || tab.pendingUrl)) continue;
-        await processTab(tab, config.rules, allTabs);
+        await processTab(tab, config.rules, allTabs, preserveExpandedGroup);
       } catch (err) {
         // 单个标签出错不影响同批次的其他标签（可靠性要求）
         Logger.error('处理标签页异常', { tabId: tab.id, error: String(err) });
@@ -342,7 +343,7 @@ browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   manualGroup.capture(tabId, changeInfo, tab).catch(err => Logger.warn('手动分组提示失败', String(err)));
   // 只在“加载完成”或“URL 变化”时处理，避免每个子资源事件都触发
   if (changeInfo.status !== 'complete' && !changeInfo.url) return;
-  schedule(tab);
+  schedule(tab, { preserveExpandedGroup: true });
 });
 
 browser.runtime.onInstalled.addListener((details) => {

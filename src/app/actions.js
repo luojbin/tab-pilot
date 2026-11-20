@@ -39,8 +39,9 @@ function buildGroupPatch(group, rule) {
  * @param {object} rule 命中的规则，其 name / color / collapsed 决定分组属性
  * @param {object} tab 触发事件的标签页，始终会被归组
  * @param {Array<object>} [companions] 同一规则下要一起归组的其他标签页
+ * @param {object} [options] 导航时可保护当前活动标签所在分组的展开状态
  */
-async function applyRule(rule, tab, companions) {
+async function applyRule(rule, tab, companions, options = {}) {
   const groupName = nameOf(rule);
   if (groupName === '') {
     return { ok: false, error: '规则的 name 为空，无法确定目标分组' };
@@ -60,6 +61,12 @@ async function applyRule(rule, tab, companions) {
 
   if (existing) {
     const patch = buildGroupPatch(existing, rule);
+    // 当前活动标签在原组内导航时，不覆盖已经展开的状态；其他属性照常更新。
+    const current = options.tabs?.find(item => item.id === tab.id) || tab;
+    if (options.preserveExpandedGroup === true && current.active === true &&
+        current.groupId === existing.id && existing.collapsed === false && rule.collapsed === true) {
+      delete patch.collapsed;
+    }
     if (Object.keys(patch).length > 0) {
       await browser.tabGroups.update(existing.id, patch);
     }
@@ -101,7 +108,7 @@ async function applyRule(rule, tab, companions) {
 /**
  * @param {object} rule 命中的规则
  * @param {object} tab 触发事件的标签页
- * @param {{tabs?: Array, tabIds?: number[]}} [context] 需要一起归组的候选标签
+ * @param {{tabs?: Array, tabIds?: number[], preserveExpandedGroup?: boolean}} [context] 需要一起归组的候选标签
  */
 async function apply(rule, tab, context) {
   if (!rule || !tab) return [{ ok: false, error: '缺少规则或标签页信息' }];
@@ -125,7 +132,7 @@ async function apply(rule, tab, context) {
     : [];
 
   try {
-    return [await applyRule(rule, tab, companions)];
+    return [await applyRule(rule, tab, companions, ctx)];
   } catch (err) {
     return [{ ok: false, error: String((err && err.message) || err) }];
   }

@@ -743,3 +743,60 @@ test('保存旧配置会移除全局开关，保留单条规则停用状态',asy
   assert.equal(state.storedConfig.rules[0].enabled,false);
   assert.equal(state.groupCalls.length,0);
 });
+
+test('导航折叠例外：当前标签仍在展开的原组时保留展开，颜色照常更新',async()=>{
+  reset();
+  state.storedConfig=configWith([rule({collapsed:true})]);
+  state.existingGroups=[{id:42,windowId:1,title:'开发',color:'grey',collapsed:false}];
+  const tab={id:1,windowId:1,groupId:42,active:true,url:'http://localhost:3000/next'};
+  state.tabsByWindow={1:[tab]};
+  listeners.updated[0](1,{url:tab.url},tab);
+  listeners.updated[0](1,{status:'complete'},tab);
+  await Background.flush();
+  assert.deepEqual(state.updateCalls,[{id:42,patch:{color:'green'}}]);
+  assert.equal(state.groupCalls.length,0);
+});
+
+test('导航折叠例外：后台标签或进入其他分组仍按规则折叠',async()=>{
+  for(const [active,groupId] of [[false,42],[true,-1],[true,8]]){
+    reset();
+    state.storedConfig=configWith([rule({collapsed:true})]);
+    state.existingGroups=[{id:42,windowId:1,title:'开发',color:'green',collapsed:false}];
+    const tab={id:1,windowId:1,groupId,active,url:'http://localhost:3000/next'};
+    state.tabsByWindow={1:[tab]};
+    listeners.updated[0](1,{url:tab.url},tab);
+    await Background.flush();
+    assert.deepEqual(state.updateCalls,[{id:42,patch:{collapsed:true}}]);
+  }
+});
+
+test('导航折叠例外：新建归组、显式同步与折叠动作保持原行为',async()=>{
+  reset();
+  state.storedConfig=configWith([rule({collapsed:true})]);
+  state.existingGroups=[{id:42,windowId:1,title:'开发',color:'green',collapsed:false}];
+  const tab={id:1,windowId:1,groupId:42,active:true,url:'http://localhost:3000/'};
+  state.tabsByWindow={1:[tab]};
+  listeners.created[0](tab);
+  await Background.flush();
+  assert.deepEqual(state.updateCalls,[{id:42,patch:{collapsed:true}}]);
+  state.updateCalls=[];
+  await Background.syncAll({includeGrouped:true});
+  assert.deepEqual(state.updateCalls,[{id:42,patch:{collapsed:true}}]);
+});
+
+test('导航折叠例外：以处理时的活动状态为准，已折叠的组不主动展开',async()=>{
+  reset();
+  state.storedConfig=configWith([rule({collapsed:true})]);
+  state.existingGroups=[{id:42,windowId:1,title:'开发',color:'green',collapsed:false}];
+  const tab={id:1,windowId:1,groupId:42,active:true,url:'http://localhost:3000/next'};
+  state.tabsByWindow={1:[{...tab,active:false}]};
+  listeners.updated[0](1,{url:tab.url},tab);
+  await Background.flush();
+  assert.deepEqual(state.updateCalls,[{id:42,patch:{collapsed:true}}]);
+  state.updateCalls=[];
+  state.existingGroups[0].collapsed=true;
+  state.tabsByWindow[1][0].active=true;
+  listeners.updated[0](1,{status:'complete'},tab);
+  await Background.flush();
+  assert.deepEqual(state.updateCalls,[]);
+});

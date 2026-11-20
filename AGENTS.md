@@ -91,7 +91,7 @@ $env:npm_config_cache = Join-Path (Get-Location) 'output\.npm-cache'
 npm test
 ```
 
-完整测试为 **189 项**：127 项单进程子集、60 项独立浏览器桩测试，以及 `test/bundle.test.js` 的 2 项打包冒烟测试。完整测试和 esbuild 打包均要求允许启动子进程。
+完整测试为 **193 项**：127 项单进程子集、64 项独立浏览器桩测试，以及 `test/bundle.test.js` 的 2 项打包冒烟测试。完整测试和 esbuild 打包均要求允许启动子进程。
 
 ### 不要做的事
 
