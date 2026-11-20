@@ -7,5 +7,8 @@
   },
   "actionTitle": {
     "message": "TabPilot：立即同步标签页"
+  },
+  "optionsMenu": {
+    "message": "选项"
   }
 }

@@ -5,10 +5,11 @@
 ## 项目速览
 
 - 浏览器扩展，WebExtensions MV3，共享源码同时构建 Firefox / Chromium。
-- 源码是 ES Module，构建用 esbuild 打成三个 IIFE 入口：
+- 源码是 ES Module，构建用 esbuild 打成四个 IIFE 入口：
   - `src/app/background.js`
   - `src/app/content.js`
   - `src/ui/options.js`
+  - `src/ui/popup.js`
 - manifest 模板在 `manifests/`，构建时合并并注入 `package.json` 的版本。
 - 浏览器加载的是 `dist/firefox` / `dist/chromium`，不是 `src/`；改源码后必须重新构建。
 - 配置页支持中文 / English，文案在 `src/ui/i18n.js`，manifest 文案在 `_locales/`。

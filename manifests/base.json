@@ -10,6 +10,7 @@
     "storage"
   ],
   "action": {
+    "default_popup": "src/ui/popup.html",
     "default_title": "__MSG_actionTitle__",
     "default_icon": {
       "16": "icons/icon-16.png",

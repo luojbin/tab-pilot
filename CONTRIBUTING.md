@@ -54,7 +54,7 @@ output/                扩展 ZIP 等本地产物（不提交 Git）
 
 规则引擎只接收 tab、规则和上下文，不直接调用浏览器 API。后台将匹配结果交给动作层执行；存储层负责配置读写与校验。配置格式的公开约定见 [PRD 数据模型](docs/PRD.md#5-数据模型)，基线为 `schemaVersion: 1`。
 
-三个入口运行在独立环境：后台、配置页、各网页的内容脚本。它们不共享模块状态；跨环境使用 `runtime.sendMessage` 和 `storage.onChanged` 通信。后台处理 `sync-all`、`page-style` 消息，配置变化后向页面发送 `tabpilot:refresh`。
+四个入口运行在独立环境：后台、配置页、popup、各网页的内容脚本。它们不共享模块状态；跨环境使用 `runtime.sendMessage` 和 `storage.onChanged` 通信。后台处理 `sync-all`、`page-style`、`toolbar-execute` 消息，配置变化后向页面发送 `tabpilot:refresh`。
 
 ## ES Module 与构建
 
@@ -62,11 +62,12 @@ output/                扩展 ZIP 等本地产物（不提交 Git）
 
 配置页语言偏好是配置的一部分（`config.language`：`auto` / `zh` / `en`），随保存、导入导出一起迁移；manifest 的名称、描述和工具栏标题通过 `_locales/en`、`_locales/zh_CN` 与 `__MSG_*` 占位符由浏览器语言决定，不受配置页手动切换影响。
 
-esbuild 将以下三个入口及其依赖分别打包为普通 IIFE 脚本：
+esbuild 将以下四个入口及其依赖分别打包为普通 IIFE 脚本：
 
 - `src/app/background.js`
 - `src/app/content.js`
 - `src/ui/options.js`
+- `src/ui/popup.js`
 
 产物保留相同相对路径，不含运行时模块导入；manifest 的后台、内容脚本及配置页各加载自己的单一入口。仅后台的 `globalThis.TabPilotDebug` 作为控制台调试接口保留，内部模块不挂到全局。
 
@@ -83,7 +84,7 @@ npm run build:chromium  # 仅 Chromium
 
 构建前会清理对应目标的 `dist` 目录，再合并 manifest、注入 `package.json` 的版本、打包 JS、复制 HTML / 图标 / LICENSE / `_locales` 并生成 ZIP。只修改源码和模板，不直接编辑 `dist/`。当前不提供 watch 或 sourcemap，修改源码后需重新构建。
 
-两个目标分别使用 `firefox140`、`chrome116` 作为语法兼容目标。当前版本的三个 JS 产物相同，差异在 manifest；以后使用新语法时，两个目标的 JS 输出可能不同。
+两个目标分别使用 `firefox140`、`chrome116` 作为语法兼容目标。当前版本的四个 JS 产物相同，差异在 manifest；以后使用新语法时，两个目标的 JS 输出可能不同。
 
 ### 浏览器适配
 
@@ -147,7 +148,7 @@ npm run build:chromium  # 仅 Chromium
 | `highlight.test.js` | 标识规格、边界和布局计算 |
 | `title-rule.test.js` | 首条命中、捕获组、非法正则、多行测试 |
 | `background.test.js` | 浏览器 mock 下的事件、同步、消息与配置处理 |
-| `bundle.test.js` | 实际打包三个入口；在两种 API 命名空间下执行后台和内容脚本，验证归组与消息 |
+| `bundle.test.js` | 实际打包四个入口；在两种 API 命名空间下执行后台和内容脚本，验证归组与消息 |
 
 打包冒烟测试只编译、解析配置页脚本，未执行配置页 DOM 交互。浏览器 API mock 不能替代真实浏览器验证。
 

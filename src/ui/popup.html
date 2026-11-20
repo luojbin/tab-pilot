@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TabPilot</title>
+  <style>
+    :root { color-scheme: light dark; font: 14px/1.5 system-ui, sans-serif; }
+    body { width: 300px; margin: 0; background: Canvas; color: CanvasText; }
+    main { padding: 18px; transition: opacity 300ms ease; }
+    main.fading { opacity: 0; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    strong { font-size: 16px; }
+    button { font: inherit; cursor: pointer; border: 1px solid GrayText; border-radius: 6px; padding: 4px 10px; background: Canvas; color: CanvasText; }
+    button:focus-visible { outline: 2px solid Highlight; outline-offset: 2px; }
+    #status { margin: 16px 0 2px; overflow-wrap: anywhere; }
+    #status.error { color: #b3261e; }
+    @media (prefers-color-scheme: dark) { #status.error { color: #ffb4ab; } }
+    @media (prefers-reduced-motion: reduce) { main { transition: none; } }
+  </style>
+</head>
+<body>
+  <main id="panel">
+    <header><strong>TabPilot</strong><button id="settings" type="button">Settings</button></header>
+    <p id="status" role="status" aria-live="polite">Working…</p>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>

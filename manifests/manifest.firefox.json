@@ -17,5 +17,11 @@
     "scripts": [
       "src/app/background.js"
     ]
-  }
+  },
+  "permissions": [
+    "tabs",
+    "tabGroups",
+    "storage",
+    "menus"
+  ]
 }

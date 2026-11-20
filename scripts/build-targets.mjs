@@ -31,8 +31,8 @@ const TARGETS = {
   }
 };
 
-const COPY_ENTRIES = ['_locales', 'icons', 'LICENSE', 'src/ui/options.html'];
-const ENTRY_POINTS = ['src/app/background.js', 'src/app/content.js', 'src/ui/options.js'];
+const COPY_ENTRIES = ['_locales', 'icons', 'LICENSE', 'src/ui/options.html', 'src/ui/popup.html'];
+const ENTRY_POINTS = ['src/app/background.js', 'src/app/content.js', 'src/ui/options.js', 'src/ui/popup.js'];
 
 function readJson(relativePath) {
   return JSON.parse(fs.readFileSync(path.join(root, relativePath), 'utf8'));
@@ -78,7 +78,7 @@ async function build(target) {
     fs.cpSync(path.join(root, entry), path.join(distDir, entry), { recursive: true });
   }
 
-  // 源码使用 ESM，三个入口分别打包成普通脚本，供后台/内容脚本/配置页加载。
+  // 源码使用 ESM，四个入口分别打包成普通脚本，供后台/内容脚本/配置页加载。
   await bundle({
     absWorkingDir: root,
     entryPoints: ENTRY_POINTS,

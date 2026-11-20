@@ -6,6 +6,10 @@
  */
 
 const EN = {
+  'TabPilot 操作': 'TabPilot Actions',
+  '设置': 'Settings',
+  '正在执行…': 'Working…',
+  '无法打开设置，请重试。': 'Could not open settings. Try again.',
   '分组置前': 'Groups first',
   '同步后按固定标签、分组、游离标签排序，保留各自顺序；自动归组时不重排。':
     'After sync, arrange pinned tabs, groups, then ungrouped tabs, preserving their relative order. Auto-grouping does not reorder tabs.',

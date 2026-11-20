@@ -82,6 +82,7 @@ globalThis.browser = {
     onClicked: { addListener(fn) { listeners.actionClicked.push(fn); } }
   },
   runtime: {
+    getURL(path) { return `moz-extension://test/${path}`; },
     getManifest() {
       return { version: '0.2.0' };
     },
@@ -149,10 +150,10 @@ function localhostTab(id, windowId, url) {
   };
 }
 
-test('background 注册了事件、工具栏与消息监听', () => {
+test('background 注册事件与消息监听，工具栏由 popup 驱动', () => {
   assert.equal(listeners.created.length, 1);
   assert.equal(listeners.updated.length, 1);
-  assert.equal(listeners.actionClicked.length, 1);
+  assert.equal(listeners.actionClicked.length, 0);
   assert.equal(listeners.message.length, 1);
 });
 
@@ -345,8 +346,7 @@ test('工具栏按钮触发全量同步', async () => {
   reset();
   state.tabsByWindow[5] = [{ id: 11, windowId: 5, url: 'http://localhost:3000/', groupId: -1 }];
 
-  await listeners.actionClicked[0]();
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await sendMessage({ type: 'toolbar-execute', windowId: 5 }, { url: browser.runtime.getURL('src/ui/popup.html') });
 
   assert.equal(state.groupCalls.length, 1);
 });
@@ -688,4 +688,28 @@ test('syncAll：开启分组置前才整理，暂停时不整理', async () => {
   state.storedConfig.globalEnabled = false;
   await Background.syncAll();
   assert.equal(state.moveCalls.length, 1);
+});
+
+test('popup 动作：返回本地化结果，不向网页发送提示', async () => {
+  reset();
+  state.storedConfig = { ...configWith([]), language: 'zh' };
+  const result = await sendMessage({ type: 'toolbar-execute', windowId: 1 }, { url: browser.runtime.getURL('src/ui/popup.html') });
+  assert.equal(result.ok, true);
+  assert.equal(result.text, 'TabPilot：同步完成');
+  assert.deepEqual(state.pageMessages, []);
+  state.storedConfig.globalEnabled = false;
+  const paused = await Background.executeToolbarClick({ windowId: 1 });
+  assert.match(paused.text, /全局已暂停/);
+});
+
+test('popup 动作：拒绝网页来源与非法窗口', async () => {
+  reset();
+  for (const [windowId, sender] of [
+    [1, { tab: { id: 1 }, url: 'https://example.com' }],
+    [-1, { url: browser.runtime.getURL('src/ui/popup.html') }],
+    [1, { url: 'https://example.com' }]
+  ]) {
+    assert.equal(await sendMessage({ type: 'toolbar-execute', windowId }, sender), undefined);
+  }
+  assert.deepEqual(state.groupCalls, []);
 });

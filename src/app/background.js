@@ -1,4 +1,6 @@
 import browser from '../platform/browser.js';
+import { registerToolbarMenu } from './toolbar-menu.js';
+import { toolbarFeedback } from '../core/toolbar-feedback.js';
 import { groupsFirst } from './tab-order.js';
 import * as Rules from '../core/rules.js';
 import * as Store from './store.js';
@@ -13,6 +15,8 @@ import * as TitleRule from '../core/title-rule.js';
  * 职责：监听 tab 事件 → 防抖合并 → 读配置 → 纯函数匹配 → 执行动作 → 记日志。
  * 判定逻辑全部在 rules.js，这里只做编排，方便单测其余部分。
  */
+registerToolbarMenu(browser, error => Logger.warn('图标选项菜单操作失败', error));
+
 const DEBOUNCE_MS = 50;
 const IGNORED_PREFIXES = ['about:', 'moz-extension:', 'chrome:', 'resource:', 'view-source:'];
 
@@ -310,6 +314,26 @@ async function handleToolbarClick(tab) {
   return { ...stats, action, collapsed };
 }
 
+/** popup 请求在后台执行，面板关闭也不影响已经开始的动作。 */
+async function executeToolbarClick(tab) {
+  let result;
+  let failed = false;
+  try {
+    result = await handleToolbarClick(tab);
+  } catch (err) {
+    failed = true;
+    result = {};
+    Logger.error('工具栏按钮处理失败', String(err));
+  }
+  const { config } = await Store.loadConfig();
+  const locale = config.language === 'auto' || !config.language
+    ? browser.i18n?.getUILanguage?.() || 'en'
+    : config.language;
+  const language = locale.toLowerCase().startsWith('zh') ? 'zh' : 'en';
+  const text = toolbarFeedback({ ...result, paused: !failed && config.globalEnabled === false }, language, failed);
+  return { ok: !failed, text, result };
+}
+
 browser.tabs.onCreated.addListener((tab) => {
   schedule(tab);
 });
@@ -399,6 +423,18 @@ async function refreshPages() {
 browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message !== 'object') return undefined;
 
+  if (message.type === 'toolbar-execute') {
+    if (sender.tab || sender.url !== browser.runtime.getURL('src/ui/popup.html') ||
+        !Number.isInteger(message.windowId) || message.windowId < 0) return undefined;
+    executeToolbarClick({ windowId: message.windowId })
+      .then(sendResponse)
+      .catch((err) => {
+        Logger.error('popup 动作失败', String(err));
+        sendResponse({ ok: false });
+      });
+    return true;
+  }
+
   if (message.type === 'sync-all') {
     syncAll()
       .then((stats) => sendResponse(stats))
@@ -428,15 +464,8 @@ browser.storage.onChanged.addListener((changes, areaName) => {
   refreshPages().catch((err) => Logger.error('刷新页面标识失败', String(err)));
 });
 
-// 工具栏按钮：点一下就把当前窗口/所有窗口的标签页按规则同步一遍
-if (browser.action && browser.action.onClicked) {
-  browser.action.onClicked.addListener((tab) => {
-    handleToolbarClick(tab).catch((err) => Logger.error('工具栏按钮处理失败', String(err)));
-  });
-}
-
 // 测试直接导入编排接口；控制台调试使用下方的 TabPilotDebug。
-export { flush, schedule, syncAll, collapseGroups, handleToolbarClick };
+export { flush, schedule, syncAll, collapseGroups, handleToolbarClick, executeToolbarClick };
 
 /**
  * v0.1.0 还没有配置界面，用它在扩展控制台里改配置：

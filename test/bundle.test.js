@@ -9,7 +9,7 @@ for (const [namespace, target] of [['browser', 'firefox140'], ['chrome', 'chrome
   test(`打包入口：${namespace} 环境下后台归组并响应内容脚本查询`, async () => {
     const { outputFiles } = await build({
       absWorkingDir: fileURLToPath(new URL('..', import.meta.url)),
-      entryPoints: ['src/app/background.js', 'src/app/content.js', 'src/ui/options.js'],
+      entryPoints: ['src/app/background.js', 'src/app/content.js', 'src/ui/options.js', 'src/ui/popup.js'],
       outdir: 'unused',
       outbase: 'src',
       bundle: true,
@@ -22,7 +22,7 @@ for (const [namespace, target] of [['browser', 'firefox140'], ['chrome', 'chrome
       file.path.replaceAll('\\', '/').split('/').at(-1),
       new vm.Script(file.text, { filename: file.path })
     ]));
-    assert.equal(scripts.size, 3);
+    assert.equal(scripts.size, 4);
 
     const tab = { id: 1, windowId: 1, groupId: -1, url: 'http://localhost:3000/' };
     const groupCalls = [];
