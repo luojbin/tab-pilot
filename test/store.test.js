@@ -44,7 +44,6 @@ test('schemaVersion 不符时拒绝', () => {
 test('开发期旧格式配置被拒绝（1.0 起不再迁移）', () => {
   const old = {
     schemaVersion: 5,
-    globalEnabled: true,
     rules: [
       {
         id: 'dev-localhost',
@@ -60,12 +59,14 @@ test('开发期旧格式配置被拒绝（1.0 起不再迁移）', () => {
   assert.match(result.errors.join('\n'), /schemaVersion/);
 });
 
-test('globalEnabled 非布尔值被拒绝', () => {
-  const config = validConfig();
-  config.globalEnabled = 'true';
-  const result = validateConfig(config);
-  assert.equal(result.ok, false);
-  assert.match(result.errors.join('\n'), /globalEnabled/);
+test('旧全局开关被忽略并从读取与导入结果中移除', () => {
+  for (const value of [false, true, 'old']) {
+    const config = { ...validConfig(), globalEnabled: value };
+    const result = validateConfig(config);
+    assert.equal(result.ok, true);
+    assert.equal('globalEnabled' in result.config, false);
+    assert.equal('globalEnabled' in parseConfigText(JSON.stringify(config)).config, false);
+  }
 });
 
 test('rules 不是数组时拒绝', () => {
@@ -203,7 +204,6 @@ test('导出文本可被导入解析（round-trip）', () => {
 test('导入开发期旧版本文件会被拒绝', () => {
   const old = {
     schemaVersion: 5,
-    globalEnabled: true,
     rules: [
       { id: 'dev', enabled: true, name: '开发', color: 'green', patterns: ['*://localhost:*/*'] }
     ]
@@ -243,7 +243,7 @@ test('highlight：合法配置通过校验', () => {
 });
 
 test('buildConfigFromRules：保留 highlight / titleRule 并规范化字段（回归）', () => {
-  const config = buildConfigFromRules(true, [
+  const config = buildConfigFromRules( [
     {
       id: 'dev',
       name: '  开发  ',
@@ -280,7 +280,7 @@ test('buildConfigFromRules：保留 highlight / titleRule 并规范化字段（�
 });
 
 test('buildConfigFromRules：没有 highlight 时不凭空补字段', () => {
-  const config = buildConfigFromRules(true, [
+  const config = buildConfigFromRules( [
     { id: 'x', name: 'X', patterns: ['*://x/*'] }
   ]);
   assert.equal('highlight' in config.rules[0], false);
@@ -371,12 +371,11 @@ test('clickAction：缺省或未知值回退到 sync，构建配置会补上默�
   assert.equal(normalizeClickAction('syncCollapseAll'), 'syncCollapseAll');
 
   const built = buildConfigFromRules(
-    true,
     [{ id: 'a', name: 'A', patterns: ['*://a/*'] }],
     'syncCollapseAll'
   );
   assert.equal(built.clickAction, 'syncCollapseAll');
-  assert.equal(buildConfigFromRules(true, []).clickAction, 'sync');
+  assert.equal(buildConfigFromRules( []).clickAction, 'sync');
 });
 
 test('language：auto / zh / en 通过校验，未知值被拒绝', () => {
@@ -402,19 +401,74 @@ test('language：缺省或未知值回退到 auto，构建配置会写入默认�
   assert.equal(normalizeLanguage('fr'), 'auto');
   assert.equal(normalizeLanguage('en'), 'en');
 
-  const built = buildConfigFromRules(true, [], 'sync', 'en');
+  const built = buildConfigFromRules( [], 'sync', 'en');
   assert.equal(built.language, 'en');
-  assert.equal(buildConfigFromRules(true, []).language, 'auto');
+  assert.equal(buildConfigFromRules( []).language, 'auto');
 });
 
 test('groupsFirst：缺省关闭，校验布尔值并保留配置往返', () => {
   const config = validConfig();
   delete config.groupsFirst;
   assert.equal(validateConfig(config).ok, true);
-  assert.equal(buildConfigFromRules(true, []).groupsFirst, false);
+  assert.equal(buildConfigFromRules( []).groupsFirst, false);
   config.groupsFirst = 'true';
   assert.equal(validateConfig(config).ok, false);
   config.groupsFirst = true;
   assert.equal(parseConfigText(JSON.stringify(config)).config.groupsFirst, true);
-  assert.equal(buildConfigFromRules(true, [], 'sync', 'auto', true).groupsFirst, true);
+  assert.equal(buildConfigFromRules( [], 'sync', 'auto', true).groupsFirst, true);
+});
+
+test('全局提示开关：默认开启、兼容缺省、校验类型并保留导入导出', () => {
+  assert.equal(DEFAULT_CONFIG.autoUpdateGroupRules,true);
+  assert.equal(DEFAULT_CONFIG.showActionResult,true);
+  const defaults = buildConfigFromRules( []);
+  assert.equal(defaults.autoUpdateGroupRules,true);
+  assert.equal(defaults.showActionResult,true);
+  const old = validConfig();
+  delete old.autoUpdateGroupRules;
+  delete old.showActionResult;
+  assert.equal(validateConfig(old).ok,true);
+  for (const key of ['autoUpdateGroupRules','showActionResult']) {
+    const invalid = validConfig();
+    invalid[key] = 'false';
+    const checked = validateConfig(invalid);
+    assert.equal(checked.ok,false);
+    assert.ok(checked.errors.some(error => error.includes(key)));
+  }
+  const config = buildConfigFromRules( [], 'sync', 'zh', true, { autoUpdateGroupRules:false, showActionResult:false });
+  const roundtrip = parseConfigText(JSON.stringify(config));
+  assert.equal(roundtrip.ok,true);
+  assert.equal(roundtrip.config.autoUpdateGroupRules,false);
+  assert.equal(roundtrip.config.showActionResult,false);
+  assert.equal(roundtrip.config.groupsFirst,true);
+});
+
+test('strictMode：默认关闭、兼容缺省，配置构建及导入导出保留开关', () => {
+  assert.equal(DEFAULT_CONFIG.strictMode,false);
+  const old=validConfig();delete old.strictMode;
+  assert.equal(validateConfig(old).ok,true);
+  assert.equal(buildConfigFromRules([]).strictMode,false);
+  const config=buildConfigFromRules([],'sync','zh',false,{strictMode:true});
+  assert.equal(parseConfigText(JSON.stringify(config)).config.strictMode,true);
+  config.strictMode='true';
+  assert.equal(validateConfig(config).ok,false);
+});
+
+test('追加导入：只校验规则与 schemaVersion，完全忽略文件全局设置',()=>{
+  const config={...validConfig(),language:'invalid',clickAction:'bad',strictMode:'bad',showActionResult:'bad',autoUpdateGroupRules:'bad',groupsFirst:'bad'};
+  assert.equal(parseConfigText(JSON.stringify(config)).ok,false);
+  const parsed=parseConfigText(JSON.stringify(config),{rulesOnly:true});
+  assert.equal(parsed.ok,true);
+  assert.deepEqual(Object.keys(parsed.config).sort(),['rules','schemaVersion']);
+  assert.deepEqual(parsed.config.rules,config.rules);
+});
+
+test('追加导入：非法格式和规则拒绝，同名留待追加时重命名',()=>{
+  for(const text of ['', '{', 'null', JSON.stringify({schemaVersion:99,rules:[]}),JSON.stringify({schemaVersion:1,rules:[{id:'bad',name:'bad',patterns:[]}]})]){
+    assert.equal(parseConfigText(text,{rulesOnly:true}).ok,false);
+  }
+  const config=validConfig();
+  config.rules.push({...structuredClone(config.rules[0]),id:'another-id'});
+  assert.equal(parseConfigText(JSON.stringify(config)).ok,false);
+  assert.equal(parseConfigText(JSON.stringify(config),{rulesOnly:true}).ok,true);
 });

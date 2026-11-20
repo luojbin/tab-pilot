@@ -195,17 +195,13 @@ function countMatchingTabs(tabs, rule, windowId) {
  *
  * @param {object} tab 标签页（需要 id / url / windowId）
  * @param {Array} rules 配置中的规则数组
- * @param {{tabs?: Array, windowId?: number, globalEnabled?: boolean}} [context]
+ * @param {{tabs?: Array, windowId?: number}} [context]
  * @returns {{matched: null | {ruleId: string, rule: object, minTabs: number, tabIds: number[]}, steps: Array}}
  */
 function explain(tab, rules, context) {
   const ctx = context || {};
   const steps = [];
 
-  if (ctx.globalEnabled === false) {
-    steps.push({ ruleId: null, note: '全局暂停，未执行任何规则' });
-    return { matched: null, steps };
-  }
   if (!tab) {
     steps.push({ ruleId: null, note: '缺少标签页信息' });
     return { matched: null, steps };

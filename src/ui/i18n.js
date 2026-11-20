@@ -6,6 +6,48 @@
  */
 
 const EN = {
+  '新建空白规则': 'New blank rule',
+  '从当前窗口分组创建规则': 'Create rules from groups in this window',
+  '当前窗口没有可生成规则的分组：已有同名规则，或组内没有可用的网站。': 'No groups to import in this window: matching rules already exist, or the groups have no supported websites.',
+  '从当前窗口创建规则失败。': 'Could not create rules from this window.',
+  '已从当前窗口创建 {count} 条规则，请保存并同步后生效。': 'Created {count} rules from this window. Save and sync to apply them.',
+
+  '拖拽调整规则顺序，保存后生效': 'Drag to reorder rules; save to apply',
+  '追加导入…': 'Append import…',
+  '仅追加文件中的分组规则，保留当前全局设置': 'Append only group rules from the file and keep current global settings',
+  '导出已保存的配置，或选择替换导入、仅追加分组规则。': 'Export saved config, replace config on import, or append only group rules.',
+  '追加导入失败，文件中的分组规则不合法。': 'Append import failed: invalid group rules in the file.',
+  '文件中没有可追加的分组规则。': 'The file has no group rules to append.',
+  '追加导入失败，请先修正当前配置。': 'Append import failed. Fix the current config first.',
+  '将文件中的分组追加到末尾并保存当前配置？文件中的全局设置将被忽略，同名分组将添加“-导入”后缀。':
+    'Append the file’s groups at the end and save the current config? Global settings in the file will be ignored. Duplicate names will receive a “-导入” suffix.',
+  '追加导入失败，当前配置未改变。': 'Append import failed. Current config has not changed.',
+  '追加导入成功，已保存并同步。': 'Append import complete. Config saved and synced.',
+  '追加导入已保存，但同步失败，请稍后重试。': 'Appended rules saved, but sync failed. Try syncing again later.',
+  '追加导入失败。': 'Append import failed.',
+
+  '选择设置页和弹出面板的显示语言，也可跟随浏览器。': 'Choose the language for settings and the popup, or follow your browser.',
+  '严格模式': 'Strict mode',
+  '页面跳转到不匹配当前分组规则的网站时，自动移出分组；仅处理已启用规则对应的分组。':
+    'Automatically ungroup a tab when it navigates to a website outside its current group rule. Only groups with an enabled rule are affected.',
+
+  '自动更新分组规则': 'Prompt to update group rules',
+  '操作结果提示': 'Show action results',
+  '使用插件图标快捷功能后显示操作结果；关闭时执行完成后直接关闭弹出面板。':
+    'Show results after using the toolbar shortcut. When off, the popup closes as soon as the action completes.',
+  '手动将标签页拖入已有规则的分组时，提示是否添加该网站的匹配规则。':
+    'When a tab is manually moved into a group with an existing rule, ask whether to add a match pattern for the website.',
+
+  '是否将该网站加入“{name}”的匹配规则？': 'Add this website to the match patterns for “{name}”?',
+  '匹配地址': 'Match pattern',
+  '加入分组': 'Add to group',
+  '取消': 'Cancel',
+  '请输入有效的匹配地址。': 'Enter a valid match pattern.',
+  '页面或分组已变化，请关闭后重新操作。': 'The tab or group has changed. Close this popup and try again.',
+  '保存失败，请重试。': 'Could not save. Try again.',
+  '规则已保存，但同步失败，请稍后重试同步。': 'Rule saved, but sync failed. Try syncing again later.',
+  '已加入匹配规则。': 'Match pattern added.',
+
   'TabPilot 操作': 'TabPilot Actions',
   '设置': 'Settings',
   '正在执行…': 'Working…',
@@ -39,7 +81,6 @@ const EN = {
   'English': 'English',
   '配置备份': 'Backup',
   '配置管理': 'Config management',
-  '全局开关': 'Global switch',
   '全局选项': 'Global options',
   '点击插件图标': 'Icon click behavior',
   '仅同步（检查未归组的标签）': 'Sync only (check for ungrouped tabs)',
@@ -77,8 +118,8 @@ const EN = {
   '已撤销访问网站的权限，页面内标识和标签页改名将停用（刷新已打开的页面后完全停止）':
     'Permission revoked. In-page highlights and tab renaming are disabled (fully after reloading open pages).',
   '访问网站的权限未被撤销': 'Permission to access websites was not revoked.',
-  '顶部「全局配置」管理全局开关、语言和配置导入导出；下方分组列表用于选中分组，重命名、改颜色、启用 / 停用在右侧完成。⋯ 菜单可以复制、调整顺序或删除。':
-    'The top "Global settings" item manages the global switch, language, and config import/export. The group list below selects groups; rename, recolor, enable/disable on the right. Use the ⋯ menu to duplicate, reorder or delete.',
+  '顶部「全局配置」管理语言和配置导入导出；下方分组列表用于选中分组，重命名、改颜色、启用 / 停用在右侧完成。可拖拽调整顺序；⋯ 菜单可以复制、调整顺序或删除。':
+    'The top "Global settings" item manages language and config import/export. The group list below selects groups; rename, recolor, enable/disable on the right. Drag to reorder. Use the ⋯ menu to duplicate, reorder or delete.',
 
   // 左栏 / 分组列表
   '分组': 'Groups',
@@ -92,8 +133,8 @@ const EN = {
   '↓ 下移': '↓ Move down',
   '✕ 删除': '✕ Delete',
   '新分组': 'New group',
-  '左栏只用于查看和选中分组；重命名、改颜色、启用 / 停用在右侧完成。⋯ 菜单可以复制、调整顺序或删除。':
-    'The left column is for viewing and selecting groups. Rename, recolor, enable/disable on the right. Use the ⋯ menu to duplicate, reorder or delete.',
+  '左栏只用于查看和选中分组；重命名、改颜色、启用 / 停用在右侧完成。可拖拽调整顺序；⋯ 菜单可以复制、调整顺序或删除。':
+    'The left column is for viewing and selecting groups. Rename, recolor, enable/disable on the right. Drag to reorder. Use the ⋯ menu to duplicate, reorder or delete.',
   '左侧还没有分组。点「＋」新建一个分组，再把要匹配的地址填进来。':
     'No groups on the left. Click + to create one, then add the address to match.',
   '从左侧选择一个分组，查看并编辑它的详细配置。':
@@ -256,7 +297,6 @@ const PATTERNS = [
     /^schemaVersion 必须为 (\d+)，收到 (.+)$/,
     'schemaVersion must be $1, got $2'
   ],
-  [/^globalEnabled 必须是布尔值$/, 'globalEnabled must be a boolean'],
   [/^clickAction 必须是 (.+) 之一$/, 'clickAction must be one of $1'],
   [/^language 必须是 (.+) 之一$/, 'language must be one of $1'],
   [

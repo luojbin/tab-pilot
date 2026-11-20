@@ -4,7 +4,7 @@
 
 ## 环境与快速开始
 
-当前验证环境为 Windows、Node.js 24.14.0、npm 11.9.0。构建使用 Node API，不依赖 PowerShell 专用命令；其他操作系统需要单独验证。目标浏览器为 Firefox 140+、Chrome / Edge（Chromium 116+），目标是桌面浏览器。
+历史验证环境为 Windows、Node.js 24.14.0、npm 11.9.0；macOS 验证环境为 Node.js 26.7.0、npm 11.19.0，完整测试和双目标构建已通过。构建使用 Node API，不依赖 PowerShell 专用命令。目标浏览器为 Firefox 140+、Chrome / Edge（Chromium 116+），目标是桌面浏览器。
 
 在仓库根目录或 GitHub 源码 ZIP 的解压目录执行：
 
@@ -25,15 +25,27 @@ src/
     rules.js           URL 匹配、优先级、阈值与 explain（纯函数）
     highlight.js       标识规格、颜色与布局计算（纯函数）
     title-rule.js      标题正则编译、替换与批量测试（纯函数）
+    manual-group-rule.js 网站默认模式、输入扩写与自动归组标记
+    copy-rule.js       独立规则副本、唯一名称与默认停用
+    append-rules.js    分组追加、名称/id 冲突处理
+    reorder-rules.js   规则顺序移动
+    rules-from-groups.js 当前窗口原生分组转规则草稿
+    toolbar-feedback.js 中英文动作结果文案
     logger.js          控制台日志及内存环形缓冲
   app/
     store.js           配置校验、默认值与 storage.local 读写
     actions.js         tabs.group / tabGroups API 调用
+    manual-group.js    外部归组检测、持久化待确认项与规则追加
+    strict-mode.js     导航后复查组归属并移出不匹配标签
+    tab-order.js       固定标签后整组前移
+    toolbar-menu.js    Firefox 图标右键选项入口
     background.js      后台入口：事件、防抖、规则编排、消息和同步
     content.js         网页入口：边框、banner、标题改写与监听
   ui/
     options.html       配置页结构与样式
-    options.js         配置页入口：编辑、预览、导入导出、保存与语言切换
+    options.js         配置页入口：编辑、预览、追加/替换导入、保存、窗口生成规则
+    popup.html/js      图标动作结果与手动补规则确认表单
+    rule-drag.js       列表拖动事件与插入位置指示
     i18n.js            配置页中英文案与语言解析（中文 / English）
   platform/
     browser.js         导出 globalThis.browser ?? globalThis.chrome
@@ -54,7 +66,7 @@ output/                扩展 ZIP 等本地产物（不提交 Git）
 
 规则引擎只接收 tab、规则和上下文，不直接调用浏览器 API。后台将匹配结果交给动作层执行；存储层负责配置读写与校验。配置格式的公开约定见 [PRD 数据模型](docs/PRD.md#5-数据模型)，基线为 `schemaVersion: 1`。
 
-四个入口运行在独立环境：后台、配置页、popup、各网页的内容脚本。它们不共享模块状态；跨环境使用 `runtime.sendMessage` 和 `storage.onChanged` 通信。后台处理 `sync-all`、`page-style`、`toolbar-execute` 消息，配置变化后向页面发送 `tabpilot:refresh`。
+四个入口运行在独立环境：后台、配置页、popup、各网页的内容脚本。它们不共享模块状态；跨环境使用 `runtime.sendMessage` 和 `storage.onChanged` 通信。后台处理 `sync-all`、`page-style`、`toolbar-execute` 和 `manual-group-*` 消息，配置变化后向页面发送 `tabpilot:refresh`。设置页的从窗口生成规则直接读取浏览器 API，只写页面草稿，不借用图标动作。
 
 ## ES Module 与构建
 
@@ -69,7 +81,7 @@ esbuild 将以下四个入口及其依赖分别打包为普通 IIFE 脚本：
 - `src/ui/options.js`
 - `src/ui/popup.js`
 
-产物保留相同相对路径，不含运行时模块导入；manifest 的后台、内容脚本及配置页各加载自己的单一入口。仅后台的 `globalThis.TabPilotDebug` 作为控制台调试接口保留，内部模块不挂到全局。
+产物保留相同相对路径，不含运行时模块导入；manifest 的后台、内容脚本、配置页及 popup 各加载自己的单一入口。仅后台的 `globalThis.TabPilotDebug` 作为控制台调试接口保留，内部模块不挂到全局。
 
 ```bash
 npm run build           # 同时构建两个目标
@@ -94,9 +106,13 @@ npm run build:chromium  # 仅 Chromium
 | 后台 | Firefox 使用事件页 `background.scripts`；Chromium 使用 `background.service_worker`，都指向打包后的后台入口 |
 | Manifest | Firefox 专用 ID、最低版本、数据收集声明和 `optional_host_permissions`（host 权限在 Firefox 可撤销）；Chromium 专用 `minimum_chrome_version`，其 content script 站点访问在安装时即为必需权限，故不声明 `optional_host_permissions` |
 | 消息响应 | 后台使用 `sendResponse` + `return true` 异步回复 |
-| 分组 API | 共用动作层；真实浏览器仍需验证折叠、窗口隔离及已分组标签行为 |
+| 分组 API | 自动归组使用动作层；分组置前使用 tabGroups.move 整组移动，严格模式使用 tabs.ungroup；需实测成员、顺序、折叠和窗口隔离 |
+| 图标右键选项 | Firefox 使用 menus 权限创建 action 上下文菜单；Chromium 使用 options_ui 提供的默认入口 |
+| 自动打开 popup | 后台打开要求 Firefox 149+ / Chromium 127+；旧版或失败时显示角标，引导点击图标，不提升最低版本 |
 
-事件页和 service worker 都可能被回收。内存日志及待处理队列不持久化，不能将进程一直存活作为业务前提。标题改写通过 MutationObserver 监听，并使用 1.5 秒间隔检查兜底。
+后台打开 popup 的版本边界见 [Firefox 官方说明](https://blog.mozilla.org/addons/2026/04/23/webextensions-api-changes-firefox-149-152/) 和 [Chromium action.openPopup](https://developer.chrome.com/docs/extensions/reference/api/action#method-openPopup)。这不影响用户直接点击图标打开 popup。
+
+事件页和 service worker 都可能被回收。内存日志、tab 事件防抖队列和自动归组抑制标记不持久化；手动补规则的待确认项保存在 storage.local 的 `tabpilot:manual-group-requests`，不属于导出配置。不能将进程一直存活作为业务前提。标题改写通过 MutationObserver 监听，并使用 1.5 秒间隔检查兜底。
 
 ## 配置格式
 
@@ -105,9 +121,12 @@ npm run build:chromium  # 仅 Chromium
 ```json
 {
   "schemaVersion": 1,
-  "globalEnabled": true,
   "clickAction": "sync",
   "language": "auto",
+  "autoUpdateGroupRules": true,
+  "showActionResult": true,
+  "groupsFirst": false,
+  "strictMode": false,
   "rules": [
     {
       "id": "code-github",
@@ -135,6 +154,8 @@ npm run build:chromium  # 仅 Chromium
 }
 ```
 
+旧 `globalEnabled` 字段读取/导入时忽略，保存结果不再包含该字段。旧版配置可升级读取；新导出文件不再满足旧版必需的全局开关字段，不保证可直接回退使用。追加导入保留本机全局设置，只检查文件 schemaVersion 和 rules，并在合并后校验唯一名称/id。
+
 字段含义、取值范围和校验规则见 [PRD 数据模型](docs/PRD.md#5-数据模型)；校验入口是 `src/app/store.js` 的 `validateConfig`。`schemaVersion` 只在配置结构不兼容变更时递增，与插件版本号解耦；`highlight` / `titleRule` 缺省时由配置页按默认值补齐。
 
 ## 测试与本地验证
@@ -148,9 +169,23 @@ npm run build:chromium  # 仅 Chromium
 | `highlight.test.js` | 标识规格、边界和布局计算 |
 | `title-rule.test.js` | 首条命中、捕获组、非法正则、多行测试 |
 | `background.test.js` | 浏览器 mock 下的事件、同步、消息与配置处理 |
+| `copy-rule.test.js` / `append-rules.test.js` | 深拷贝、追加导入、名称/id 冲突与数据保护 |
+| `reorder-rules.test.js` / `rules-from-groups.test.js` | 拖动事件与顺序边界、当前窗口规则生成与去重 |
+| `manual-group.test.js` | 待确认项持久化、自动归组排除、取消/过期/失败与开关 |
+| `strict-mode.test.js` / `tab-order.test.js` | 导航归属、固定标签与窗口保护、整组移动及幂等 |
+| `popup.test.js` / `toolbar-feedback.test.js` / `toolbar-menu.test.js` | popup 请求、计时、确认表单、结果提示与图标选项菜单 |
+| `i18n.test.js` | 文案和模板翻译；不代表整页翻译覆盖 |
 | `bundle.test.js` | 实际打包四个入口；在两种 API 命名空间下执行后台和内容脚本，验证归组与消息 |
 
-打包冒烟测试只编译、解析配置页脚本，未执行配置页 DOM 交互。浏览器 API mock 不能替代真实浏览器验证。
+当前完整测试为 **189 项通过**（含两项打包冒烟）。打包冒烟编译四入口并执行后台/内容脚本，只解析配置页和 popup 脚本；其他测试用桩验证部分 DOM/事件和 API 行为，未在真实浏览器中运行整页 UI。
+
+受限环境可在单进程执行不依赖浏览器全局桩的 **127 项**：
+
+```bash
+node --test --test-isolation=none test/append-rules.test.js test/copy-rule.test.js test/highlight.test.js test/i18n.test.js test/reorder-rules.test.js test/rules-from-groups.test.js test/rules.test.js test/store.test.js test/strict-mode.test.js test/title-rule.test.js test/toolbar-feedback.test.js test/toolbar-menu.test.js
+```
+
+`background`、`manual-group`、`popup`、`tab-order` 测试文件依赖各自的全局 API 桩，应使用 npm test 的独立进程，不要与上述文件在单进程混跑；bundle 测试另需 esbuild 子进程。部分逻辑测试通过不等于完整发布验证。
 
 `npm run lint` 检查已构建的 `dist/firefox`，不检查 Chromium 包。当前 Firefox 校验有一条 Android 最低版本与数据收集声明的兼容警告；这不代表桌面扩展存在相同问题，Android 不在本项目支持范围内。
 
@@ -164,14 +199,16 @@ npm run build:chromium  # 仅 Chromium
 
 ### 手工验证清单
 
-1. 打开多个带端口的 `localhost` 页面，确认默认「开发」规则归组及颜色。
-2. 新增规则，验证保存同步、优先级、阈值、跨窗口隔离、全局和单条启停；确认不抢走已分组标签。
-3. 开启边框和 banner，检查位置、颜色、透明度及保存后的更新。
-4. 开启标题规则，验证多条规则优先级、捕获组、SPA 修改标题，以及关闭规则后恢复原标题。
-5. 验证配置页增删排序、预览、折叠、多行标题测试、JSON 导入导出及非法配置提示。
-6. 在 Firefox 和实际使用的 Chrome / Edge 中分别执行；浏览器重启后再检查配置及后台唤醒行为。
-
-用户已确认 Chromium 页面边框和 banner 在修复产物语法错误后正常；这仅代表该场景通过，不等同于完整跨浏览器清单或商店审核通过。
+1. 基线功能：自动归组、优先级、阈值、窗口隔离、已分组保护、页面标识和 SPA 标题恢复。
+2. 左栏：新增菜单、空白规则、复制默认值、拖拽前后插入、菜单排序、保留选中与草稿、保存/放弃。
+3. 从当前窗口生成：排除其他窗口、同名规则跳过、原生同名组合并、网站模式和端口、过滤受限页、重复生成。
+4. 全局卡片：六张卡片两列排列，中英文及暗色模式；旧全局开关移除，四个功能开关保存和导入导出行为正确。
+5. 分组置前：固定标签最前、整组移动不改成员、各类相对顺序、折叠组、重复执行、多窗口及错误隔离。
+6. 图标 popup：四种快捷动作、结果开关、3 秒停留与淡出、设置入口取消计时、受限页使用；Firefox 图标右键选项。
+7. 拖入补规则：对应/无对应规则组、自动归组不询问、地址编辑扩写、重复项、取消、失效与保存失败、关闭开关清除角标；低版本 popup 打开失败后的角标入口。
+8. 严格模式：协议/端口/路径/重定向/SPA 导航、已停用规则和纯手动组、固定标签、过期导航事件，以及与拖入询问组合使用。
+9. JSON：替换导入、追加导入忽略文件全局设置、名称/id 连续冲突、空文件、非法数据、取消、当前未保存修改处理。
+10. Firefox / Chrome / Edge 分别记录浏览器版本和结果，重启后验证配置及后台唤醒。已确认的阶段性结果和最终集成待办见 [开发计划](docs/development-plan.md#验证状态)。
 
 ## 后台控制台调试
 
@@ -197,7 +234,7 @@ npm run build:chromium  # 仅 Chromium
 (async () => {
   const api = globalThis.browser ?? globalThis.chrome;
   const { config, source, errors } = await TabPilotDebug.getConfig();
-  console.log('配置来源:', source, '全局启用:', config.globalEnabled, '校验错误:', errors ?? '无');
+  console.log('配置来源:', source, '校验错误:', errors ?? '无');
   console.table(config.rules.map(r => ({
     id: r.id, enabled: r.enabled, name: r.name,
     patterns: r.patterns.join(' | '), minTabs: r.minTabs ?? 1,
@@ -219,11 +256,13 @@ npm run build:chromium  # 仅 Chromium
 
 ## 发布与 Mozilla 源码审核
 
+现有商店条目：[Firefox AMO](https://addons.mozilla.org/zh-CN/firefox/addon/tabpilot-firefox/)、[Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/tabpilot/cdjpnbjccmeddhagmbbgjcckjfnofbbn)。已确认 Firefox 和 Edge 均已上架 1.2.0；各渠道版本和 1.3.0 提交状态分别记录在 [开发计划](docs/development-plan.md#已登记发布渠道)。
+
 版本号只在 `package.json` 中维护，由构建脚本注入 manifest。manifest、配置页与 ZIP 文件名均使用 package.json 中的同一个数字版本，不添加预发布后缀或 version_name。配置格式版本 `schemaVersion` 独立维护，不能随插件版本机械递增。
 
-本项目以用户可见功能和配置兼容性作为版本判断依据：兼容的维护修复和不改变行为的内部重构使用补丁版本，新增兼容功能使用次版本，不兼容变更使用主版本。本次从已发布的 `1.1.0` 升到 `1.1.1`，不新增功能、不改变配置格式；已发布 tag 保持不变。修改版本号时同步更新 `package-lock.json` 的根版本及根包版本。
+本项目以用户可见功能和配置兼容性作为版本判断依据：兼容的维护修复和不改变行为的内部重构使用补丁版本，新增兼容功能使用次版本，不兼容变更使用主版本。当前开发版本从已发布的 `1.2.0` 推进到 `1.3.0`，包含新增功能和全局启停移除；schemaVersion 继续为 1，旧配置读取兼容与回退限制见上文。当前源码通过检查不代表已提交商店。修改版本号时同步更新 `package-lock.json` 的根版本及根包版本。
 
-1. 更新版本号和发布说明，运行测试、双目标构建、Firefox lint，并完成本次改动相关的浏览器验证。提交全部发布代码，创建并推送版本 tag（如 `v1.1.1`）；同一已上传的 Mozilla 版本号不能重复使用。
+1. 更新版本号和发布说明，运行测试、双目标构建、Firefox lint，并完成本次改动相关的浏览器验证。提交全部发布代码，创建并推送版本 tag（如 `v1.3.0`）；同一已上传的 Mozilla 版本号不能重复使用。
 2. 从该 tag 的干净源码执行 `npm ci`、`npm run build`，将 Firefox 和 Chromium ZIP 上传到对应 GitHub Release。普通 Release 在等待 Firefox 签名时不设为 Latest，可选择 `None` 并注明「Firefox 签名处理中」。测试版本使用 Pre-release。
 3. 下载该 Release 自动提供的 **Source code (zip)**。向 Mozilla 提交 Firefox 构建 ZIP，并将该源码 ZIP 上传到源码附件字段；不能只提交源码 ZIP 代替可安装扩展。根据分发需求选择 AMO 上架（listed）或自行分发（unlisted）。
 4. 获取 Mozilla 签名后的 `.xpi`，补传到同一 Release；确认安装可用后标记为 Latest。如果启用了不可变 Release，先创建 tag 并下载该 tag 的源码归档，Release 保持草稿，补齐附件后再正式发布。

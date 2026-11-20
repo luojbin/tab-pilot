@@ -1,4 +1,5 @@
 import browser from '../platform/browser.js';
+import { markAutomaticGrouping, clearAutomaticGrouping, finishAutomaticGrouping } from '../core/manual-group-rule.js';
 
 /**
  * TabPilot 动作执行层
@@ -66,16 +67,27 @@ async function applyRule(rule, tab, companions) {
     if (tab.groupId === existing.id && tabIds.length === 1) {
       return { ok: true, skipped: true, groupId: existing.id, created: false, tabIds };
     }
-    await browser.tabs.group({ tabIds, groupId: existing.id });
+    markAutomaticGrouping(tabIds, existing.id);
+    try {
+      await browser.tabs.group({ tabIds, groupId: existing.id });
+    } catch (err) {
+      clearAutomaticGrouping(tabIds);
+      throw err;
+    }
     return { ok: true, skipped: false, groupId: existing.id, created: false, tabIds };
   }
 
   // 先建组，再单独设属性：tabs.group 的 createProperties 只保证支持 windowId，
   // title / color / collapsed 用 tabGroups.update 设置才是跨浏览器都稳的路径。
-  const groupId = await browser.tabs.group({
-    tabIds,
-    createProperties: { windowId }
-  });
+  markAutomaticGrouping(tabIds);
+  let groupId;
+  try {
+    groupId = await browser.tabs.group({ tabIds, createProperties: { windowId } });
+    finishAutomaticGrouping(tabIds, groupId);
+  } catch (err) {
+    clearAutomaticGrouping(tabIds);
+    throw err;
+  }
 
   const updateProperties = { title: groupName, color: colorOf(rule) };
   if (typeof rule.collapsed === 'boolean') {

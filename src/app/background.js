@@ -1,4 +1,6 @@
 import browser from '../platform/browser.js';
+import { enforceStrictGroup } from './strict-mode.js';
+import { createManualGroupController } from './manual-group.js';
 import { registerToolbarMenu } from './toolbar-menu.js';
 import { toolbarFeedback } from '../core/toolbar-feedback.js';
 import { groupsFirst } from './tab-order.js';
@@ -15,6 +17,8 @@ import * as TitleRule from '../core/title-rule.js';
  * 职责：监听 tab 事件 → 防抖合并 → 读配置 → 纯函数匹配 → 执行动作 → 记日志。
  * 判定逻辑全部在 rules.js，这里只做编排，方便单测其余部分。
  */
+const manualGroup = createManualGroupController(browser, Store, () => syncAll());
+
 registerToolbarMenu(browser, error => Logger.warn('图标选项菜单操作失败', error));
 
 const DEBOUNCE_MS = 50;
@@ -123,14 +127,10 @@ async function flush() {
       { rules: config.rules.map((rule) => rule.id) }
     );
   }
-  if (config.globalEnabled === false) {
-    Logger.info('全局暂停，忽略本次事件', { count: batch.length });
-    return;
-  }
 
   const byWindow = new Map();
   for (const tab of batch) {
-    if (isIgnorable(tab.url || tab.pendingUrl)) continue;
+    if (isIgnorable(tab.url || tab.pendingUrl) && !config.strictMode) continue;
     const list = byWindow.get(tab.windowId);
     if (list) list.push(tab);
     else byWindow.set(tab.windowId, [tab]);
@@ -140,6 +140,11 @@ async function flush() {
     const allTabs = await tabsInWindow(windowId);
     for (const tab of tabs) {
       try {
+        if (await enforceStrictGroup(browser, config, tab)) {
+          Logger.info('严格模式：网址不匹配当前分组，已移出', { tabId: tab.id, groupId: tab.groupId });
+          continue;
+        }
+        if (isIgnorable(tab.url || tab.pendingUrl)) continue;
         await processTab(tab, config.rules, allTabs);
       } catch (err) {
         // 单个标签出错不影响同批次的其他标签（可靠性要求）
@@ -165,10 +170,6 @@ async function syncAll(options) {
   const { config, errors } = await Store.loadConfig();
   if (errors) {
     Logger.warn('配置校验失败，已回退到内置默认配置', { errors });
-  }
-  if (config.globalEnabled === false) {
-    Logger.info('全局暂停，未同步任何标签页');
-    return { checked: 0, grouped: 0, skipped: 0, failed: 0 };
   }
 
   const allTabs = await browser.tabs.query({});
@@ -300,7 +301,6 @@ async function handleToolbarClick(tab) {
   const stats = await syncAll();
 
   const { config } = await Store.loadConfig();
-  if (config.globalEnabled === false) return stats;
 
   const action = Store.normalizeClickAction(config.clickAction);
   if (action === 'sync') return stats;
@@ -330,7 +330,7 @@ async function executeToolbarClick(tab) {
     ? browser.i18n?.getUILanguage?.() || 'en'
     : config.language;
   const language = locale.toLowerCase().startsWith('zh') ? 'zh' : 'en';
-  const text = toolbarFeedback({ ...result, paused: !failed && config.globalEnabled === false }, language, failed);
+  const text = toolbarFeedback(result, language, failed);
   return { ok: !failed, text, result };
 }
 
@@ -339,6 +339,7 @@ browser.tabs.onCreated.addListener((tab) => {
 });
 
 browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  manualGroup.capture(tabId, changeInfo, tab).catch(err => Logger.warn('手动分组提示失败', String(err)));
   // 只在“加载完成”或“URL 变化”时处理，避免每个子资源事件都触发
   if (changeInfo.status !== 'complete' && !changeInfo.url) return;
   schedule(tab);
@@ -358,7 +359,6 @@ browser.runtime.onStartup.addListener(() => {
  */
 async function resolvePageStyle(tab, url) {
   const { config } = await Store.loadConfig();
-  if (config.globalEnabled === false) return null;
 
   const targetUrl = typeof url === 'string' && url !== '' ? url : (tab && tab.url) || '';
   if (targetUrl === '' || isIgnorable(targetUrl)) return null;
@@ -423,6 +423,21 @@ async function refreshPages() {
 browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message !== 'object') return undefined;
 
+  if (['manual-group-pending', 'manual-group-add', 'manual-group-cancel'].includes(message.type)) {
+    if (sender.tab || sender.url !== browser.runtime.getURL('src/ui/popup.html') ||
+        !Number.isInteger(message.windowId) || message.windowId < 0) return undefined;
+    const operation = message.type === 'manual-group-pending'
+      ? manualGroup.pending(message.windowId)
+      : message.type === 'manual-group-add'
+        ? manualGroup.add(message.windowId, message.id, message.input)
+        : manualGroup.cancel(message.windowId, message.id);
+    operation.then(sendResponse).catch(err => {
+      Logger.warn('手动分组规则操作失败', String(err));
+      sendResponse({ ok: false, reason: 'save-failed' });
+    });
+    return true;
+  }
+
   if (message.type === 'toolbar-execute') {
     if (sender.tab || sender.url !== browser.runtime.getURL('src/ui/popup.html') ||
         !Number.isInteger(message.windowId) || message.windowId < 0) return undefined;
@@ -462,6 +477,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
 browser.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== 'local' || !changes[Store.CONFIG_KEY]) return;
   refreshPages().catch((err) => Logger.error('刷新页面标识失败', String(err)));
+  manualGroup.settingsChanged().catch(err => Logger.warn('更新分组提示设置失败', String(err)));
 });
 
 // 测试直接导入编排接口；控制台调试使用下方的 TabPilotDebug。

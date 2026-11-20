@@ -1,5 +1,9 @@
 import browser from '../platform/browser.js';
+import { rulesFromGroups } from '../core/rules-from-groups.js';
+import { reorderRules } from '../core/reorder-rules.js';
+import { createRuleDrag } from './rule-drag.js';
 import packageInfo from '../../package.json' with { type: 'json' };
+import { appendRules } from '../core/append-rules.js';
 import { copyRule } from '../core/copy-rule.js';
 import * as Store from '../app/store.js';
 import * as Rules from '../core/rules.js';
@@ -27,7 +31,10 @@ const els = {
   version: document.getElementById('version'),
   save: document.getElementById('save'),
   reload: document.getElementById('reload'),
-  addRule: document.getElementById('addRule')
+  addRule: document.getElementById('addRule'),
+  addRuleMenu: document.getElementById('addRuleMenu'),
+  addBlankRule: document.getElementById('addBlankRule'),
+  rulesFromWindow: document.getElementById('rulesFromWindow')
 };
 
 /** 访问所有网站的 host 权限：content script 注入依赖它。 */
@@ -75,11 +82,18 @@ const GLOBAL_ID = '__global__';
 /** 有未保存修改时禁止导出，提示文案在按钮提示与状态栏共用。 */
 const UNSAVED_EXPORT_HINT = '有未保存的修改，请先「保存并同步」或「放弃修改」再导出。';
 
-let state = { globalEnabled: true, clickAction: 'sync', language: 'auto', groupsFirst: false, rules: [], selectedId: null };
+let state = { clickAction: 'sync', language: 'auto', groupsFirst: false, strictMode: false, autoUpdateGroupRules: true, showActionResult: true, rules: [], selectedId: null };
 let savedSnapshot = '';
 let busy = false;
 let previewRefresh = null;
 const openMenus = new Set();
+const bindRuleDrag = createRuleDrag(els.list, (sourceId, targetId, after) => {
+  const next = reorderRules(state.rules, sourceId, targetId, after);
+  if (next === state.rules) return;
+  state.rules = next;
+  renderList();
+  renderDetail();
+}, closeMenus, () => !busy);
 
 function newRuleId() {
   return `rule-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
@@ -91,10 +105,12 @@ function colorHex(color) {
 
 function snapshot() {
   return JSON.stringify({
-    globalEnabled: state.globalEnabled,
     clickAction: state.clickAction,
     language: state.language,
     groupsFirst: state.groupsFirst,
+    strictMode: state.strictMode,
+    autoUpdateGroupRules: state.autoUpdateGroupRules,
+    showActionResult: state.showActionResult,
     rules: state.rules
   });
 }
@@ -167,13 +183,7 @@ function createGlobalListItem() {
   name.className = 'group-name';
   name.textContent = t('全局配置');
 
-  const track = document.createElement('span');
-  track.className = 'switch-ui';
-  track.setAttribute('aria-hidden', 'true');
-  if (state.globalEnabled) track.classList.add('on');
-  track.title = state.globalEnabled ? '已启用（在右侧停用）' : '已停用（在右侧启用）';
-
-  row.append(name, track);
+  row.append(name);
   item.append(row);
   item.addEventListener('click', selectGlobal);
   return item;
@@ -214,6 +224,8 @@ function renderList() {
 
     const row = document.createElement('div');
     row.className = 'group-row';
+    row.title = t('拖拽调整规则顺序，保存后生效');
+    bindRuleDrag(row, item, rule.id);
 
     // 左栏只做展示与选中：名称、颜色、启用状态都只读
     const swatch = document.createElement('span');
@@ -322,6 +334,7 @@ function updateListItem(rule) {
 }
 
 function closeMenus() {
+  closeAddRuleMenu();
   openMenus.clear();
   for (const item of els.list.querySelectorAll('.group-item')) {
     const menu = item.querySelector('.group-menu');
@@ -346,7 +359,55 @@ function toggleMenu(id) {
   }
 }
 
+function closeAddRuleMenu() {
+  els.addRuleMenu.hidden = true;
+  els.addRule.setAttribute('aria-expanded', 'false');
+}
+
+function openAddRuleMenu(last = false) {
+  closeMenus();
+  els.addRuleMenu.hidden = false;
+  els.addRule.setAttribute('aria-expanded', 'true');
+  (last ? els.rulesFromWindow : els.addBlankRule).focus();
+}
+
+async function addRulesFromWindow() {
+  if (busy) return;
+  closeMenus();
+  busy = true;
+  syncDirtyState();
+  try {
+    const currentWindow = await browser.windows.getCurrent();
+    const [groups, tabs] = await Promise.all([
+      browser.tabGroups.query({ windowId: currentWindow.id }),
+      browser.tabs.query({ windowId: currentWindow.id })
+    ]);
+    const generated = rulesFromGroups(state.rules, groups, tabs, currentWindow.id, newRuleId);
+    if (!generated.length) {
+      setStatus('info', t('当前窗口没有可生成规则的分组：已有同名规则，或组内没有可用的网站。'));
+      return;
+    }
+    const checked = Store.validateConfig({ ...Store.DEFAULT_CONFIG, rules: generated });
+    if (!checked.ok) {
+      setStatus('error', t('从当前窗口创建规则失败。'), checked.errors);
+      return;
+    }
+    state.rules.push(...generated);
+    state.selectedId = generated[0].id;
+    persistSelected();
+    renderList();
+    renderDetail();
+    setStatus('info', t('已从当前窗口创建 {count} 条规则，请保存并同步后生效。').replace('{count}', String(generated.length)));
+  } catch (err) {
+    setStatus('error', t('从当前窗口创建规则失败。'), [String(err)]);
+  } finally {
+    busy = false;
+    syncDirtyState();
+  }
+}
+
 function addRule() {
+  if (busy) return;
   const rule = {
     id: newRuleId(),
     enabled: true,
@@ -364,7 +425,7 @@ function addRule() {
   renderList();
   renderDetail();
 
-  const nameInput = els.list.querySelector('.group-item.selected .group-name');
+  const nameInput = els.detail.querySelector('.field-name-input');
   if (nameInput) {
     nameInput.focus();
     nameInput.select();
@@ -1385,6 +1446,29 @@ function renderDetail() {
   syncDirtyState();
 }
 
+/** 全局选项复用已有拨杆 DOM 与 input:checked 样式。 */
+function createGlobalSwitch(text, checked, onChange) {
+  const field = document.createElement('label');
+  field.className = 'field field-switch';
+  field.append(document.createTextNode(text));
+  const slot = document.createElement('span');
+  slot.className = 'switch-slot';
+  const input = document.createElement('input');
+  input.type = 'checkbox';
+  input.checked = checked;
+  input.setAttribute('aria-label', text);
+  input.addEventListener('change', () => {
+    onChange(input.checked);
+    syncDirtyState();
+  });
+  const track = document.createElement('span');
+  track.className = 'switch-ui';
+  track.setAttribute('aria-hidden', 'true');
+  slot.append(input, track);
+  field.append(slot);
+  return field;
+}
+
 function renderGlobalDetail() {
   els.detail.textContent = '';
 
@@ -1395,32 +1479,6 @@ function renderGlobalDetail() {
   head.append(title);
 
   const body = document.createElement('div');
-  const firstRow = document.createElement('div');
-  firstRow.className = 'detail-row global-first-row';
-
-  // 全局开关
-  const switchField = document.createElement('label');
-  switchField.className = 'field field-switch';
-  switchField.append(document.createTextNode('全局开关'));
-  const switchSlot = document.createElement('span');
-  switchSlot.className = 'switch-slot';
-  const switchInput = document.createElement('input');
-  switchInput.type = 'checkbox';
-  switchInput.checked = state.globalEnabled;
-  switchInput.setAttribute('aria-label', t('全局开关'));
-  const switchTrack = document.createElement('span');
-  switchTrack.className = 'switch-ui';
-  // 外观交给 CSS 的 `input:checked + .switch-ui`，不要再挂静态 .on：
-  // .on 一旦写死在初始状态上就不会随点击移除，关闭时拨杆会一直停在启用色。
-  switchInput.addEventListener('change', () => {
-    state.globalEnabled = switchInput.checked;
-    renderList();
-    // 全局开关也是配置的一部分：改动后导出应立即变为不可用
-    syncExportState();
-  });
-  switchSlot.append(switchInput, switchTrack);
-  switchField.append(switchSlot);
-
   // 语言
   const languageField = document.createElement('label');
   languageField.className = 'field field-language';
@@ -1440,7 +1498,6 @@ function renderGlobalDetail() {
   languageSelect.value = state.language;
   languageSelect.addEventListener('change', () => changeLanguage(languageSelect.value));
   languageField.append(languageSelect);
-  firstRow.append(switchField, languageField);
 
   // 网站访问权限（host 权限）：只有 Firefox 需要/可以管理。
   // Chromium 在安装时把 content_scripts 的站点访问当作必需权限授予，
@@ -1482,11 +1539,8 @@ function renderGlobalDetail() {
     permissionBlock.append(permissionTitle, permissionHint, permissionStatus, permissionActions);
   }
 
-  body.append(firstRow);
 
   // 点击插件图标的行为
-  const actionRow = document.createElement('div');
-  actionRow.className = 'detail-row';
   const actionField = document.createElement('label');
   actionField.className = 'field field-click-action';
   actionField.append(document.createTextNode('点击插件图标'));
@@ -1509,19 +1563,56 @@ function renderGlobalDetail() {
     syncDirtyState();
   });
   actionField.append(actionSelect);
-  actionRow.append(actionField);
 
   const actionHint = document.createElement('p');
   actionHint.className = 'hint small';
   actionHint.textContent = '点图标时先同步，再按所选方式折叠分组；折叠只影响点击时所在的窗口。';
-  const orderField = checkOption('分组置前', state.groupsFirst, (checked) => {
+  const orderField = createGlobalSwitch('分组置前', state.groupsFirst, (checked) => {
     state.groupsFirst = checked;
     syncDirtyState();
   });
   const orderHint = document.createElement('p');
   orderHint.className = 'hint small';
   orderHint.textContent = '同步后按固定标签、分组、游离标签排序，保留各自顺序；自动归组时不重排。';
-  body.append(actionRow, actionHint, orderField, orderHint);
+  const resultField = createGlobalSwitch('操作结果提示', state.showActionResult, checked => {
+    state.showActionResult = checked;
+  });
+  const resultHint = document.createElement('p');
+  resultHint.className = 'hint small';
+  resultHint.textContent = '使用插件图标快捷功能后显示操作结果；关闭时执行完成后直接关闭弹出面板。';
+  const updateField = createGlobalSwitch('自动更新分组规则', state.autoUpdateGroupRules, checked => {
+    state.autoUpdateGroupRules = checked;
+  });
+  const updateHint = document.createElement('p');
+  updateHint.className = 'hint small';
+  updateHint.textContent = '手动将标签页拖入已有规则的分组时，提示是否添加该网站的匹配规则。';
+  const strictField = createGlobalSwitch('严格模式', state.strictMode, checked => {
+    state.strictMode = checked;
+  });
+  const strictHint = document.createElement('p');
+  strictHint.className = 'hint small';
+  strictHint.textContent = '页面跳转到不匹配当前分组规则的网站时，自动移出分组；仅处理已启用规则对应的分组。';
+  const languageHint = document.createElement('p');
+  languageHint.className = 'hint small';
+  languageHint.textContent = '选择设置页和弹出面板的显示语言，也可跟随浏览器。';
+  const switchCards = document.createElement('div');
+  switchCards.className = 'global-switch-cards';
+  for (const [field, hint, id] of [
+    [languageField, languageHint, 'language'],
+    [actionField, actionHint, 'click-action'],
+    [updateField, updateHint, 'auto-update-group-rules'],
+    [resultField, resultHint, 'show-action-result'],
+    [orderField, orderHint, 'groups-first'],
+    [strictField, strictHint, 'strict-mode']
+  ]) {
+    const card = document.createElement('div');
+    card.className = 'global-switch-card';
+    hint.id = `${id}-description`;
+    field.querySelector('input, select').setAttribute('aria-describedby', hint.id);
+    card.append(field, hint);
+    switchCards.append(card);
+  }
+  body.append(switchCards);
   if (permissionBlock) body.append(permissionBlock);
 
   // 配置管理
@@ -1531,7 +1622,7 @@ function renderGlobalDetail() {
   configTitle.textContent = '配置管理';
   const configHint = document.createElement('p');
   configHint.className = 'hint small';
-  configHint.textContent = '导出已保存的配置，或从 JSON 文件导入并替换配置。';
+  configHint.textContent = '导出已保存的配置，或选择替换导入、仅追加分组规则。';
   const actions = document.createElement('div');
   actions.className = 'global-actions';
 
@@ -1547,6 +1638,11 @@ function renderGlobalDetail() {
   importButton.textContent = '导入 JSON…';
   importButton.title = '从 JSON 文件导入配置，校验通过后替换当前配置并同步';
 
+  const appendButton = document.createElement('button');
+  appendButton.type = 'button';
+  appendButton.textContent = '追加导入…';
+  appendButton.title = '仅追加文件中的分组规则，保留当前全局设置';
+  let importMode = 'replace';
   const fileInput = document.createElement('input');
   fileInput.type = 'file';
   fileInput.accept = 'application/json,.json';
@@ -1554,13 +1650,15 @@ function renderGlobalDetail() {
   fileInput.addEventListener('change', () => {
     const file = fileInput.files && fileInput.files[0];
     fileInput.value = '';
-    if (!file) return;
+    if (!file || busy) return;
+    const mode = importMode;
     file
       .text()
-      .then((value) => importFromText(value, file.name))
+      .then((value) => mode === 'append' ? appendFromText(value, file.name) : importFromText(value, file.name))
       .catch((err) => setStatus('error', `读取文件失败：${String(err)}`));
   });
-  importButton.addEventListener('click', () => fileInput.click());
+  importButton.addEventListener('click', () => { importMode = 'replace'; fileInput.click(); });
+  appendButton.addEventListener('click', () => { importMode = 'append'; fileInput.click(); });
 
   const resetButton = document.createElement('button');
   resetButton.type = 'button';
@@ -1570,7 +1668,7 @@ function renderGlobalDetail() {
     reset().catch((err) => setStatus('error', `恢复默认失败：${String(err)}`));
   });
 
-  actions.append(exportButton, importButton, resetButton, fileInput);
+  actions.append(exportButton, importButton, appendButton, resetButton, fileInput);
 
   // 有未保存的修改时导出不可用，提示先保存或放弃
   const exportBlocked = document.createElement('p');
@@ -1640,11 +1738,11 @@ function normalizeAllPatterns() {
 
 function buildConfig() {
   return Store.buildConfigFromRules(
-    state.globalEnabled,
     state.rules,
     state.clickAction,
     state.language,
-    state.groupsFirst
+    state.groupsFirst,
+    { autoUpdateGroupRules: state.autoUpdateGroupRules, showActionResult: state.showActionResult, strictMode: state.strictMode }
   );
 }
 
@@ -1745,6 +1843,7 @@ async function save() {
  */
 function syncDirtyState() {
   const dirty = snapshot() !== savedSnapshot;
+  els.addRule.disabled = busy;
   els.save.disabled = busy || !dirty;
   els.reload.disabled = busy || !dirty;
   syncExportState();
@@ -1803,8 +1902,10 @@ function exportToFile() {
 }
 
 function applyConfig(config) {
-  state.globalEnabled = config.globalEnabled !== false;
   state.groupsFirst = config.groupsFirst === true;
+  state.strictMode = config.strictMode === true;
+  state.autoUpdateGroupRules = config.autoUpdateGroupRules !== false;
+  state.showActionResult = config.showActionResult !== false;
   state.clickAction = Store.normalizeClickAction(config.clickAction);
   state.language = Store.normalizeLanguage(config.language);
   setLanguage(resolveLanguage(state.language));
@@ -1818,6 +1919,54 @@ function applyConfig(config) {
   closeMenus();
   renderList();
   renderDetail();
+}
+
+async function appendFromText(text, label) {
+  if (busy) return;
+  const parsed = Store.parseConfigText(text, { rulesOnly: true });
+  if (!parsed.ok) {
+    setStatus('error', t('追加导入失败，文件中的分组规则不合法。'), parsed.errors);
+    return;
+  }
+  if (!parsed.config.rules.length) {
+    setStatus('info', t('文件中没有可追加的分组规则。'));
+    return;
+  }
+  const count = state.rules.length;
+  const merged = appendRules(buildConfig(), parsed.config.rules, newRuleId);
+  const checked = Store.validateConfig(merged);
+  if (!checked.ok) {
+    setStatus('error', t('追加导入失败，请先修正当前配置。'), checked.errors);
+    return;
+  }
+  const confirmation = t('将文件中的分组追加到末尾并保存当前配置？文件中的全局设置将被忽略，同名分组将添加“-导入”后缀。');
+  if (!window.confirm(`${confirmation}\n\n${label}`)) {
+    setStatus('info', '已取消导入');
+    return;
+  }
+  busy = true;
+  syncDirtyState();
+  try {
+    const result = await Store.saveConfig(checked.config);
+    if (!result.ok) {
+      setStatus('error', t('追加导入失败，当前配置未改变。'), result.errors);
+      return;
+    }
+    applyConfig(result.config);
+    state.selectedId = state.rules[count].id;
+    persistSelected();
+    renderList();
+    renderDetail();
+    savedSnapshot = snapshot();
+    const stats = await sendSync();
+    if (stats) setStatus('ok', t('追加导入成功，已保存并同步。'));
+    else setStatus('warn', t('追加导入已保存，但同步失败，请稍后重试。'));
+  } catch (err) {
+    setStatus('error', t('追加导入失败。'), [String(err)]);
+  } finally {
+    busy = false;
+    syncDirtyState();
+  }
 }
 
 async function importFromText(text, label) {
@@ -1863,8 +2012,10 @@ async function load() {
   const { config, source, errors } = await Store.loadConfig();
 
   state = {
-    globalEnabled: config.globalEnabled !== false,
     groupsFirst: config.groupsFirst === true,
+    strictMode: config.strictMode === true,
+    autoUpdateGroupRules: config.autoUpdateGroupRules !== false,
+    showActionResult: config.showActionResult !== false,
     clickAction: Store.normalizeClickAction(config.clickAction),
     rules: config.rules.map((rule) => ({
       ...rule,
@@ -1969,7 +2120,34 @@ els.save.addEventListener('click', () => {
 els.reload.addEventListener('click', () => {
   load().catch((err) => setStatus('error', `读取失败：${String(err)}`));
 });
-els.addRule.addEventListener('click', addRule);
+els.addRule.addEventListener('click', (event) => {
+  event.stopPropagation();
+  if (busy) return;
+  if (els.addRuleMenu.hidden) openAddRuleMenu();
+  else closeAddRuleMenu();
+});
+els.addBlankRule.addEventListener('click', addRule);
+els.rulesFromWindow.addEventListener('click', addRulesFromWindow);
+els.addRule.addEventListener('keydown', event => {
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault();
+    if (!busy) openAddRuleMenu(event.key === 'ArrowUp');
+  }
+});
+els.addRuleMenu.addEventListener('keydown', event => {
+  const items = [els.addBlankRule, els.rulesFromWindow];
+  const index = items.indexOf(document.activeElement);
+  if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+    event.preventDefault();
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+    items[next].focus();
+  } else if (event.key === 'Escape') {
+    event.preventDefault();
+    closeAddRuleMenu();
+    els.addRule.focus();
+  } else if (event.key === 'Tab') closeAddRuleMenu();
+});
+
 
 // 用户在浏览器设置里手动授予 / 撤销权限时同步界面提示
 if (browser.permissions) {
@@ -1984,11 +2162,15 @@ document.addEventListener('change', syncDirtyState);
 
 
 // 点空白处或按 Esc 收起颜色面板
-document.addEventListener('click', () => {
+document.addEventListener('click', event => {
+  if (!els.addRuleMenu.contains(event.target) && event.target !== els.addRule) closeAddRuleMenu();
   if (closeColorMenu) closeColorMenu();
 });
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && closeColorMenu) closeColorMenu();
+  if (event.key === 'Escape') {
+    closeAddRuleMenu();
+    if (closeColorMenu) closeColorMenu();
+  }
 });
 
 window.addEventListener('beforeunload', (event) => {

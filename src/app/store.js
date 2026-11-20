@@ -7,7 +7,7 @@ import browser from '../platform/browser.js';
  * 以后换 IndexedDB / 同步存储只改本文件。
  *
  * 配置结构（schemaVersion 1，1.0 之后的基线）：
- *   { schemaVersion, globalEnabled, rules: [rule] }
+ *   { schemaVersion, rules: [rule] }
  *   rule = { id, enabled, name, color, collapsed, minTabs, note, patterns[],
  *            highlight{...}, titleRule{...} }
  * 一条规则对应一个标签页分组，`patterns` 里可以有多个匹配路径，
@@ -68,9 +68,11 @@ const GROUP_COLOR_HEX = {
  */
 const DEFAULT_CONFIG = {
   schemaVersion: SCHEMA_VERSION,
-  globalEnabled: true,
   clickAction: DEFAULT_CLICK_ACTION,
   groupsFirst: false,
+  strictMode: false,
+  autoUpdateGroupRules: true,
+  showActionResult: true,
   language: DEFAULT_LANGUAGE,
   rules: [
     {
@@ -138,8 +140,10 @@ function validateConfig(raw, options) {
       `schemaVersion 必须为 ${SCHEMA_VERSION}，收到 ${JSON.stringify(raw.schemaVersion)}`
     );
   }
-  if (typeof raw.globalEnabled !== 'boolean') {
-    errors.push('globalEnabled 必须是布尔值');
+  for (const key of ['autoUpdateGroupRules', 'showActionResult', 'strictMode']) {
+    if (raw[key] !== undefined && typeof raw[key] !== 'boolean') {
+      errors.push(`${key} 必须是布尔值`);
+    }
   }
   if (raw.groupsFirst !== undefined && typeof raw.groupsFirst !== 'boolean') {
     errors.push('groupsFirst 必须是布尔值');
@@ -311,13 +315,17 @@ function validateConfig(raw, options) {
     });
   });
 
-  return errors.length > 0 ? { ok: false, errors } : { ok: true, config: raw };
+  if (errors.length > 0) return { ok: false, errors };
+  // 兼容已发布配置：旧全局开关不再生效，也不再写入新配置。
+  const config = { ...raw };
+  delete config.globalEnabled;
+  return { ok: true, config };
 }
 
 /**
  * 解析 JSON 文本并校验（为导入功能与调试保留；配置页已改为可视化编辑）。
  */
-function parseConfigText(text) {
+function parseConfigText(text, options = {}) {
   if (typeof text !== 'string' || text.trim() === '') {
     return { ok: false, errors: ['配置内容为空'] };
   }
@@ -326,6 +334,10 @@ function parseConfigText(text) {
     raw = JSON.parse(text);
   } catch (err) {
     return { ok: false, errors: [`JSON 语法错误：${(err && err.message) || err}`] };
+  }
+  if (options.rulesOnly && isPlainObject(raw)) {
+    // 追加导入完全忽略文件中的全局设置，包括其中的非法取值。
+    return validateConfig({ schemaVersion: raw.schemaVersion, rules: raw.rules }, { allowDuplicateNames: true });
   }
   return validateConfig(raw);
 }
@@ -357,8 +369,8 @@ async function loadConfig() {
 async function saveConfig(config) {
   const result = validateConfig(config);
   if (!result.ok) return result;
-  await browser.storage.local.set({ [CONFIG_KEY]: config });
-  return { ok: true, config };
+  await browser.storage.local.set({ [CONFIG_KEY]: result.config });
+  return { ok: true, config: result.config };
 }
 
 /** 清除用户配置，回到内置默认值（“恢复默认”）。 */
@@ -378,18 +390,20 @@ function normalizeLanguage(value) {
 }
 
 /**
- * 由「全局开关 + 点击行为 + 语言 + 规则数组」组装出可保存的配置。
+ * 由「点击行为 + 语言 + 规则数组」组装出可保存的配置。
  * 放在存储层是为了让字段映射有单测兜底——之前配置页自己组对象，
  * 漏掉过 highlight 字段，导致页面内标识保存后丢失。
  */
-function buildConfigFromRules(globalEnabled, rules, clickAction, language, groupsFirst = false) {
+function buildConfigFromRules(rules, clickAction, language, groupsFirst = false, preferences = {}) {
   const list = Array.isArray(rules) ? rules : [];
   return {
     schemaVersion: SCHEMA_VERSION,
-    globalEnabled: globalEnabled !== false,
     clickAction: normalizeClickAction(clickAction),
     language: normalizeLanguage(language),
     groupsFirst: groupsFirst === true,
+    strictMode: preferences.strictMode === true,
+    autoUpdateGroupRules: preferences.autoUpdateGroupRules !== false,
+    showActionResult: preferences.showActionResult !== false,
     rules: list.map((rule) => {
       const normalized = {
         id: String(rule && rule.id != null ? rule.id : ''),

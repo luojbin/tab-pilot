@@ -75,14 +75,14 @@ DSH 受限沙箱禁止 Node 以管道方式 spawn 子进程。以下命令会因
 
 ### 纯逻辑测试（受限会话可跑）
 
-使用 `--test-isolation=none` 让测试在同一进程里执行，绕过 spawn。测试文件按目录通配，新增的纯逻辑测试会自动纳入，只排除需要 esbuild 子进程的 `test/bundle.test.js`：
+使用 `--test-isolation=none` 让测试在同一进程里执行，绕过 spawn。测试文件按目录通配，新增的纯逻辑测试会自动纳入，排除需要 esbuild 子进程的 bundle 测试，以及依赖独立浏览器全局桩的 background / manual-group / popup / tab-order 测试：
 
 ```powershell
 node --test --test-isolation=none `
-  (Get-ChildItem test\*.test.js -Exclude bundle.test.js).FullName
+  (Get-ChildItem test\*.test.js -Exclude bundle.test.js,background.test.js,manual-group.test.js,popup.test.js,tab-order.test.js).FullName
 ```
 
-当前是 **131 项通过**。
+当前该子集为 **127 项通过**。其余浏览器 API 桩测试需要独立测试进程，不能在同一进程混跑。macOS / Linux 的等效命令见 CONTRIBUTING.md。
 
 ### 完整测试（需要完整权限）
 
@@ -91,7 +91,7 @@ $env:npm_config_cache = Join-Path (Get-Location) 'output\.npm-cache'
 npm test
 ```
 
-完整测试是 **133 项**：上面的 131 项 + `test/bundle.test.js` 的 2 项打包冒烟测试。后者需要 esbuild 子进程，只能在允许 spawn 的环境执行。
+完整测试为 **189 项**：127 项单进程子集、60 项独立浏览器桩测试，以及 `test/bundle.test.js` 的 2 项打包冒烟测试。完整测试和 esbuild 打包均要求允许启动子进程。
 
 ### 不要做的事
 
@@ -130,7 +130,7 @@ output/tabpilot-<version>-chromium.zip
 - manifest 名称 / 描述 / 工具栏标题使用 `_locales` 的 `__MSG_*__` 占位符；`_locales` 目录必须随构建复制到包根目录。
 - Firefox 专用字段（`browser_specific_settings`、`data_collection_permissions`）不能进 Chromium manifest。
 - 不允许远程代码；保持 `data_collection_permissions` 为 `["none"]`。
-- 默认不要自动提交或推送 Git；等用户明确说提交后再操作。
+- 默认不要自动提交或推送 Git；等开发者明确要求提交后再操作。
 
 ## 发布检查
 

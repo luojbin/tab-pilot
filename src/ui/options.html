@@ -185,6 +185,23 @@
     gap: 10px;
     margin-bottom: 10px;
   }
+  .add-rule-control { position: relative; }
+  .add-rule-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    z-index: 20;
+    min-width: 230px;
+    max-width: min(340px, calc(100vw - 40px));
+    padding: 5px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    box-shadow: 0 6px 20px #0002;
+  }
+  .add-rule-menu[hidden] { display: none; }
+  .add-rule-menu button { display: block; width: 100%; text-align: left; border: 0; box-shadow: none; background: transparent; }
+  .add-rule-menu button:hover { background: var(--panel); transform: none; }
   .panel-head h2 { margin: 0; font-size: 13px; font-weight: 600; color: var(--muted); }
 
   /* 全局配置单独置顶，与分组列表用分隔线隔开 */
@@ -203,6 +220,23 @@
   /* ---------- 左栏：分组列表（列表行，不是卡片） ---------- */
   .group-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
   .group-item { border-radius: 6px; }
+  .group-list .group-row[draggable="true"] { cursor: grab; }
+  .group-list .group-row[draggable="true"] .group-name { cursor: inherit; }
+  .group-item.dragging { opacity: 0.45; }
+  .group-item { position: relative; }
+  .group-item.drop-before::before,
+  .group-item.drop-after::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 2px;
+    border-radius: 1px;
+    background: var(--accent);
+    pointer-events: none;
+  }
+  .group-item.drop-before::before { top: -1px; }
+  .group-item.drop-after::after { bottom: -1px; }
   .group-item:hover { background: var(--panel); }
   .group-item.selected { background: var(--panel-strong); box-shadow: inset 2px 0 0 var(--accent); }
   .group-item.invalid { box-shadow: inset 2px 0 0 var(--error); background: transparent; }
@@ -266,8 +300,35 @@
   .field-name { flex: 0 1 240px; min-width: 140px; }
   .field-language { flex: 1 1 220px; min-width: 180px; }
   .field-click-action { flex: 1 1 320px; min-width: 220px; }
-  .global-first-row { align-items: flex-start; }
-  .global-first-row .field-switch .switch-slot { min-height: 0; padding-top: 8px; }
+  .global-switch-cards {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-rows: 1fr;
+    gap: 12px;
+    margin: 16px 0;
+  }
+  .global-switch-card {
+    box-sizing: border-box;
+    min-width: 0;
+    min-height: 136px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .global-switch-card .field-switch {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    color: var(--fg);
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .global-switch-card .switch-slot { flex-shrink: 0; }
+  .global-switch-card .field-language,
+  .global-switch-card .field-click-action { min-width: 0; color: var(--fg); font-size: 14px; font-weight: 600; }
+  .global-switch-card select { width: 100%; box-sizing: border-box; font-weight: 400; }
+  .global-switch-card .hint { margin: 10px 0 0; overflow-wrap: anywhere; }
   .field-color { flex: none; }
   .field-threshold { flex: none; width: 110px; }
   .field input[type="text"],
@@ -668,11 +729,17 @@
       <ul id="globalList" class="global-list"></ul>
       <div class="panel-head">
         <h2>分组</h2>
-        <button id="addRule" class="icon" type="button" title="添加分组规则" aria-label="添加分组规则">＋</button>
+        <div class="add-rule-control">
+          <button id="addRule" class="icon" type="button" title="添加分组规则" aria-label="添加分组规则" aria-haspopup="menu" aria-expanded="false" aria-controls="addRuleMenu">＋ ▾</button>
+          <div id="addRuleMenu" class="add-rule-menu" role="menu" hidden>
+            <button id="addBlankRule" type="button" role="menuitem">新建空白规则</button>
+            <button id="rulesFromWindow" type="button" role="menuitem">从当前窗口分组创建规则</button>
+          </div>
+        </div>
       </div>
       <ul id="groupList" class="group-list"></ul>
       <p class="hint small">
-        顶部「全局配置」管理全局开关、语言和配置导入导出；下方分组列表用于选中分组，重命名、改颜色、启用 / 停用在右侧完成。⋯ 菜单可以调整顺序或删除。
+        顶部「全局配置」管理语言和配置导入导出；下方分组列表用于选中分组，重命名、改颜色、启用 / 停用在右侧完成。可拖拽调整顺序；⋯ 菜单可以复制、调整顺序或删除。
       </p>
     </aside>
 

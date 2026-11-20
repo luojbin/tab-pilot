@@ -16,6 +16,7 @@ const state = {
   storedConfig: null,
   groupCalls: [],
   updateCalls: [],
+  ungroupCalls: [],
   moveCalls: [],
   pageMessages: []
 };
@@ -46,6 +47,8 @@ globalThis.browser = {
     onChanged: { addListener(fn) { listeners.configChanged.push(fn); } }
   },
   tabs: {
+    async get(id) { return { ...Object.values(state.tabsByWindow).flat().find(tab => tab.id === id) }; },
+    async ungroup(id) { state.ungroupCalls.push(id); },
     async move(ids, options) { state.moveCalls.push({ ids, ...options }); return ids.map(id => ({ id })); },
     async query(queryInfo) {
       const info = queryInfo || {};
@@ -66,6 +69,7 @@ globalThis.browser = {
     }
   },
   tabGroups: {
+    async get(id) { return state.existingGroups.find(group => group.id === id); },
     async move(groupId, options) { state.moveCalls.push({ groupId, ...options }); return { id: groupId }; },
     async query(queryInfo) {
       const info = queryInfo || {};
@@ -104,6 +108,7 @@ function reset() {
   state.updateCalls = [];
   state.pageMessages = [];
   state.moveCalls = [];
+  state.ungroupCalls = [];
   Logger.clear();
 }
 
@@ -233,7 +238,7 @@ test('存储中的配置非法时回退默认配置并告警', async () => {
   assert.equal(state.groupCalls.length, 1, '回退后仍应按默认规则归组');
 });
 
-test('全局暂停时不执行任何动作', async () => {
+test('旧配置 globalEnabled=false 不再阻止自动归组', async () => {
   reset();
   state.storedConfig = configWith([rule({})], false);
   const tab = localhostTab(6, 11);
@@ -242,8 +247,7 @@ test('全局暂停时不执行任何动作', async () => {
   Background.schedule(tab);
   await Background.flush();
 
-  assert.equal(state.groupCalls.length, 0);
-  assert.ok(Logger.recent().some((entry) => /全局暂停/.test(entry.message)));
+  assert.equal(state.groupCalls.length, 1);
 });
 
 test('阈值未达成时按窗口内标签数判断，不归组', async () => {
@@ -660,19 +664,19 @@ test('点击行为：syncRuleCollapse 只折叠开启了「命中后折叠」的
   assert.deepEqual(state.updateCalls, [{ id: 1, patch: { collapsed: true } }]);
 });
 
-test('点击行为：全局暂停时不折叠任何分组', async () => {
+test('点击行为：旧配置 globalEnabled=false 不再阻止折叠', async () => {
   reset();
   state.storedConfig = { ...configWith([], false), clickAction: 'syncCollapseAll' };
   state.existingGroups = [{ id: 1, title: 'A', collapsed: false, windowId: 3 }];
 
   await Background.handleToolbarClick({ windowId: 3 });
 
-  assert.deepEqual(state.updateCalls, []);
+  assert.deepEqual(state.updateCalls, [{ id: 1, patch: { collapsed: true } }]);
   assert.equal(state.groupCalls.length, 0);
 });
 
 
-test('syncAll：开启分组置前才整理，暂停时不整理', async () => {
+test('syncAll：开启分组置前才整理，旧全局开关不生效', async () => {
   reset();
   state.tabsByWindow = { 1: [
     { id: 1, windowId: 1, index: 0, pinned: true, groupId: -1, url: 'about:blank' },
@@ -687,7 +691,7 @@ test('syncAll：开启分组置前才整理，暂停时不整理', async () => {
   assert.deepEqual(state.moveCalls, [{ groupId: 8, windowId: 1, index: 1 }]);
   state.storedConfig.globalEnabled = false;
   await Background.syncAll();
-  assert.equal(state.moveCalls.length, 1);
+  assert.equal(state.moveCalls.length, 2);
 });
 
 test('popup 动作：返回本地化结果，不向网页发送提示', async () => {
@@ -698,8 +702,8 @@ test('popup 动作：返回本地化结果，不向网页发送提示', async ()
   assert.equal(result.text, 'TabPilot：同步完成');
   assert.deepEqual(state.pageMessages, []);
   state.storedConfig.globalEnabled = false;
-  const paused = await Background.executeToolbarClick({ windowId: 1 });
-  assert.match(paused.text, /全局已暂停/);
+  const resultWithLegacyFlag = await Background.executeToolbarClick({ windowId: 1 });
+  assert.equal(resultWithLegacyFlag.text, 'TabPilot：同步完成');
 });
 
 test('popup 动作：拒绝网页来源与非法窗口', async () => {
@@ -712,4 +716,30 @@ test('popup 动作：拒绝网页来源与非法窗口', async () => {
     assert.equal(await sendMessage({ type: 'toolbar-execute', windowId }, sender), undefined);
   }
   assert.deepEqual(state.groupCalls, []);
+});
+
+
+test('严格模式接入导航处理：移出不匹配标签，本批不重新归组；手动同步不主动移出', async () => {
+  reset();
+  const tab={id:90,windowId:1,groupId:3,url:'https://other.example/'};
+  state.tabsByWindow={1:[tab]};
+  state.existingGroups=[{id:3,windowId:1,title:'开发'}];
+  state.storedConfig={...configWith([rule()]),strictMode:true};
+  await Background.syncAll();
+  assert.equal(state.ungroupCalls.length,0);
+  listeners.updated[0](tab.id,{url:tab.url},tab);
+  await Background.flush();
+  assert.deepEqual(state.ungroupCalls,[90]);
+  assert.equal(state.groupCalls.length,0);
+});
+
+test('保存旧配置会移除全局开关，保留单条规则停用状态',async()=>{
+  reset();
+  const disabled = rule({ enabled: false });
+  state.tabsByWindow[1]=[localhostTab(1,1)];
+  const result=await Debug.setConfig({ ...configWith([disabled]),globalEnabled:false });
+  assert.equal(result.ok,true);
+  assert.equal('globalEnabled' in state.storedConfig,false);
+  assert.equal(state.storedConfig.rules[0].enabled,false);
+  assert.equal(state.groupCalls.length,0);
 });

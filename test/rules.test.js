@@ -124,10 +124,9 @@ test('没有匹配路径的规则被跳过', () => {
   assert.equal(match(tab(1, 'http://localhost:3000/'), [broken, devRule], {}).ruleId, 'dev-localhost');
 });
 
-test('match：全局暂停时不命中任何规则', () => {
+test('match：旧 context.globalEnabled 不再影响规则匹配', () => {
   const result = explain(tab(1, 'http://localhost:3000/'), [devRule], { globalEnabled: false });
-  assert.equal(result.matched, null);
-  assert.match(result.steps[0].note, /全局暂停/);
+  assert.equal(result.matched.ruleId, devRule.id);
 });
 
 test('match：无 URL 的标签页不命中', () => {
