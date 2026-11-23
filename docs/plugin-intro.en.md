@@ -7,11 +7,11 @@ TabPilot is a local tab manager for Firefox, Chrome, and Edge. Shared URL rules 
 - Auto-grouping: match URLs in rule order, set group names, colors, and collapse state, and optionally require a minimum number of matching tabs in the same window.
 - Rule management: a visual two-column settings page with per-rule toggles, duplication, drag-and-drop priority, and rule drafts generated from groups in the current window.
 - In-page markers: optional colored borders and group-name banners to distinguish development, test, and production environments.
-- Title rewriting: apply the first matching regular expression, with capture-group reordering, prefixes, multiline testing, saved test text, and retries when pages change their titles.
+- Title rewriting: apply the first matching regular expression, with combined title and URL captures, prefixes, saved title/URL test cases, and retries when titles or URLs change.
 - Toolbar popup: run the configured sync/collapse action, show its result for 3 seconds before fading and closing, and provide a settings shortcut.
-- Groups first: optionally arrange pinned tabs, groups, then ungrouped tabs without changing group membership or relative order.
+- Groups first: optionally move groups to the front and ungrouped tabs to the back without changing group membership or relative order.
 - Learn from manual grouping: ask to append an editable website pattern when a tab is moved into a group with an existing rule; unmanaged groups stay silent.
-- Strict mode: optionally ungroup a tab when it navigates to an HTTP/HTTPS URL outside its current enabled rule.
+- Per-group strict mode: independently enable a rule to ungroup a tab when it navigates to an HTTP/HTTPS URL outside its current enabled rule.
 - Config portability: JSON export, full replacement import, or append-only import that keeps current global settings and resolves name/id conflicts.
 - Chinese and English: settings and popup follow the browser language by default, with a manual override.
 
@@ -19,7 +19,7 @@ TabPilot is a local tab manager for Firefox, Chrome, and Edge. Shared URL rules 
 
 One rule corresponds to one group and can contain multiple URL patterns. The first applicable rule wins. Shorthand such as localhost is expanded automatically. Duplicated and generated rules remain drafts until saved; append import saves and syncs after confirmation.
 
-Global settings use a two-column card layout for language, toolbar behavior, and four feature switches. Manual-group rule prompts and action results are enabled by default; groups-first ordering and strict mode are off by default. There is no extension-wide pause switch; each rule can still be disabled independently.
+Global settings use a two-column card layout for language, toolbar behavior, and three feature switches. Manual-group rule prompts and action results are enabled by default; groups-first ordering is off by default. Strict mode is controlled per rule in the group’s basic settings and defaults to off. There is no extension-wide pause switch; each rule can still be disabled independently.
 
 ## Permissions and privacy
 

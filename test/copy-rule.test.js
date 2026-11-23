@@ -5,9 +5,9 @@ import { colorForIndex } from '../src/app/store.js';
 
 const source = {
   id: 'dev', name: '开发', enabled: true, color: 'green', minTabs: 3,
-  collapsed: true, note: '环境', patterns: ['*://localhost/*'],
+  collapsed: true, strictMode: true, note: '环境', patterns: ['*://localhost/*'],
   highlight: { enabled: true, border: { sides: ['top'] } },
-  titleRule: { enabled: true, rules: [{ pattern: '^x', replacement: 'y' }], testText: 'x' }
+  titleRule: { enabled: true, rules: [{ titlePattern: '^x', urlPattern: '/(42)$', replacement: '${url.1}' }], testCases: [{ title: 'x', url: 'https://host/42' }] }
 };
 
 test('复制规则：保留路径，按新序号取色且停用，嵌套数据独立', () => {

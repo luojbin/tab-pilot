@@ -82,7 +82,7 @@ node --test --test-isolation=none `
   (Get-ChildItem test\*.test.js -Exclude bundle.test.js,background.test.js,manual-group.test.js,popup.test.js,tab-order.test.js).FullName
 ```
 
-当前该子集为 **127 项通过**。其余浏览器 API 桩测试需要独立测试进程，不能在同一进程混跑。macOS / Linux 的等效命令见 CONTRIBUTING.md。
+浏览器 API 桩测试需要独立测试进程，不能与该子集在同一进程混跑。macOS / Linux 的等效命令见 CONTRIBUTING.md。
 
 ### 完整测试（需要完整权限）
 
@@ -91,7 +91,7 @@ $env:npm_config_cache = Join-Path (Get-Location) 'output\.npm-cache'
 npm test
 ```
 
-完整测试为 **193 项**：127 项单进程子集、64 项独立浏览器桩测试，以及 `test/bundle.test.js` 的 2 项打包冒烟测试。完整测试和 esbuild 打包均要求允许启动子进程。
+完整测试包含逻辑测试、独立浏览器 API 桩测试及 `test/bundle.test.js` 打包冒烟测试，要求允许启动子进程。测试数量和执行结果以当次运行输出为准，不在本文件维护。
 
 ### 不要做的事
 

@@ -24,6 +24,7 @@ src/
   core/
     rules.js           URL 匹配、优先级、阈值与 explain（纯函数）
     highlight.js       标识规格、颜色与布局计算（纯函数）
+    config-migration.js 正式 schema 1 → 2 的无副作用迁移
     title-rule.js      标题正则编译、替换与批量测试（纯函数）
     manual-group-rule.js 网站默认模式、输入扩写与自动归组标记
     copy-rule.js       独立规则副本、唯一名称与默认停用
@@ -64,7 +65,7 @@ dist/                  浏览器加载目录（不提交 Git）
 output/                扩展 ZIP 等本地产物（不提交 Git）
 ```
 
-规则引擎只接收 tab、规则和上下文，不直接调用浏览器 API。后台将匹配结果交给动作层执行；存储层负责配置读写与校验。配置格式的公开约定见 [PRD 数据模型](docs/PRD.md#5-数据模型)，基线为 `schemaVersion: 1`。
+规则引擎只接收 tab、规则和上下文，不直接调用浏览器 API。后台将匹配结果交给动作层执行；存储层负责配置读写与校验。配置格式的公开约定见 [PRD 数据模型](docs/PRD.md#5-数据模型)，当前为 `schemaVersion: 2`。
 
 四个入口运行在独立环境：后台、配置页、popup、各网页的内容脚本。它们不共享模块状态；跨环境使用 `runtime.sendMessage` 和 `storage.onChanged` 通信。后台处理 `sync-all`、`page-style`、`toolbar-execute` 和 `manual-group-*` 消息，配置变化后向页面发送 `tabpilot:refresh`。设置页的从窗口生成规则直接读取浏览器 API，只写页面草稿，不借用图标动作。
 
@@ -106,7 +107,7 @@ npm run build:chromium  # 仅 Chromium
 | 后台 | Firefox 使用事件页 `background.scripts`；Chromium 使用 `background.service_worker`，都指向打包后的后台入口 |
 | Manifest | Firefox 专用 ID、最低版本、数据收集声明和 `optional_host_permissions`（host 权限在 Firefox 可撤销）；Chromium 专用 `minimum_chrome_version`，其 content script 站点访问在安装时即为必需权限，故不声明 `optional_host_permissions` |
 | 消息响应 | 后台使用 `sendResponse` + `return true` 异步回复 |
-| 分组 API | 自动归组使用动作层；分组置前使用 tabGroups.move 整组移动，严格模式使用 tabs.ungroup；需实测成员、顺序、折叠和窗口隔离 |
+| 分组 API | 自动归组使用动作层；分组前置使用 tabGroups.move 整组移动，严格模式使用 tabs.ungroup；需实测成员、顺序、折叠和窗口隔离 |
 | 图标右键选项 | Firefox 使用 menus 权限创建 action 上下文菜单；Chromium 使用 options_ui 提供的默认入口 |
 | 自动打开 popup | 后台打开要求 Firefox 149+ / Chromium 127+；旧版或失败时显示角标，引导点击图标，不提升最低版本 |
 
@@ -116,17 +117,16 @@ npm run build:chromium  # 仅 Chromium
 
 ## 配置格式
 
-配置保存在 `browser.storage.local` 的 `tabpilot:config`（见 `src/app/store.js`），导入 / 导出文件使用同一结构，基线为 `schemaVersion: 1`。一条规则对应一个标签页分组，`patterns` 里多个匹配路径任一命中即归组，数组顺序即优先级：
+配置保存在 `browser.storage.local` 的 `tabpilot:config`（见 `src/app/store.js`），导入 / 导出文件使用同一结构，当前为 `schemaVersion: 2`。一条规则对应一个标签页分组，`patterns` 里多个匹配路径任一命中即归组，数组顺序即优先级：
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "clickAction": "sync",
   "language": "auto",
   "autoUpdateGroupRules": true,
   "showActionResult": true,
   "groupsFirst": false,
-  "strictMode": false,
   "rules": [
     {
       "id": "code-github",
@@ -134,6 +134,7 @@ npm run build:chromium  # 仅 Chromium
       "name": "代码",
       "color": "blue",
       "collapsed": false,
+      "strictMode": false,
       "minTabs": 3,
       "note": "代码托管：攒够 3 个再归组",
       "patterns": ["*://*.github.com/*", "*://gitlab.com/*"],
@@ -145,16 +146,16 @@ npm run build:chromium  # 仅 Chromium
       "titleRule": {
         "enabled": true,
         "rules": [
-          { "pattern": "^\\[(.*?)\\]\\s*(.*)$", "replacement": "W· $2", "description": "去掉前缀并加标记" }
+          { "titlePattern": "^\\[(.*?)\\]\\s*(.*)$", "urlPattern": "", "replacement": "W· ${title.2}", "description": "去掉前缀并加标记" }
         ],
-        "testText": "[工作] Jira - 看板"
+        "testCases": [{ "title": "[工作] Jira - 看板", "url": "https://github.com/team/repo" }]
       }
     }
   ]
 }
 ```
 
-旧 `globalEnabled` 字段读取/导入时忽略，保存结果不再包含该字段。旧版配置可升级读取；新导出文件不再满足旧版必需的全局开关字段，不保证可直接回退使用。追加导入保留本机全局设置，只检查文件 schemaVersion 和 rules，并在合并后校验唯一名称/id。
+旧 `globalEnabled` 字段读取/导入时忽略，保存结果不再包含该字段。严格模式使用规则上的可选布尔字段 `rules[].strictMode`，缺省关闭；旧全局 strictMode 迁移至缺省的规则，显式组内值优先，保存后不再写全局字段。追加导入忽略旧全局 strictMode。正式 schema 1 配置在读取、替换导入和追加导入时自动迁移至 2：pattern → titlePattern，urlPattern 默认为空，testText 非空行 → testCases 的 {title, url: ""}。replacement 始终生成完整新标题；旧捕获组模板语法保留；新版标题条件要求整标题匹配，旧版片段条件需手动补充 .*。URL 条件默认完整匹配；如需允许后续路径、参数等内容需显式添加 .*；保存和导出只写 schema 2。不支持早期开发过渡格式。旧版配置可升级读取；新导出文件不再满足旧版必需的全局开关字段，不保证可直接回退使用。追加导入保留本机全局设置，只检查文件 schemaVersion 和 rules，并在合并后校验唯一名称/id。
 
 字段含义、取值范围和校验规则见 [PRD 数据模型](docs/PRD.md#5-数据模型)；校验入口是 `src/app/store.js` 的 `validateConfig`。`schemaVersion` 只在配置结构不兼容变更时递增，与插件版本号解耦；`highlight` / `titleRule` 缺省时由配置页按默认值补齐。
 
@@ -167,7 +168,7 @@ npm run build:chromium  # 仅 Chromium
 | `rules.test.js` | URL、优先级、阈值、窗口隔离、路径补全 |
 | `store.test.js` | 配置校验、默认值、导入导出数据 |
 | `highlight.test.js` | 标识规格、边界和布局计算 |
-| `title-rule.test.js` | 首条命中、捕获组、非法正则、多行测试 |
+| `title-rule.test.js` | 双条件、双来源捕获组、旧模板兼容、非法正则、结构化测试 |
 | `background.test.js` | 浏览器 mock 下的事件、同步、消息与配置处理 |
 | `copy-rule.test.js` / `append-rules.test.js` | 深拷贝、追加导入、名称/id 冲突与数据保护 |
 | `reorder-rules.test.js` / `rules-from-groups.test.js` | 拖动事件与顺序边界、当前窗口规则生成与去重 |
@@ -177,9 +178,9 @@ npm run build:chromium  # 仅 Chromium
 | `i18n.test.js` | 文案和模板翻译；不代表整页翻译覆盖 |
 | `bundle.test.js` | 实际打包四个入口；在两种 API 命名空间下执行后台和内容脚本，验证归组与消息 |
 
-当前完整测试为 **193 项通过**（含两项打包冒烟）。打包冒烟编译四入口并执行后台/内容脚本，只解析配置页和 popup 脚本；其他测试用桩验证部分 DOM/事件和 API 行为，未在真实浏览器中运行整页 UI。
+当前完整测试为 **224 项通过**（含四项打包回归）。打包冒烟编译四入口并执行后台/内容脚本，只解析配置页和 popup 脚本；其他测试用桩验证部分 DOM/事件和 API 行为，未在真实浏览器中运行整页 UI。
 
-受限环境可在单进程执行不依赖浏览器全局桩的 **127 项**：
+受限环境可在单进程执行不依赖浏览器全局桩的 **142 项**：
 
 ```bash
 node --test --test-isolation=none test/append-rules.test.js test/copy-rule.test.js test/highlight.test.js test/i18n.test.js test/reorder-rules.test.js test/rules-from-groups.test.js test/rules.test.js test/store.test.js test/strict-mode.test.js test/title-rule.test.js test/toolbar-feedback.test.js test/toolbar-menu.test.js
@@ -202,13 +203,14 @@ node --test --test-isolation=none test/append-rules.test.js test/copy-rule.test.
 1. 基线功能：自动归组、优先级、阈值、窗口隔离、已分组保护、页面标识和 SPA 标题恢复。
 2. 左栏：新增菜单、空白规则、复制默认值、拖拽前后插入、菜单排序、保留选中与草稿、保存/放弃。
 3. 从当前窗口生成：排除其他窗口、同名规则跳过、原生同名组合并、网站模式和端口、过滤受限页、重复生成。
-4. 全局卡片：六张卡片两列排列，中英文及暗色模式；旧全局开关移除，四个功能开关保存和导入导出行为正确。
-5. 分组置前：固定标签最前、整组移动不改成员、各类相对顺序、折叠组、重复执行、多窗口及错误隔离。
-6. 图标 popup：四种快捷动作、结果开关、3 秒停留与淡出、设置入口取消计时、受限页使用；Firefox 图标右键选项。
-7. 拖入补规则：对应/无对应规则组、自动归组不询问、地址编辑扩写、重复项、取消、失效与保存失败、关闭开关清除角标；低版本 popup 打开失败后的角标入口。
-8. 严格模式：协议/端口/路径/重定向/SPA 导航、已停用规则和纯手动组、固定标签、过期导航事件，以及与拖入询问组合使用。
-9. JSON：替换导入、追加导入忽略文件全局设置、名称/id 连续冲突、空文件、非法数据、取消、当前未保存修改处理。
-10. Firefox / Chrome / Edge 分别记录浏览器版本和结果，重启后验证配置及后台唤醒。已确认的阶段性结果和最终集成待办见 [开发计划](docs/development-plan.md#验证状态)。
+4. 全局卡片：五张全局卡片两列排列，中英文及暗色模式；旧全局开关移除，三个全局功能开关及组内严格模式保存和导入导出行为正确。
+5. 分组前置：自动新建/归组、阈值批量、手动归属变化和严格模式移出后及时前置；整组移动不改成员、相对顺序、折叠组、重复执行、多窗口及错误隔离。
+6. 自动折叠：新建组/外部入组后折叠，组内前后台导航保持状态，阈值批处理只折叠一次，关闭选项不展开，失败不折叠；显式折叠照常执行。
+7. 图标 popup：四种快捷动作、结果开关、3 秒停留与淡出、设置入口取消计时、受限页使用；Firefox 图标右键选项。
+8. 拖入补规则：对应/无对应规则组、自动归组不询问、地址编辑扩写、重复项、取消、失效与保存失败、关闭开关清除角标；低版本 popup 打开失败后的角标入口。
+9. 组内严格模式：独立启停、旧全局值迁移与显式组内值优先；协议/端口/路径/重定向/SPA 导航、已停用规则和纯手动组、固定标签、过期导航事件，以及与拖入询问组合使用。
+10. JSON：替换导入、追加导入忽略文件全局设置、名称/id 连续冲突、空文件、非法数据、取消、当前未保存修改处理。
+11. Firefox / Chrome / Edge 分别记录浏览器版本和结果，重启后验证配置及后台唤醒。已确认的阶段性结果和最终集成待办见 [开发计划](docs/development-plan.md#验证状态)。
 
 ## 后台控制台调试
 
@@ -260,7 +262,7 @@ node --test --test-isolation=none test/append-rules.test.js test/copy-rule.test.
 
 版本号只在 `package.json` 中维护，由构建脚本注入 manifest。manifest、配置页与 ZIP 文件名均使用 package.json 中的同一个数字版本，不添加预发布后缀或 version_name。配置格式版本 `schemaVersion` 独立维护，不能随插件版本机械递增。
 
-本项目以用户可见功能和配置兼容性作为版本判断依据：兼容的维护修复和不改变行为的内部重构使用补丁版本，新增兼容功能使用次版本，不兼容变更使用主版本。当前开发版本从已发布的 `1.2.0` 推进到 `1.3.0`，包含新增功能和全局启停移除；schemaVersion 继续为 1，旧配置读取兼容与回退限制见上文。当前源码通过检查不代表已提交商店。修改版本号时同步更新 `package-lock.json` 的根版本及根包版本。
+本项目以用户可见功能和配置兼容性作为版本判断依据：兼容的维护修复和不改变行为的内部重构使用补丁版本，新增兼容功能使用次版本，不兼容变更使用主版本。当前开发版本从已发布的 `1.2.0` 推进到 `1.3.0`，包含新增功能和全局启停移除；schemaVersion 升级为 2，旧配置读取兼容与回退限制见上文。当前源码通过检查不代表已提交商店。修改版本号时同步更新 `package-lock.json` 的根版本及根包版本。
 
 1. 更新版本号和发布说明，运行测试、双目标构建、Firefox lint，并完成本次改动相关的浏览器验证。提交全部发布代码，创建并推送版本 tag（如 `v1.3.0`）；同一已上传的 Mozilla 版本号不能重复使用。
 2. 从该 tag 的干净源码执行 `npm ci`、`npm run build`，将 Firefox 和 Chromium ZIP 上传到对应 GitHub Release。普通 Release 在等待 Firefox 签名时不设为 Latest，可选择 `None` 并注明「Firefox 签名处理中」。测试版本使用 Pre-release。

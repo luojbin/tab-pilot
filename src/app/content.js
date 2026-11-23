@@ -122,6 +122,9 @@ const titleState = { input: null, applied: null };
 let watchedTitleRule = null;
 let watchedRuleSignature = null;
 let lastTriedTitle = null;
+let lastTriedUrl = null;
+let styleUrl = null;
+let refreshSequence = 0;
 let titleObserver = null;
 let observedTitleRoot = null;
 let titleWatchdog = null;
@@ -141,6 +144,7 @@ function stopTitleWatch() {
   watchedTitleRule = null;
   watchedRuleSignature = null;
   lastTriedTitle = null;
+  lastTriedUrl = null;
   observedTitleRoot = null;
   loggedNoMatch = false;
   loggedInvalid = false;
@@ -166,13 +170,21 @@ function attemptTitle() {
   if (!TitleRule || !rule || rule.enabled !== true) return false;
 
   const current = document.title;
-  if (titleState.applied !== null && current === titleState.applied) return true;
-  // 同一个标题只尝试一次，避免轮询反复打印「未命中」
-  if (titleState.applied === null && current === lastTriedTitle) return false;
-  lastTriedTitle = current;
+  const url = location.href;
+  const source = titleState.applied !== null && current === titleState.applied
+    ? titleState.input : current;
+  if (source === lastTriedTitle && url === lastTriedUrl &&
+      (titleState.applied === null || current === titleState.applied)) {
+    return titleState.applied !== null;
+  }
+  lastTriedTitle = source;
+  lastTriedUrl = url;
 
-  const outcome = TitleRule.applyTitleRules({ titleRule: rule }, current);
+  const outcome = TitleRule.applyTitleRules({ titleRule: rule }, source, url);
   if (!outcome.ok || !outcome.matched) {
+    if (titleState.applied !== null && current === titleState.applied) document.title = source;
+    titleState.input = null;
+    titleState.applied = null;
     if (!outcome.ok) {
       if (!loggedInvalid) {
         loggedInvalid = true;
@@ -187,7 +199,7 @@ function attemptTitle() {
 
   loggedNoMatch = false;
   loggedInvalid = false;
-  titleState.input = current;
+  titleState.input = source;
   titleState.applied = outcome.result;
   if (current !== outcome.result) {
     document.title = outcome.result;
@@ -239,6 +251,7 @@ function watchTitleChanges(titleRule) {
 
   watchedTitleRule = titleRule;
   lastTriedTitle = null;
+  lastTriedUrl = null;
 
   ensureTitleObserver();
 
@@ -246,7 +259,8 @@ function watchTitleChanges(titleRule) {
     titleWatchdog = setInterval(() => {
       // 页面可能整体替换 <head>，定期把观察器重新挂到当前的 head 上
       ensureTitleObserver();
-      attemptTitle();
+      if (location.href !== styleUrl) refresh();
+      else attemptTitle();
     }, 1500);
   }
 
@@ -254,10 +268,15 @@ function watchTitleChanges(titleRule) {
 }
 
 async function refresh() {
+  const sequence = ++refreshSequence;
+  const url = location.href;
   let style = null;
   try {
-    style = await browser.runtime.sendMessage({ type: 'page-style', url: location.href });
+    style = await browser.runtime.sendMessage({ type: 'page-style', url });
+    if (sequence !== refreshSequence || location.href !== url) return;
+    styleUrl = url;
   } catch (err) {
+    if (sequence !== refreshSequence || location.href !== url) return;
     mark('off');
     console.warn('[TabPilot] 页面标识查询失败', err);
     removeRoot();

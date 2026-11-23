@@ -31,7 +31,7 @@ export function rulesFromGroups(existing, groups, tabs, windowId, createId) {
     } while (typeof id !== 'string' || !id.trim() || ids.has(id));
     ids.add(id);
     drafts.set(name, { id, name, enabled: true, color: group.color || 'grey',
-      collapsed: group.collapsed === true, minTabs: 1, note: '', patterns });
+      collapsed: group.collapsed === true, strictMode: false, minTabs: 1, note: '', patterns });
   }
   return [...drafts.values()];
 }

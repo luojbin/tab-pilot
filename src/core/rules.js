@@ -4,7 +4,7 @@
  * 设计约束：本文件不依赖任何 browser.* API，可以在 Node 下直接单测。
  * 浏览器侧由 background.js 传入 tab / rules / context。
  *
- * 规则模型（schemaVersion 1）：
+ * 规则模型（schemaVersion 2）：
  *   一条规则 = 一个标签页分组
  *   { id, enabled, name, color, collapsed, minTabs, note, patterns[] }
  *   `patterns` 可包含多个匹配路径，任一命中即视为该规则的 URL 命中；

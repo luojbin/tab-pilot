@@ -82,7 +82,7 @@ const GLOBAL_ID = '__global__';
 /** 有未保存修改时禁止导出，提示文案在按钮提示与状态栏共用。 */
 const UNSAVED_EXPORT_HINT = '有未保存的修改，请先「保存并同步」或「放弃修改」再导出。';
 
-let state = { clickAction: 'sync', language: 'auto', groupsFirst: false, strictMode: false, autoUpdateGroupRules: true, showActionResult: true, rules: [], selectedId: null };
+let state = { clickAction: 'sync', language: 'auto', groupsFirst: false, autoUpdateGroupRules: true, showActionResult: true, rules: [], selectedId: null };
 let savedSnapshot = '';
 let busy = false;
 let previewRefresh = null;
@@ -108,7 +108,6 @@ function snapshot() {
     clickAction: state.clickAction,
     language: state.language,
     groupsFirst: state.groupsFirst,
-    strictMode: state.strictMode,
     autoUpdateGroupRules: state.autoUpdateGroupRules,
     showActionResult: state.showActionResult,
     rules: state.rules
@@ -414,6 +413,7 @@ function addRule() {
     name: `新分组 ${state.rules.length + 1}`,
     color: Store.colorForIndex(state.rules.length),
     collapsed: false,
+    strictMode: false,
     minTabs: 1,
     note: '',
     patterns: ['']
@@ -555,19 +555,48 @@ function ensureTitleRule(rule) {
   return rule.titleRule;
 }
 
-function titleField(labelText, className, value, placeholder, onInput) {
+function titleField(labelText, className, value, placeholder, onInput, showLabel = true, boundary = null) {
   const label = document.createElement('label');
   label.className = 'field';
-  label.append(document.createTextNode(labelText));
+  if (showLabel) {
+    const caption = document.createElement('span');
+    caption.className = 'title-field-label';
+    caption.textContent = labelText;
+    label.append(caption);
+  }
 
   const input = document.createElement('input');
   input.type = 'text';
   input.className = className;
+  input.setAttribute('aria-label', labelText);
   input.value = value;
   if (placeholder) input.placeholder = placeholder;
   input.addEventListener('input', () => onInput(input.value));
 
-  label.append(input);
+  if (boundary) {
+    const frame = document.createElement('span');
+    frame.className = 'title-pattern-frame';
+    const symbol = text => {
+      const node = document.createElement('span');
+      node.className = 'title-pattern-boundary';
+      node.textContent = text;
+      node.setAttribute('aria-hidden', 'true');
+      node.setAttribute('data-i18n-skip', '');
+      return node;
+    };
+    input.addEventListener('blur', () => {
+      const body = TitleRule.stripPatternAnchors(input.value);
+      // ^$ 等仅含边界的条件不能变成“留空不限制”。
+      if (body.trim() || !input.value.trim()) {
+        input.value = body;
+        onInput(body);
+      }
+    });
+    frame.append(symbol('^'), input, symbol(boundary));
+    label.append(frame);
+  } else {
+    label.append(input);
+  }
   return label;
 }
 
@@ -634,28 +663,33 @@ function createTitleRuleCard(rule, spec, entry, index) {
   head.append(order, description, up, down, remove);
 
   const patternField = titleField(
-    '源文本（正则表达式）',
+    '标题条件',
     'title-rule-pattern',
-    entry.pattern,
-    '^\\[(.*?)\\]\\s*(.*)$',
+    entry.titlePattern,
+    '正则主体，留空表示不限制',
     (value) => {
-      entry.pattern = value;
+      entry.titlePattern = value;
       rule.titleRule = spec;
-    }
+    }, true, '$'
   );
 
   const replacementField = titleField(
-    '目标文本（可用 $1/$2 引用匹配组）',
+    '目标文本',
     'title-rule-replacement',
     entry.replacement,
-    '$2 · $1',
+    '支持 ${title.1}、${url.1} 等捕获组',
     (value) => {
       entry.replacement = value;
       rule.titleRule = spec;
     }
   );
 
-  card.append(head, patternField, replacementField);
+  const urlField = titleField('URL 条件', 'title-rule-url-pattern',
+    entry.urlPattern, '留空表示不限制；如需匹配后续路径、参数等变体，请加 .*', value => {
+      entry.urlPattern = value;
+      rule.titleRule = spec;
+    }, true, '$');
+  card.append(head, patternField, urlField, replacementField);
   return card;
 }
 
@@ -696,7 +730,7 @@ function createTitleRuleSection(rule) {
   const hint = document.createElement('p');
   hint.className = 'hint small';
   hint.textContent =
-    '按从上到下的顺序匹配，命中第一条就停止；只替换第一个匹配。目标文本可用 $1/$2、$<name>、$&、$$；需要加前缀的话直接写在目标文本里，例如 "W· $1"。';
+    '按顺序使用首条命中的规则。标题和 URL 条件至少填写一个，同时填写时须同时命中。用 ${title.1}、${url.1} 引用捕获组，命名组用 ${title.name}、${url.name}；$$ 表示美元符号。目标文本是完整的新标题。标题和 URL 条件均默认完整匹配，无需填写 ^ 和 $；如需匹配后续路径、参数等变体，请显式添加 .*。';
 
   const list = document.createElement('div');
   list.className = 'title-rule-list';
@@ -715,27 +749,45 @@ function createTitleRuleSection(rule) {
   addButton.className = 'add-title-rule';
   addButton.textContent = '＋ 添加命名规则';
   addButton.addEventListener('click', () => {
-    spec.rules.push({ pattern: '', replacement: '', description: '' });
+    spec.rules.push({ titlePattern: '', urlPattern: '', replacement: '', description: '' });
     rule.titleRule = spec;
     renderDetail();
   });
 
   const testBox = document.createElement('div');
   testBox.className = 'title-test';
-  const testLabel = document.createElement('label');
-  testLabel.className = 'field';
-  testLabel.append(document.createTextNode('测试文本（每行一个标题）'));
-  const testInput = document.createElement('textarea');
-  testInput.className = 'title-test-input';
-  testInput.rows = 4;
-  testInput.value = spec.testText;
-  testInput.placeholder =
-    '[工作] Jira - 看板\n[代码] GitHub - Pull requests\n普通页面标题';
-  testInput.addEventListener('input', () => {
-    spec.testText = testInput.value;
-    rule.titleRule = spec;
+  const testLabel = document.createElement('p');
+  testLabel.textContent = '测试用例（每条填写标题和 URL）';
+  const testInputs = document.createElement('div');
+  const renderTestCases = () => {
+    testInputs.replaceChildren();
+    spec.testCases.forEach((row, index) => {
+      const line = document.createElement('div');
+      line.className = 'title-test-case';
+      const title = titleField('标题', 'title-test-title', row.title, '标题', value => { row.title = value; }, false);
+      const url = titleField('URL', 'title-test-url', row.url, 'URL', value => { row.url = value; }, false);
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.textContent = '✕';
+      remove.title = '删除测试用例';
+      remove.addEventListener('click', () => {
+        spec.testCases.splice(index, 1);
+        renderTestCases();
+        applyI18n(testInputs);
+      });
+      line.append(title, url, remove);
+      testInputs.append(line);
+    });
+  };
+  renderTestCases();
+  const addTest = document.createElement('button');
+  addTest.type = 'button';
+  addTest.textContent = '＋ 添加测试用例';
+  addTest.addEventListener('click', () => {
+    spec.testCases.push({ title: '', url: '' });
+    renderTestCases();
+    applyI18n(testInputs);
   });
-  testLabel.append(testInput);
 
   const testButton = document.createElement('button');
   testButton.type = 'button';
@@ -746,15 +798,16 @@ function createTitleRuleSection(rule) {
   testOutput.className = 'title-test-output';
 
   testButton.addEventListener('click', () => {
-    const candidate = { enabled: true, rules: spec.rules, testText: spec.testText };
-    const rows = TitleRule.applyTitleBatch({ titleRule: candidate }, testInput.value);
+    const candidate = { enabled: true, rules: spec.rules, testCases: spec.testCases };
+    const rows = TitleRule.applyTitleBatch({ titleRule: candidate }, spec.testCases);
 
     testOutput.textContent = '';
     if (rows.length === 0) {
       const empty = document.createElement('p');
       empty.className = 'hint small';
-      empty.textContent = '测试文本为空，先输入几行标题。';
+      empty.textContent = '暂无测试用例，请先添加。';
       testOutput.append(empty);
+      applyI18n(testOutput);
       return;
     }
 
@@ -765,32 +818,29 @@ function createTitleRuleSection(rule) {
       const source = document.createElement('span');
       source.className = 'title-test-src';
       source.setAttribute('data-i18n-skip', '');
-      source.textContent = row.source;
+      source.textContent = `${row.title}(${row.url})`;
 
       const arrow = document.createElement('span');
       arrow.className = 'title-test-arrow';
-      arrow.textContent = '→';
+      arrow.setAttribute('data-i18n-skip', '');
+      const status = row.matched
+        ? t('规则{index}').replace('{index}', String(row.ruleIndex + 1))
+        : t(row.reason === 'invalid-regex' ? '正则有误' : '未匹配');
+      arrow.textContent = ' -> ';
 
       const target = document.createElement('span');
       target.className = 'title-test-dst';
-
-      if (row.matched) {
-        target.setAttribute('data-i18n-skip', '');
-        target.textContent = row.result;
-      } else if (row.reason === 'invalid-regex') {
-        target.classList.add('warn');
-        target.textContent = '正则有误，未应用';
-      } else {
-        target.classList.add('warn');
-        target.textContent = '未匹配，保持原样';
-      }
+      target.setAttribute('data-i18n-skip', '');
+      target.textContent = `${row.result}(${status})`;
+      if (!row.matched) target.classList.add('warn');
 
       line.append(source, arrow, target);
       testOutput.append(line);
     });
+    applyI18n(testOutput);
   });
 
-  testBox.append(testLabel, testButton, testOutput);
+  testBox.append(testLabel, testInputs, addTest, testButton, testOutput);
 
   /** 规则没启用时把整块配置置灰禁用，省得配了半天不生效。 */
   function syncEnabledState() {
@@ -809,12 +859,11 @@ function createTitleRuleSection(rule) {
     syncEnabledState();
   });
 
-  syncEnabledState();
-
   const parts = [toggleLabel];
   if (warning) parts.push(warning);
   parts.push(hint, list, addButton, testBox);
   section.append(...parts);
+  syncEnabledState();
   return section;
 }
 
@@ -1297,7 +1346,7 @@ function renderDetail() {
   noteLabel.append(note);
   noteRow.append(noteLabel);
 
-  // 启用 / 命中后折叠：文字在上、拨杆在下，与第一行其他字段同一套排布
+  // 启用开关保留在基础字段行，行为开关放入下方卡片。
   const enabledLabel = document.createElement('label');
   enabledLabel.className = 'field field-switch';
   enabledLabel.append(document.createTextNode('启用'));
@@ -1320,15 +1369,15 @@ function renderDetail() {
 
   const collapsedLabel = document.createElement('label');
   collapsedLabel.className = 'field field-switch';
-  collapsedLabel.title = '当前活动标签在原分组内跳转并再次命中时，保持已展开的分组。';
-  collapsedLabel.append(document.createTextNode('命中后折叠'));
+  collapsedLabel.title = '仅在新建分组或有标签从组外移入时自动折叠，组内跳转不改变折叠状态。';
+  collapsedLabel.append(document.createTextNode('自动折叠'));
   const collapsedSlot = document.createElement('span');
   collapsedSlot.className = 'switch-slot';
   const collapsedInput = document.createElement('input');
   collapsedInput.type = 'checkbox';
   collapsedInput.className = 'field-collapsed';
   collapsedInput.checked = rule.collapsed === true;
-  collapsedInput.setAttribute('aria-label', '命中后折叠该分组');
+  collapsedInput.setAttribute('aria-label', '自动折叠该分组');
   const collapsedSwitch = document.createElement('span');
   collapsedSwitch.className = 'switch-ui';
   collapsedSwitch.setAttribute('aria-hidden', 'true');
@@ -1338,7 +1387,27 @@ function renderDetail() {
   collapsedSlot.append(collapsedInput, collapsedSwitch);
   collapsedLabel.append(collapsedSlot);
 
-  firstRow.append(enabledLabel, collapsedLabel);
+  const strictLabel = createGlobalSwitch('严格模式', rule.strictMode === true, checked => {
+    rule.strictMode = checked;
+  });
+  strictLabel.title = '页面跳转到不匹配本分组规则的网站时，自动移出本分组。';
+  firstRow.append(enabledLabel);
+  const ruleSwitchCards = document.createElement('div');
+  ruleSwitchCards.className = 'global-switch-cards';
+  for (const [field, description, id] of [
+    [collapsedLabel, '新建分组或有标签从组外移入时自动折叠；组内跳转或刷新保持当前状态。', 'rule-collapse-description'],
+    [strictLabel, '页面跳转到不匹配本分组规则的网站时，自动移出本分组。', 'rule-strict-description']
+  ]) {
+    const card = document.createElement('div');
+    card.className = 'global-switch-card';
+    const hint = document.createElement('p');
+    hint.className = 'hint small';
+    hint.id = id;
+    hint.textContent = description;
+    field.querySelector('input').setAttribute('aria-describedby', id);
+    card.append(field, hint);
+    ruleSwitchCards.append(card);
+  }
 
   const patternsSection = document.createElement('div');
   patternsSection.className = 'fieldset';
@@ -1390,7 +1459,7 @@ function renderDetail() {
   patternsSection.append(patternsTitle, patterns, addPattern, patternHint);
 
   const basicBody = document.createElement('div');
-  basicBody.append(firstRow, noteRow, patternsSection);
+  basicBody.append(firstRow, ruleSwitchCards, noteRow, patternsSection);
 
   const highlightBody = document.createElement('div');
   highlightBody.append(createHighlightSection(rule));
@@ -1447,7 +1516,7 @@ function renderDetail() {
   syncDirtyState();
 }
 
-/** 全局选项复用已有拨杆 DOM 与 input:checked 样式。 */
+/** 设置项复用已有拨杆 DOM 与 input:checked 样式。 */
 function createGlobalSwitch(text, checked, onChange) {
   const field = document.createElement('label');
   field.className = 'field field-switch';
@@ -1568,13 +1637,13 @@ function renderGlobalDetail() {
   const actionHint = document.createElement('p');
   actionHint.className = 'hint small';
   actionHint.textContent = '点图标时先同步，再按所选方式折叠分组；折叠只影响点击时所在的窗口。';
-  const orderField = createGlobalSwitch('分组置前', state.groupsFirst, (checked) => {
+  const orderField = createGlobalSwitch('分组前置', state.groupsFirst, (checked) => {
     state.groupsFirst = checked;
     syncDirtyState();
   });
   const orderHint = document.createElement('p');
   orderHint.className = 'hint small';
-  orderHint.textContent = '同步后按固定标签、分组、游离标签排序，保留各自顺序；自动归组时不重排。';
+  orderHint.textContent = '将分组移到前面、游离标签移到后面，保留各自顺序；同步、自动归组或分组成员变化后更新。';
   const resultField = createGlobalSwitch('操作结果提示', state.showActionResult, checked => {
     state.showActionResult = checked;
   });
@@ -1587,12 +1656,6 @@ function renderGlobalDetail() {
   const updateHint = document.createElement('p');
   updateHint.className = 'hint small';
   updateHint.textContent = '手动将标签页拖入已有规则的分组时，提示是否添加该网站的匹配规则。';
-  const strictField = createGlobalSwitch('严格模式', state.strictMode, checked => {
-    state.strictMode = checked;
-  });
-  const strictHint = document.createElement('p');
-  strictHint.className = 'hint small';
-  strictHint.textContent = '页面跳转到不匹配当前分组规则的网站时，自动移出分组；仅处理已启用规则对应的分组。';
   const languageHint = document.createElement('p');
   languageHint.className = 'hint small';
   languageHint.textContent = '选择设置页和弹出面板的显示语言，也可跟随浏览器。';
@@ -1603,8 +1666,7 @@ function renderGlobalDetail() {
     [actionField, actionHint, 'click-action'],
     [updateField, updateHint, 'auto-update-group-rules'],
     [resultField, resultHint, 'show-action-result'],
-    [orderField, orderHint, 'groups-first'],
-    [strictField, strictHint, 'strict-mode']
+    [orderField, orderHint, 'groups-first']
   ]) {
     const card = document.createElement('div');
     card.className = 'global-switch-card';
@@ -1743,7 +1805,7 @@ function buildConfig() {
     state.clickAction,
     state.language,
     state.groupsFirst,
-    { autoUpdateGroupRules: state.autoUpdateGroupRules, showActionResult: state.showActionResult, strictMode: state.strictMode }
+    { autoUpdateGroupRules: state.autoUpdateGroupRules, showActionResult: state.showActionResult }
   );
 }
 
@@ -1904,7 +1966,6 @@ function exportToFile() {
 
 function applyConfig(config) {
   state.groupsFirst = config.groupsFirst === true;
-  state.strictMode = config.strictMode === true;
   state.autoUpdateGroupRules = config.autoUpdateGroupRules !== false;
   state.showActionResult = config.showActionResult !== false;
   state.clickAction = Store.normalizeClickAction(config.clickAction);
@@ -2014,7 +2075,6 @@ async function load() {
 
   state = {
     groupsFirst: config.groupsFirst === true,
-    strictMode: config.strictMode === true,
     autoUpdateGroupRules: config.autoUpdateGroupRules !== false,
     showActionResult: config.showActionResult !== false,
     clickAction: Store.normalizeClickAction(config.clickAction),

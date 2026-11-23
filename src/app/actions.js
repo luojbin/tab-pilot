@@ -24,14 +24,11 @@ async function findGroupByTitle(windowId, title) {
   return groups.find((group) => group.title === title) || null;
 }
 
-/** 只把与目标值不同的字段放进 patch，避免无意义的更新事件。 */
+/** 名称/颜色只更新差异字段；折叠单独在实际入组后处理。 */
 function buildGroupPatch(group, rule) {
   const patch = {};
   if (group.title !== nameOf(rule)) patch.title = nameOf(rule);
   if (group.color !== colorOf(rule)) patch.color = colorOf(rule);
-  if (typeof rule.collapsed === 'boolean' && group.collapsed !== rule.collapsed) {
-    patch.collapsed = rule.collapsed;
-  }
   return patch;
 }
 
@@ -39,9 +36,8 @@ function buildGroupPatch(group, rule) {
  * @param {object} rule 命中的规则，其 name / color / collapsed 决定分组属性
  * @param {object} tab 触发事件的标签页，始终会被归组
  * @param {Array<object>} [companions] 同一规则下要一起归组的其他标签页
- * @param {object} [options] 导航时可保护当前活动标签所在分组的展开状态
  */
-async function applyRule(rule, tab, companions, options = {}) {
+async function applyRule(rule, tab, companions) {
   const groupName = nameOf(rule);
   if (groupName === '') {
     return { ok: false, error: '规则的 name 为空，无法确定目标分组' };
@@ -50,38 +46,33 @@ async function applyRule(rule, tab, companions, options = {}) {
   const windowId = tab.windowId;
   const existing = await findGroupByTitle(windowId, groupName);
 
-  // 目标标签一定在列；其余只在“尚未归入任何分组”时才一并移动，
-  // 避免把手动整理到别的组里的标签硬拽过来。
-  const tabIds = [tab.id];
-  for (const other of companions || []) {
-    if (!other || other.id === tab.id || other.windowId !== windowId) continue;
-    if (other.groupId !== -1) continue;
+  // 读取最新成员，避免同批阈值处理或延迟事件使用旧快照重复触发折叠。
+  const currentTabs = await browser.tabs.query({ windowId });
+  const current = currentTabs.find(item => item.id === tab.id);
+  if (!current) return { ok: true, skipped: true, reason: 'tab-gone', tabIds: [] };
+  const tabIds = existing && current.groupId === existing.id ? [] : [current.id];
+  const companionIds = new Set((companions || []).map(item => item?.id));
+  for (const other of currentTabs) {
+    if (other.id === current.id || !companionIds.has(other.id) || other.groupId !== -1) continue;
     tabIds.push(other.id);
   }
 
   if (existing) {
     const patch = buildGroupPatch(existing, rule);
-    // 当前活动标签在原组内导航时，不覆盖已经展开的状态；其他属性照常更新。
-    const current = options.tabs?.find(item => item.id === tab.id) || tab;
-    if (options.preserveExpandedGroup === true && current.active === true &&
-        current.groupId === existing.id && existing.collapsed === false && rule.collapsed === true) {
-      delete patch.collapsed;
+    const entering = tabIds.length > 0;
+    if (entering) {
+      markAutomaticGrouping(tabIds, existing.id);
+      try {
+        await browser.tabs.group({ tabIds, groupId: existing.id });
+      } catch (err) {
+        clearAutomaticGrouping(tabIds);
+        throw err;
+      }
+      // 自动折叠仅在实际有标签入组成功后触发；关闭也不主动展开已有组。
+      if (rule.collapsed === true) patch.collapsed = true;
     }
-    if (Object.keys(patch).length > 0) {
-      await browser.tabGroups.update(existing.id, patch);
-    }
-    // 幂等：已在该组内且无新增标签则不再触发分组操作，避免 onUpdated 反复触发
-    if (tab.groupId === existing.id && tabIds.length === 1) {
-      return { ok: true, skipped: true, groupId: existing.id, created: false, tabIds };
-    }
-    markAutomaticGrouping(tabIds, existing.id);
-    try {
-      await browser.tabs.group({ tabIds, groupId: existing.id });
-    } catch (err) {
-      clearAutomaticGrouping(tabIds);
-      throw err;
-    }
-    return { ok: true, skipped: false, groupId: existing.id, created: false, tabIds };
+    if (Object.keys(patch).length > 0) await browser.tabGroups.update(existing.id, patch);
+    return { ok: true, skipped: !entering, groupId: existing.id, created: false, tabIds };
   }
 
   // 先建组，再单独设属性：tabs.group 的 createProperties 只保证支持 windowId，
@@ -108,7 +99,7 @@ async function applyRule(rule, tab, companions, options = {}) {
 /**
  * @param {object} rule 命中的规则
  * @param {object} tab 触发事件的标签页
- * @param {{tabs?: Array, tabIds?: number[], preserveExpandedGroup?: boolean}} [context] 需要一起归组的候选标签
+ * @param {{tabs?: Array, tabIds?: number[]}} [context] 需要一起归组的候选标签
  */
 async function apply(rule, tab, context) {
   if (!rule || !tab) return [{ ok: false, error: '缺少规则或标签页信息' }];
@@ -132,7 +123,7 @@ async function apply(rule, tab, context) {
     : [];
 
   try {
-    return [await applyRule(rule, tab, companions, ctx)];
+    return [await applyRule(rule, tab, companions)];
   } catch (err) {
     return [{ ok: false, error: String((err && err.message) || err) }];
   }

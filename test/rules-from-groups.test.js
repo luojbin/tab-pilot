@@ -11,7 +11,7 @@ test('窗口分组生成规则：保留名称颜色折叠，按标签顺序生�
   const tabs=[tab(1,1,'http://localhost:3000/a',0),tab(2,1,'http://localhost:3000/b?q=secret',1),tab(3,1,'https://user:pass@dev.example/path#fragment',2),tab(4,2,'https://work.example/a',3)];
   const original=structuredClone({groups,tabs});
   const rules=rulesFromGroups([],groups,tabs,1,ids());
-  assert.deepEqual(rules[0],{id:'generated-1',name:'开发',enabled:true,color:'blue',collapsed:true,minTabs:1,note:'',patterns:['http://localhost:3000/*','https://dev.example/*']});
+  assert.deepEqual(rules[0],{id:'generated-1',name:'开发',enabled:true,color:'blue',collapsed:true,strictMode:false,minTabs:1,note:'',patterns:['http://localhost:3000/*','https://dev.example/*']});
   assert.deepEqual(rules[1].patterns,['https://work.example/*']);
   assert.deepEqual({groups,tabs},original);
 });

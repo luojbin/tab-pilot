@@ -549,8 +549,17 @@ test('page-style：只启用标题规则时也返回配置', async () => {
 
   assert.ok(style, '只开标题规则时也应返回配置');
   assert.equal(style.titleRule.enabled, true);
-  assert.equal(style.titleRule.rules[0].pattern, '工作');
+  assert.equal(style.titleRule.rules[0].titlePattern, '工作');
   assert.equal(style.highlight.enabled, false);
+  const store = await import('../src/app/store.js');
+  const loaded = await store.loadConfig();
+  assert.equal(loaded.source, 'storage');
+  assert.equal(loaded.config.schemaVersion, 2);
+  assert.equal(state.storedConfig.schemaVersion, 1, '读取迁移不覆盖旧存储');
+  assert.equal((await store.saveConfig(loaded.config)).ok, true);
+  assert.equal(state.storedConfig.schemaVersion, 2, '保存后持久化 schema 2');
+  assert.equal('pattern' in state.storedConfig.rules[0].titleRule.rules[0], false);
+
 });
 
 test('page-style：标识未开启或未命中时返回 null', async () => {
@@ -641,7 +650,7 @@ test('点击行为：syncCollapseInactive 跳过包含活动标签的分组', as
   assert.deepEqual(state.updateCalls, [{ id: 1, patch: { collapsed: true } }]);
 });
 
-test('点击行为：syncRuleCollapse 只折叠开启了「命中后折叠」的规则分组', async () => {
+test('点击行为：syncRuleCollapse 只折叠开启了「自动折叠」的规则分组', async () => {
   reset();
   state.storedConfig = {
     schemaVersion: 1,
@@ -676,7 +685,7 @@ test('点击行为：旧配置 globalEnabled=false 不再阻止折叠', async ()
 });
 
 
-test('syncAll：开启分组置前才整理，旧全局开关不生效', async () => {
+test('syncAll：开启分组前置才整理，旧全局开关不生效', async () => {
   reset();
   state.tabsByWindow = { 1: [
     { id: 1, windowId: 1, index: 0, pinned: true, groupId: -1, url: 'about:blank' },
@@ -724,7 +733,7 @@ test('严格模式接入导航处理：移出不匹配标签，本批不重新�
   const tab={id:90,windowId:1,groupId:3,url:'https://other.example/'};
   state.tabsByWindow={1:[tab]};
   state.existingGroups=[{id:3,windowId:1,title:'开发'}];
-  state.storedConfig={...configWith([rule()]),strictMode:true};
+  state.storedConfig={...configWith([rule({strictMode:true})])};
   await Background.syncAll();
   assert.equal(state.ungroupCalls.length,0);
   listeners.updated[0](tab.id,{url:tab.url},tab);
@@ -757,7 +766,7 @@ test('导航折叠例外：当前标签仍在展开的原组时保留展开，�
   assert.equal(state.groupCalls.length,0);
 });
 
-test('导航折叠例外：后台标签或进入其他分组仍按规则折叠',async()=>{
+test('自动折叠：后台标签组内导航不折叠，组外进入才折叠',async()=>{
   for(const [active,groupId] of [[false,42],[true,-1],[true,8]]){
     reset();
     state.storedConfig=configWith([rule({collapsed:true})]);
@@ -766,11 +775,11 @@ test('导航折叠例外：后台标签或进入其他分组仍按规则折叠',
     state.tabsByWindow={1:[tab]};
     listeners.updated[0](1,{url:tab.url},tab);
     await Background.flush();
-    assert.deepEqual(state.updateCalls,[{id:42,patch:{collapsed:true}}]);
+    assert.deepEqual(state.updateCalls,groupId === 42 ? [] : [{id:42,patch:{collapsed:true}}]);
   }
 });
 
-test('导航折叠例外：新建归组、显式同步与折叠动作保持原行为',async()=>{
+test('自动折叠：已在组内时创建/同步不改变状态，显式按规则折叠仍执行',async()=>{
   reset();
   state.storedConfig=configWith([rule({collapsed:true})]);
   state.existingGroups=[{id:42,windowId:1,title:'开发',color:'green',collapsed:false}];
@@ -778,13 +787,15 @@ test('导航折叠例外：新建归组、显式同步与折叠动作保持原�
   state.tabsByWindow={1:[tab]};
   listeners.created[0](tab);
   await Background.flush();
-  assert.deepEqual(state.updateCalls,[{id:42,patch:{collapsed:true}}]);
+  assert.deepEqual(state.updateCalls,[]);
   state.updateCalls=[];
   await Background.syncAll({includeGrouped:true});
+  assert.deepEqual(state.updateCalls,[]);
+  await Background.collapseGroups('syncRuleCollapse',state.storedConfig,1);
   assert.deepEqual(state.updateCalls,[{id:42,patch:{collapsed:true}}]);
 });
 
-test('导航折叠例外：以处理时的活动状态为准，已折叠的组不主动展开',async()=>{
+test('自动折叠：组内导航不依赖活动状态，已折叠的组不主动展开',async()=>{
   reset();
   state.storedConfig=configWith([rule({collapsed:true})]);
   state.existingGroups=[{id:42,windowId:1,title:'开发',color:'green',collapsed:false}];
@@ -792,11 +803,219 @@ test('导航折叠例外：以处理时的活动状态为准，已折叠的组�
   state.tabsByWindow={1:[{...tab,active:false}]};
   listeners.updated[0](1,{url:tab.url},tab);
   await Background.flush();
-  assert.deepEqual(state.updateCalls,[{id:42,patch:{collapsed:true}}]);
+  assert.deepEqual(state.updateCalls,[]);
   state.updateCalls=[];
   state.existingGroups[0].collapsed=true;
   state.tabsByWindow[1][0].active=true;
   listeners.updated[0](1,{status:'complete'},tab);
   await Background.flush();
   assert.deepEqual(state.updateCalls,[]);
+});
+
+async function withGroupPositionUpdates(run) {
+  const original = { group: browser.tabs.group, update: browser.tabGroups.update, move: browser.tabGroups.move, ungroup: browser.tabs.ungroup };
+  browser.tabs.group = async options => {
+    state.groupCalls.push(options);
+    const tabs = Object.values(state.tabsByWindow).flat();
+    const groupId = options.groupId ?? (100 + state.existingGroups.length);
+    if (options.createProperties) state.existingGroups.push({ id: groupId, windowId: options.createProperties.windowId, title: '', collapsed: false });
+    for (const id of options.tabIds) tabs.find(tab => tab.id === id).groupId = groupId;
+    return groupId;
+  };
+  browser.tabGroups.update = async (id, patch) => {
+    state.updateCalls.push({ id, patch });
+    Object.assign(state.existingGroups.find(group => group.id === id), patch);
+  };
+  browser.tabGroups.move = async (groupId, options) => {
+    state.moveCalls.push({ groupId, ...options });
+    const tabs = state.tabsByWindow[options.windowId].slice().sort((a,b) => a.index-b.index);
+    const moving = tabs.filter(tab => tab.groupId === groupId);
+    const remaining = tabs.filter(tab => tab.groupId !== groupId);
+    remaining.splice(options.index, 0, ...moving);
+    remaining.forEach((tab,index) => { tab.index=index; });
+    return {id:groupId};
+  };
+  browser.tabs.ungroup = async id => {
+    state.ungroupCalls.push(id);
+    Object.values(state.tabsByWindow).flat().find(tab => tab.id === id).groupId=-1;
+  };
+  try { await run(); } finally {
+    browser.tabs.group=original.group;
+    browser.tabGroups.update=original.update;
+    browser.tabGroups.move=original.move;
+    browser.tabs.ungroup=original.ungroup;
+  }
+}
+
+test('分组前置：游离标签末尾的新页面自动创建组后立即前移，其他窗口不变',async()=>{
+  for(const enabled of [false,true]){
+    reset();state.storedConfig={...configWith([rule()]),groupsFirst:enabled};
+    const target={id:4,index:3,windowId:1,groupId:-1,url:'http://localhost:3000/',active:true};
+    state.tabsByWindow={1:[{id:1,index:0,windowId:1,groupId:-1,pinned:true,url:'about:blank'},{id:2,index:1,windowId:1,groupId:-1,url:'https://loose.example/'},{id:3,index:2,windowId:1,groupId:-1,url:'https://loose.example/2'},target],2:[{id:5,index:0,windowId:2,groupId:-1,url:'https://loose.example/'},{id:6,index:1,windowId:2,groupId:44,url:'https://manual.example/'}]};
+    state.existingGroups=[{id:44,windowId:2,title:'其他窗口'}];
+    await withGroupPositionUpdates(async()=>{
+      listeners.updated[0](target.id,{url:target.url},target);await Background.flush();
+      assert.equal(state.moveCalls.length,enabled?1:0);
+      if(enabled)assert.deepEqual(state.moveCalls,[{groupId:101,windowId:1,index:1}]);
+      assert.equal(target.index,enabled?1:3);
+      assert.equal(state.tabsByWindow[1].find(tab=>tab.id===2).groupId,-1);
+      assert.equal(state.tabsByWindow[2][1].index,1);
+    });
+  }
+});
+
+test('分组前置：阈值批量归组后整理，重复加载不再次移动',async()=>{
+  reset();state.storedConfig={...configWith([rule({minTabs:2})]),groupsFirst:true};
+  const first={id:2,index:1,windowId:1,groupId:-1,url:'http://localhost:3000/a'};
+  const second={id:3,index:2,windowId:1,groupId:-1,url:'http://localhost:3000/b'};
+  state.tabsByWindow={1:[{id:1,index:0,windowId:1,groupId:-1,url:'https://loose.example/'},first,second]};
+  await withGroupPositionUpdates(async()=>{
+    listeners.created[0](second);await Background.flush();
+    assert.deepEqual(state.groupCalls[0].tabIds,[3,2]);assert.equal(state.moveCalls.length,1);
+    assert.equal(Math.min(first.index,second.index),0);
+    listeners.updated[0](second.id,{status:'complete'},second);await Background.flush();
+    assert.equal(state.moveCalls.length,1);
+  });
+});
+
+test('分组前置：手动改归属仅整理位置，不重新匹配或抢走标签',async()=>{
+  reset();state.storedConfig={...configWith([rule()]),groupsFirst:true};
+  state.existingGroups=[{id:50,windowId:1,title:'纯手动组',collapsed:false}];
+  const target={id:2,index:1,windowId:1,groupId:50,url:'http://localhost:3000/'};
+  state.tabsByWindow={1:[{id:1,index:0,windowId:1,groupId:-1,url:'https://loose.example/'},target]};
+  await withGroupPositionUpdates(async()=>{
+    listeners.updated[0](target.id,{groupId:50},target);await Background.flush();
+    assert.equal(state.groupCalls.length,0);assert.equal(target.groupId,50);
+    assert.deepEqual(state.moveCalls,[{groupId:50,windowId:1,index:0}]);
+  });
+});
+
+test('分组前置：严格模式移出后重新整理剩余组',async()=>{
+  reset();state.storedConfig={...configWith([rule({strictMode:true})]),groupsFirst:true};
+  state.existingGroups=[{id:42,windowId:1,title:'开发'},{id:43,windowId:1,title:'手动组'}];
+  const target={id:1,index:0,windowId:1,groupId:42,url:'https://other.example/'};
+  state.tabsByWindow={1:[target,{id:2,index:1,windowId:1,groupId:43,url:'https://manual.example/'}]};
+  await withGroupPositionUpdates(async()=>{
+    listeners.updated[0](target.id,{url:target.url},target);await Background.flush();
+    assert.deepEqual(state.ungroupCalls,[1]);assert.deepEqual(state.moveCalls,[{groupId:43,windowId:1,index:0}]);
+  });
+});
+
+test('分组前置：未命中不整理，不干预其他窗口',async()=>{
+  reset();state.storedConfig={...configWith([rule()]),groupsFirst:true};
+  const target={id:2,index:1,windowId:1,groupId:-1,url:'https://unmatched.example/'};
+  state.tabsByWindow={1:[{id:1,index:0,windowId:1,groupId:-1,url:'https://loose.example/'},target]};
+  await withGroupPositionUpdates(async()=>{
+    listeners.updated[0](target.id,{url:target.url},target);await Background.flush();assert.deepEqual(state.moveCalls,[]);
+  });
+});
+
+test('分组前置：同窗口同批多个归属变化只整理一次，受限网址也可整理',async()=>{
+  reset();state.storedConfig={...configWith([]),groupsFirst:true};
+  state.existingGroups=[{id:50,windowId:1,title:'手动组'}];
+  const first={id:2,index:1,windowId:1,groupId:50,url:'about:blank'};
+  const second={id:3,index:2,windowId:1,groupId:50,url:'about:blank'};
+  state.tabsByWindow={1:[{id:1,index:0,windowId:1,groupId:-1,url:'https://loose.example/'},first,second]};
+  await withGroupPositionUpdates(async()=>{
+    listeners.created[0](first);listeners.updated[0](second.id,{groupId:50},second);await Background.flush();
+    assert.equal(state.moveCalls.length,1);assert.equal(state.groupCalls.length,0);
+    assert.equal(first.groupId,50);assert.equal(second.groupId,50);
+  });
+});
+
+test('保存旧全局严格配置：迁移到规则，落盘不再包含全局 strictMode',async()=>{
+  reset();
+  const raw={...configWith([rule(),rule({id:'relaxed',name:'宽松',strictMode:false})]),strictMode:true};
+  const result=await Debug.setConfig(raw);
+  assert.equal(result.ok,true);
+  assert.equal('strictMode' in state.storedConfig,false);
+  assert.deepEqual(state.storedConfig.rules.map(rule=>rule.strictMode),[true,false]);
+});
+
+test('自动折叠：创建新组时执行，阈值同批重复命中不重复入组或折叠',async()=>{
+  reset();state.storedConfig=configWith([rule({collapsed:true,minTabs:2})]);
+  const first={id:1,index:0,windowId:1,groupId:-1,url:'http://localhost:3000/a'};
+  const second={id:2,index:1,windowId:1,groupId:-1,url:'http://localhost:3000/b'};
+  state.tabsByWindow={1:[first,second]};
+  await withGroupPositionUpdates(async()=>{
+    listeners.updated[0](1,{url:first.url},{...first});
+    listeners.updated[0](2,{url:second.url},{...second});
+    await Background.flush();
+    assert.equal(state.groupCalls.length,1);
+    assert.equal(state.updateCalls.filter(call=>call.patch.collapsed===true).length,1);
+    assert.equal(state.existingGroups[0].collapsed,true);
+  });
+});
+
+test('自动折叠：当前标签已入组，阈值带入其他标签时仍触发折叠',async()=>{
+  reset();state.storedConfig=configWith([rule({collapsed:true,minTabs:2})]);
+  state.existingGroups=[{id:42,windowId:1,title:'开发',color:'green',collapsed:false}];
+  const current={id:1,index:0,windowId:1,groupId:42,active:true,url:'http://localhost:3000/a'};
+  state.tabsByWindow={1:[current,{id:2,index:1,windowId:1,groupId:-1,url:'http://localhost:3000/b'}]};
+  await withGroupPositionUpdates(async()=>{
+    listeners.updated[0](1,{url:current.url},{...current});await Background.flush();
+    assert.deepEqual(state.groupCalls,[{tabIds:[2],groupId:42}]);
+    assert.deepEqual(state.updateCalls,[{id:42,patch:{collapsed:true}}]);
+  });
+});
+
+test('自动折叠：关闭时不展开已有折叠组，组内后台刷新也保持折叠',async()=>{
+  reset();state.storedConfig=configWith([rule({collapsed:false})]);
+  state.existingGroups=[{id:42,windowId:1,title:'开发',color:'green',collapsed:true}];
+  const tab={id:1,index:0,windowId:1,groupId:-1,url:'http://localhost:3000/'};
+  state.tabsByWindow={1:[tab]};
+  await withGroupPositionUpdates(async()=>{
+    listeners.updated[0](1,{url:tab.url},{...tab});await Background.flush();
+    assert.equal(tab.groupId,42);
+    assert.deepEqual(state.updateCalls,[]);
+    listeners.updated[0](1,{status:'complete'},{...tab});await Background.flush();
+    assert.deepEqual(state.updateCalls,[]);
+    assert.equal(state.groupCalls.length,1);
+  });
+});
+
+test('自动折叠：入组失败时不折叠目标组',async()=>{
+  reset();state.storedConfig=configWith([rule({collapsed:true})]);
+  state.existingGroups=[{id:42,windowId:1,title:'开发',color:'green',collapsed:false}];
+  const tab={id:1,windowId:1,groupId:-1,url:'http://localhost:3000/'};
+  state.tabsByWindow={1:[tab]};
+  const original=browser.tabs.group;
+  browser.tabs.group=async()=>{throw new Error('group failed');};
+  try{
+    listeners.updated[0](1,{url:tab.url},tab);await Background.flush();
+    assert.deepEqual(state.updateCalls,[]);
+    assert.equal(state.existingGroups[0].collapsed,false);
+  }finally{browser.tabs.group=original;}
+});
+
+test('自动折叠：入组过程临时展开已折叠组时，入组成功后仍折叠',async()=>{
+  reset();state.storedConfig=configWith([rule({collapsed:true})]);
+  state.existingGroups=[{id:42,windowId:1,title:'开发',color:'green',collapsed:true}];
+  const tab={id:1,index:0,windowId:1,groupId:-1,active:true,url:'http://localhost:3000/'};
+  state.tabsByWindow={1:[tab]};
+  await withGroupPositionUpdates(async()=>{
+    const group=browser.tabs.group;
+    browser.tabs.group=async options=>{
+      const id=await group(options);
+      state.existingGroups[0].collapsed=false;
+      return id;
+    };
+    listeners.updated[0](1,{url:tab.url},{...tab});await Background.flush();
+    assert.equal(state.existingGroups[0].collapsed,true);
+    assert.deepEqual(state.updateCalls,[{id:42,patch:{collapsed:true}}]);
+  });
+});
+
+test('page-style：schema 2 的 URL-only 标题规则也会下发', async () => {
+  reset();
+  state.storedConfig = { schemaVersion: 2, rules: [{
+    id: 'url-title', enabled: true, name: 'URL title', patterns: ['*://localhost:*/*'],
+    titleRule: { enabled: true, rules: [{ titlePattern: '', urlPattern: '/item/([0-9]+)$', replacement: '${url.1}' }],
+      testCases: [{ title: 'App', url: 'http://localhost:3000/item/42' }] }
+  }] };
+  state.tabsByWindow[1] = [{ id: 1, windowId: 1, url: 'http://localhost:3000/item/42' }];
+  const style = await sendMessage({ type: 'page-style', url: 'http://localhost:3000/item/42' }, { tab: { id: 1, windowId: 1 } });
+  assert.ok(style);
+  assert.equal(style.titleRule.rules[0].urlPattern, '/item/([0-9]+)$');
+  assert.equal(style.titleRule.testCases[0].title, 'App');
 });

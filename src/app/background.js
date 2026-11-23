@@ -24,7 +24,7 @@ registerToolbarMenu(browser, error => Logger.warn('图标选项菜单操作失�
 const DEBOUNCE_MS = 50;
 const IGNORED_PREFIXES = ['about:', 'moz-extension:', 'chrome:', 'resource:', 'view-source:'];
 
-/** tabId -> { tab, preserveExpandedGroup }，合并最新状态与导航保护标记。 */
+/** tabId -> 事件项，合并最新状态与分组变化标记。 */
 const pending = new Map();
 let flushTimer = null;
 let configLogged = false;
@@ -60,7 +60,12 @@ function isIgnorable(url) {
 
 function schedule(tab, options = {}) {
   if (!tab || typeof tab.id !== 'number') return;
-  pending.set(tab.id, { tab, preserveExpandedGroup: options.preserveExpandedGroup === true || pending.get(tab.id)?.preserveExpandedGroup === true });
+  const previous = pending.get(tab.id);
+  pending.set(tab.id, {
+    tab,
+    groupChanged: options.groupChanged === true || previous?.groupChanged === true,
+    orderOnly: options.orderOnly === true && (!previous || previous.orderOnly === true)
+  });
   if (flushTimer !== null) return;
   flushTimer = setTimeout(() => {
     flushTimer = null;
@@ -68,7 +73,7 @@ function schedule(tab, options = {}) {
   }, DEBOUNCE_MS);
 }
 
-/** 同一窗口只查一次标签页列表：阈值需要窗口内的全量标签。 */
+/** 每批为各窗口获取阈值快照；动作层另读实时成员，避免重复入组。 */
 async function tabsInWindow(windowId) {
   try {
     return await browser.tabs.query({ windowId });
@@ -78,7 +83,7 @@ async function tabsInWindow(windowId) {
   }
 }
 
-async function processTab(tab, rules, allTabs, preserveExpandedGroup = false) {
+async function processTab(tab, rules, allTabs) {
   const { matched, steps } = Rules.explain(tab, rules, {
     tabs: allTabs,
     windowId: tab.windowId
@@ -96,7 +101,7 @@ async function processTab(tab, rules, allTabs, preserveExpandedGroup = false) {
   // 配了阈值的规则：达成时把同窗口内命中该规则的标签一起归组，
   // 否则“攒够 3 个再归组”会退化成“只归组第 3 个”。
   const tabIds = matched.minTabs > 1 ? matched.tabIds : [tab.id];
-  const results = await Actions.apply(matched.rule, tab, { tabs: allTabs, tabIds, preserveExpandedGroup });
+  const results = await Actions.apply(matched.rule, tab, { tabs: allTabs, tabIds });
   const failed = results.filter((r) => r.ok === false);
 
   if (failed.length > 0) {
@@ -109,6 +114,8 @@ async function processTab(tab, rules, allTabs, preserveExpandedGroup = false) {
       results
     });
   }
+  // 失败可能发生在已创建组之后；仍重新读取实际状态整理。
+  return results.some(result => result.skipped !== true);
 }
 
 async function flush() {
@@ -131,7 +138,7 @@ async function flush() {
   const byWindow = new Map();
   for (const entry of batch) {
     const { tab } = entry;
-    if (isIgnorable(tab.url || tab.pendingUrl) && !config.strictMode) continue;
+    if (isIgnorable(tab.url || tab.pendingUrl) && !entry.groupChanged) continue;
     const list = byWindow.get(tab.windowId);
     if (list) list.push(entry);
     else byWindow.set(tab.windowId, [entry]);
@@ -139,17 +146,29 @@ async function flush() {
 
   for (const [windowId, tabs] of byWindow) {
     const allTabs = await tabsInWindow(windowId);
-    for (const { tab, preserveExpandedGroup } of tabs) {
+    let orderNeeded = tabs.some(entry => entry.groupChanged);
+    for (const { tab, orderOnly } of tabs) {
       try {
+        if (orderOnly) continue;
         if (await enforceStrictGroup(browser, config, tab)) {
+          orderNeeded = true;
           Logger.info('严格模式：网址不匹配当前分组，已移出', { tabId: tab.id, groupId: tab.groupId });
           continue;
         }
         if (isIgnorable(tab.url || tab.pendingUrl)) continue;
-        await processTab(tab, config.rules, allTabs, preserveExpandedGroup);
+        const changed = await processTab(tab, config.rules, allTabs);
+        orderNeeded = changed || orderNeeded;
       } catch (err) {
         // 单个标签出错不影响同批次的其他标签（可靠性要求）
         Logger.error('处理标签页异常', { tabId: tab.id, error: String(err) });
+      }
+    }
+    if (config.groupsFirst === true && orderNeeded) {
+      try {
+        const order = await groupsFirst({ windowId });
+        Logger.info('自动处理后分组前置完成', { windowId, ...order });
+      } catch (err) {
+        Logger.warn('自动处理后分组前置失败', { windowId, error: String(err) });
       }
     }
   }
@@ -222,7 +241,7 @@ async function syncAll(options) {
 
   if (config.groupsFirst === true) {
     const order = await groupsFirst();
-    Logger.info('分组置前完成', order);
+    Logger.info('分组前置完成', order);
   }
 
   Logger.info(
@@ -245,7 +264,7 @@ async function collapseGroups(mode, config, windowId) {
   const scope = typeof windowId === 'number' ? { windowId } : {};
   const rules = Array.isArray(config && config.rules) ? config.rules : [];
 
-  // 只有“按规则折叠”需要规则；规则里的 collapsed 就是基础配置的「命中后折叠」
+  // 只有“按规则折叠”需要规则；规则里的 collapsed 就是基础配置的「自动折叠」
   const ruleCollapsedNames = new Set(
     rules
       .filter((rule) => rule && rule.enabled !== false && rule.collapsed === true)
@@ -336,14 +355,16 @@ async function executeToolbarClick(tab) {
 }
 
 browser.tabs.onCreated.addListener((tab) => {
-  schedule(tab);
+  schedule(tab, { groupChanged: Number.isInteger(tab?.groupId) && tab.groupId >= 0 });
 });
 
 browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   manualGroup.capture(tabId, changeInfo, tab).catch(err => Logger.warn('手动分组提示失败', String(err)));
-  // 只在“加载完成”或“URL 变化”时处理，避免每个子资源事件都触发
-  if (changeInfo.status !== 'complete' && !changeInfo.url) return;
-  schedule(tab, { preserveExpandedGroup: true });
+  const navigation = changeInfo.status === 'complete' || Boolean(changeInfo.url);
+  const groupChanged = Number.isInteger(changeInfo.groupId);
+  if (!navigation && !groupChanged) return;
+  // 单纯归属变化只整理位置，不重新匹配规则，避免干预手动归组结果。
+  schedule(tab, { groupChanged, orderOnly: !navigation });
 });
 
 browser.runtime.onInstalled.addListener((details) => {
@@ -378,7 +399,7 @@ async function resolvePageStyle(tab, url) {
   const titleRule = TitleRule.normalizeTitleRule(matched.rule);
   const needsHighlight =
     highlight.enabled && (highlight.border.sides.length > 0 || highlight.banner.positions.length > 0);
-  const needsTitle = titleRule.enabled && titleRule.rules.some((entry) => entry.pattern.trim() !== '');
+  const needsTitle = titleRule.enabled && titleRule.rules.some((entry) => entry.titlePattern.trim() !== '' || entry.urlPattern.trim() !== '');
 
   if (!needsHighlight && !needsTitle) {
     Logger.info('页面标识查询：分组未启用页面内标识或标题规则', {

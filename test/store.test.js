@@ -24,7 +24,7 @@ test('默认配置能通过校验', () => {
   const result = validateConfig(validConfig());
   assert.equal(result.ok, true);
   assert.equal(result.config.schemaVersion, SCHEMA_VERSION);
-  assert.equal(SCHEMA_VERSION, 1);
+  assert.equal(SCHEMA_VERSION, 2);
 });
 
 test('clone 产生独立副本', () => {
@@ -35,7 +35,7 @@ test('clone 产生独立副本', () => {
 
 test('schemaVersion 不符时拒绝', () => {
   const config = validConfig();
-  config.schemaVersion = 2;
+  config.schemaVersion = 99;
   const result = validateConfig(config);
   assert.equal(result.ok, false);
   assert.match(result.errors.join('\n'), /schemaVersion/);
@@ -259,23 +259,23 @@ test('buildConfigFromRules：保留 highlight / titleRule 并规范化字段（�
       titleRule: {
         enabled: true,
         rules: [
-          { pattern: '^(.*)$', replacement: '[T] X $1', description: '测试' }
+          { titlePattern: '^(.*)$', replacement: '[T] X $1', description: '测试' }
         ],
-        testText: 'a\nb'
+        testCases: [{ title: 'a', url: '' }, { title: 'b', url: '' }]
       }
     }
   ]);
 
-  assert.equal(config.schemaVersion, 1);
+  assert.equal(config.schemaVersion, SCHEMA_VERSION);
   assert.equal(config.rules[0].name, '开发');
   assert.equal(config.rules[0].note, '本地');
   assert.equal(config.rules[0].minTabs, 1);
   assert.deepEqual(config.rules[0].patterns, ['*://localhost:*/*']);
   assert.equal(config.rules[0].highlight.enabled, true, 'highlight 不能在组装时丢失');
   assert.equal(config.rules[0].titleRule.enabled, true, 'titleRule 不能在组装时丢失');
-  assert.equal(config.rules[0].titleRule.rules[0].pattern, '^(.*)$');
+  assert.equal(config.rules[0].titleRule.rules[0].titlePattern, '^(.*)$');
   assert.equal(config.rules[0].titleRule.rules[0].replacement, '[T] X $1');
-  assert.equal(config.rules[0].titleRule.testText, 'a\nb');
+  assert.deepEqual(config.rules[0].titleRule.testCases, [{ title: 'a', url: '' }, { title: 'b', url: '' }]);
   assert.equal(validateConfig(config).ok, true);
 });
 
@@ -292,27 +292,27 @@ test('默认配置带 titleRule：默认关闭、规则组为空', () => {
   const titleRule = DEFAULT_CONFIG.rules[0].titleRule;
   assert.equal(titleRule.enabled, false);
   assert.deepEqual(titleRule.rules, []);
-  assert.equal(titleRule.testText, '');
+  assert.deepEqual(titleRule.testCases, []);
 });
 
 test('titleRule：规则里的非法正则被拒绝', () => {
   const bad = validConfig();
   bad.rules[0].titleRule = {
     enabled: true,
-    rules: [{ pattern: '([', replacement: 'x' }],
-    testText: ''
+    rules: [{ titlePattern: '([', replacement: 'x' }],
+    testCases: []
   };
   const result = validateConfig(bad);
   assert.equal(result.ok, false);
-  assert.match(result.errors.join('\n'), /titleRule\.rules\[0\]\.pattern 不是合法的正则/);
+  assert.match(result.errors.join('\n'), /titleRule\.rules\[0\]\.titlePattern 不是合法的正则/);
 });
 
 test('titleRule：空 pattern 被拒绝', () => {
   const bad = validConfig();
-  bad.rules[0].titleRule = { enabled: true, rules: [{ pattern: '   ' }], testText: '' };
+  bad.rules[0].titleRule = { enabled: true, rules: [{ titlePattern: '   ' }], testCases: [] };
   const result = validateConfig(bad);
   assert.equal(result.ok, false);
-  assert.match(result.errors.join('\n'), /titleRule\.rules\[0\]\.pattern 必须是非空字符串/);
+  assert.match(result.errors.join('\n'), /titlePattern\/urlPattern 至少填写一个正则/);
 });
 
 test('highlight：边框与 banner 的不透明度各自校验 0~100', () => {
@@ -443,14 +443,17 @@ test('全局提示开关：默认开启、兼容缺省、校验类型并保留�
   assert.equal(roundtrip.config.groupsFirst,true);
 });
 
-test('strictMode：默认关闭、兼容缺省，配置构建及导入导出保留开关', () => {
-  assert.equal(DEFAULT_CONFIG.strictMode,false);
-  const old=validConfig();delete old.strictMode;
+test('规则 strictMode：默认关闭、兼容缺省，配置构建及导入导出保留开关', () => {
+  assert.equal('strictMode' in DEFAULT_CONFIG,false);
+  assert.equal(DEFAULT_CONFIG.rules[0].strictMode,false);
+  const old=validConfig();delete old.rules[0].strictMode;
   assert.equal(validateConfig(old).ok,true);
-  assert.equal(buildConfigFromRules([]).strictMode,false);
-  const config=buildConfigFromRules([],'sync','zh',false,{strictMode:true});
-  assert.equal(parseConfigText(JSON.stringify(config)).config.strictMode,true);
-  config.strictMode='true';
+  const config=buildConfigFromRules([{id:'a',name:'A',patterns:['https://a/*'],strictMode:true},{id:'b',name:'B',patterns:['https://b/*']}]);
+  assert.equal('strictMode' in config,false);
+  const parsed=parseConfigText(JSON.stringify(config));
+  assert.equal(parsed.config.rules[0].strictMode,true);
+  assert.equal(parsed.config.rules[1].strictMode,false);
+  config.rules[0].strictMode='true';
   assert.equal(validateConfig(config).ok,false);
 });
 
@@ -471,4 +474,81 @@ test('追加导入：非法格式和规则拒绝，同名留待追加时重命�
   config.rules.push({...structuredClone(config.rules[0]),id:'another-id'});
   assert.equal(parseConfigText(JSON.stringify(config)).ok,false);
   assert.equal(parseConfigText(JSON.stringify(config),{rulesOnly:true}).ok,true);
+});
+
+test('旧全局 strictMode 迁移：只补齐缺省规则，组内显式值优先，不修改原对象',()=>{
+  const raw={...validConfig(),strictMode:true,rules:[
+    {id:'a',name:'A',patterns:['https://a/*']},
+    {id:'b',name:'B',patterns:['https://b/*'],strictMode:false},
+    {id:'c',name:'C',patterns:['https://c/*'],strictMode:true}
+  ]};
+  const before=structuredClone(raw);
+  const result=validateConfig(raw);
+  assert.equal(result.ok,true);
+  assert.equal('strictMode' in result.config,false);
+  assert.deepEqual(result.config.rules.map(rule=>rule.strictMode),[true,false,true]);
+  assert.deepEqual(raw,before);
+  assert.deepEqual(parseConfigText(JSON.stringify(result.config)).config,result.config);
+  raw.strictMode=false;
+  assert.deepEqual(validateConfig(raw).config.rules.map(rule=>rule.strictMode),[false,false,true]);
+});
+
+test('追加导入：保留组内 strictMode，忽略旧全局 strictMode，不污染现有规则',()=>{
+  const raw={schemaVersion:1,strictMode:true,rules:[
+    {id:'a',name:'A',patterns:['https://a/*']},
+    {id:'b',name:'B',patterns:['https://b/*'],strictMode:true}
+  ]};
+  const result=parseConfigText(JSON.stringify(raw),{rulesOnly:true});
+  assert.equal(result.ok,true);
+  assert.equal('strictMode' in result.config,false);
+  assert.equal(result.config.rules[0].strictMode,undefined);
+  assert.equal(result.config.rules[1].strictMode,true);
+});
+
+test('schema 1：读取和两种导入均迁移标题规则与测试用例，保持模板效果且不修改输入', () => {
+  const old = validConfig();
+  old.schemaVersion = 1;
+  old.rules[0].titleRule = { enabled: true,
+    rules: [{ pattern: '^(.*)$', replacement: '$1 ${url.1} $$', description: 'legacy' }],
+    testText: ' Alpha \r\n\nBeta' };
+  const snapshot = JSON.stringify(old);
+  for (const result of [validateConfig(old), parseConfigText(snapshot), parseConfigText(snapshot, { rulesOnly: true })]) {
+    assert.equal(result.ok, true, result.errors?.join('\n'));
+    assert.equal(result.config.schemaVersion, 2);
+    const spec = result.config.rules[0].titleRule;
+    assert.deepEqual(spec.rules[0], { titlePattern: '^(.*)$', urlPattern: '', replacement: '$1 $${url.1} $$', description: 'legacy' });
+    assert.deepEqual(spec.testCases, [{ title: 'Alpha', url: '' }, { title: 'Beta', url: '' }]);
+    assert.equal('testText' in spec, false);
+    assert.equal(validateConfig(result.config).ok, true);
+  }
+  assert.equal(JSON.stringify(old), snapshot);
+});
+
+test('schema 2：URL-only 与双条件有效，旧字段、非法 URL 正则与非结构化测试被拒绝', () => {
+  for (const entry of [{ urlPattern: '/(42)$', replacement: '${url.1}' },
+    { titlePattern: '^App$', urlPattern: '/(42)$', replacement: '${title.0} ${url.1}' }]) {
+    const config = validConfig();
+    config.rules[0].titleRule = { enabled: true, rules: [entry], testCases: [{ title: 'App', url: 'https://host/42' }] };
+    assert.equal(validateConfig(config).ok, true);
+  }
+  for (const spec of [
+    { rules: [{ pattern: '^App$', replacement: 'x' }] },
+    { rules: [{ titlePattern: '^App$', urlPattern: '[' }] },
+    { rules: [{ urlPattern: 42 }] },
+    { testText: 'App' }, { testCases: 'App' }, { testCases: ['App'] },
+    { testCases: [{ title: 'App' }] }, { testCases: [{ title: 42, url: '' }] }
+  ]) {
+    const config = validConfig();
+    config.rules[0].titleRule = spec;
+    assert.equal(validateConfig(config).ok, false, JSON.stringify(spec));
+  }
+});
+
+test('schema 1：坏标题规则不会在迁移时被静默吞掉', () => {
+  for (const spec of [{ testText: 42 }, { rules: [{ pattern: '[' }] }, { rules: [{ pattern: 42 }] }]) {
+    const config = validConfig();
+    config.schemaVersion = 1;
+    config.rules[0].titleRule = spec;
+    assert.equal(validateConfig(config).ok, false);
+  }
 });

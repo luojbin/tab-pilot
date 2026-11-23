@@ -1,4 +1,6 @@
 import browser from '../platform/browser.js';
+import { migrateConfig } from '../core/config-migration.js';
+import { compilePattern } from '../core/title-rule.js';
 
 /**
  * TabPilot 存储层
@@ -6,18 +8,18 @@ import browser from '../platform/browser.js';
  * 唯一负责读写 browser.storage.local 的地方；所有配置读取都从这里走，
  * 以后换 IndexedDB / 同步存储只改本文件。
  *
- * 配置结构（schemaVersion 1，1.0 之后的基线）：
+ * 配置结构（schemaVersion 2，兼容迁移正式 schema 1）：
  *   { schemaVersion, rules: [rule] }
  *   rule = { id, enabled, name, color, collapsed, minTabs, note, patterns[],
  *            highlight{...}, titleRule{...} }
  * 一条规则对应一个标签页分组，`patterns` 里可以有多个匹配路径，
  * 规则在数组中的顺序就是优先级（越靠前越高）。
  *
- * 说明：开发期的 schemaVersion 2–5 属于过渡格式，1.0 起作废，不再提供迁移；
- * 以后的结构变更都从这里的 1 重新递增，并在当次改动里补迁移。
+ * 说明：正式 schema 1 自动迁移至 2；早期开发格式不提供迁移，
+ * 与当前编号相同的旧开发数据仍必须通过当前字段校验。
  */
 const CONFIG_KEY = 'tabpilot:config';
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 /** Firefox tabGroups 的预设颜色。 */
 const GROUP_COLORS = [
@@ -38,7 +40,7 @@ const DEFAULT_MIN_TABS = 1;
 /**
  * 点击工具栏图标的行为：
  *   sync                  仅同步（默认，也是 v1.2.0 之前的行为）
- *   syncRuleCollapse      同步后按规则里的「命中后折叠」折叠分组
+ *   syncRuleCollapse      同步后按规则里的「自动折叠」折叠分组
  *   syncCollapseInactive  同步后折叠不含活动标签的分组
  *   syncCollapseAll       同步后折叠所有分组
  * 折叠只影响点击时所在的窗口。
@@ -70,7 +72,6 @@ const DEFAULT_CONFIG = {
   schemaVersion: SCHEMA_VERSION,
   clickAction: DEFAULT_CLICK_ACTION,
   groupsFirst: false,
-  strictMode: false,
   autoUpdateGroupRules: true,
   showActionResult: true,
   language: DEFAULT_LANGUAGE,
@@ -81,6 +82,7 @@ const DEFAULT_CONFIG = {
       name: '开发',
       color: 'green',
       collapsed: false,
+      strictMode: false,
       minTabs: 1,
       note: '本地开发环境',
       patterns: ['*://localhost:*/*'],
@@ -92,7 +94,7 @@ const DEFAULT_CONFIG = {
       titleRule: {
         enabled: false,
         rules: [],
-        testText: ''
+        testCases: []
       }
     }
   ]
@@ -129,6 +131,7 @@ function checkInteger(value, min, max, path, errors) {
  *   保存与导入仍然严格拒绝。
  */
 function validateConfig(raw, options) {
+  raw = migrateConfig(raw);
   const errors = [];
   const opts = options || {};
 
@@ -200,6 +203,9 @@ function validateConfig(raw, options) {
     if (rule.collapsed !== undefined && typeof rule.collapsed !== 'boolean') {
       errors.push(`${where}.collapsed 必须是布尔值`);
     }
+    if (rule.strictMode !== undefined && typeof rule.strictMode !== 'boolean') {
+      errors.push(`${where}.strictMode 必须是布尔值`);
+    }
     if (rule.note !== undefined && typeof rule.note !== 'string') {
       errors.push(`${where}.note 必须是字符串`);
     }
@@ -224,8 +230,14 @@ function validateConfig(raw, options) {
         if (titleRule.enabled !== undefined && typeof titleRule.enabled !== 'boolean') {
           errors.push(`${at}.enabled 必须是布尔值`);
         }
-        if (titleRule.testText !== undefined && typeof titleRule.testText !== 'string') {
-          errors.push(`${at}.testText 必须是字符串`);
+        if ('testText' in titleRule) errors.push(`${at}.testText 已改为 testCases`);
+        if (titleRule.testCases !== undefined) {
+          if (!Array.isArray(titleRule.testCases)) errors.push(`${at}.testCases 必须是数组`);
+          else titleRule.testCases.forEach((row, index) => {
+            if (!isPlainObject(row) || typeof row.title !== 'string' || typeof row.url !== 'string') {
+              errors.push(`${at}.testCases[${index}] 必须包含 title 和 url 字符串`);
+            }
+          });
         }
         if (titleRule.rules !== undefined) {
           if (!Array.isArray(titleRule.rules)) {
@@ -237,14 +249,17 @@ function validateConfig(raw, options) {
                 errors.push(`${entryAt} 必须是对象`);
                 return;
               }
-              if (typeof entry.pattern !== 'string' || entry.pattern.trim() === '') {
-                errors.push(`${entryAt}.pattern 必须是非空字符串`);
-              } else {
-                try {
-                  new RegExp(entry.pattern);
-                } catch (err) {
-                  errors.push(`${entryAt}.pattern 不是合法的正则：${(err && err.message) || err}`);
+              if ('pattern' in entry) errors.push(`${entryAt}.pattern 已改为 titlePattern/urlPattern`);
+              for (const field of ['titlePattern', 'urlPattern']) {
+                if (entry[field] !== undefined && typeof entry[field] !== 'string') errors.push(`${entryAt}.${field} 必须是字符串`);
+                else if (typeof entry[field] === 'string' && entry[field].trim()) {
+                  try { compilePattern(entry[field]); }
+                  catch (err) { errors.push(`${entryAt}.${field} 不是合法的正则：${err.message || err}`); }
                 }
+              }
+              if (!(typeof entry.titlePattern === 'string' && entry.titlePattern.trim()) &&
+                  !(typeof entry.urlPattern === 'string' && entry.urlPattern.trim())) {
+                errors.push(`${entryAt}.titlePattern/urlPattern 至少填写一个正则`);
               }
               if (entry.replacement !== undefined && typeof entry.replacement !== 'string') {
                 errors.push(`${entryAt}.replacement 必须是字符串`);
@@ -319,6 +334,11 @@ function validateConfig(raw, options) {
   // 兼容已发布配置：旧全局开关不再生效，也不再写入新配置。
   const config = { ...raw };
   delete config.globalEnabled;
+  // 全局严格模式迁移到规则，显式的组内设置优先；不修改原始导入对象。
+  if (raw.strictMode !== undefined) {
+    config.rules = raw.rules.map(rule => ({ ...rule, strictMode: rule.strictMode ?? raw.strictMode }));
+  }
+  delete config.strictMode;
   return { ok: true, config };
 }
 
@@ -401,7 +421,6 @@ function buildConfigFromRules(rules, clickAction, language, groupsFirst = false,
     clickAction: normalizeClickAction(clickAction),
     language: normalizeLanguage(language),
     groupsFirst: groupsFirst === true,
-    strictMode: preferences.strictMode === true,
     autoUpdateGroupRules: preferences.autoUpdateGroupRules !== false,
     showActionResult: preferences.showActionResult !== false,
     rules: list.map((rule) => {
@@ -411,6 +430,7 @@ function buildConfigFromRules(rules, clickAction, language, groupsFirst = false,
         name: String(rule && rule.name != null ? rule.name : '').trim(),
         color: rule && GROUP_COLORS.includes(rule.color) ? rule.color : DEFAULT_COLOR,
         collapsed: Boolean(rule && rule.collapsed === true),
+        strictMode: rule?.strictMode === true,
         minTabs: rule && rule.minTabs != null ? rule.minTabs : DEFAULT_MIN_TABS,
         note: String(rule && rule.note != null ? rule.note : '').trim(),
         patterns: (Array.isArray(rule && rule.patterns) ? rule.patterns : [])

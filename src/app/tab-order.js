@@ -1,8 +1,9 @@
 import browser from '../platform/browser.js';
 
 /** 整组前移，不调用 tabs.move，避免 Firefox 将游离标签并入相邻分组。 */
-export async function groupsFirst() {
-  const tabs = await browser.tabs.query({});
+export async function groupsFirst(options = {}) {
+  const scope = Number.isInteger(options.windowId) ? { windowId: options.windowId } : {};
+  const tabs = await browser.tabs.query(scope);
   const windows = new Map();
   for (const tab of tabs) {
     if (!windows.has(tab.windowId)) windows.set(tab.windowId, []);

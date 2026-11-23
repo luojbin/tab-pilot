@@ -6,7 +6,8 @@
  */
 
 const EN = {
-  '当前活动标签在原分组内跳转并再次命中时，保持已展开的分组。': 'Keep an expanded group open when its active tab navigates and still matches the same group rule.',
+  '新建分组或有标签从组外移入时自动折叠；组内跳转或刷新保持当前状态。': 'Collapse when a group is created or tabs enter from outside. Keep its current state during navigation or reloads within the group.',
+  '仅在新建分组或有标签从组外移入时自动折叠，组内跳转不改变折叠状态。': 'Only auto-collapse when creating a group or moving tabs into it. Navigation within the group does not change its collapse state.',
   '新建空白规则': 'New blank rule',
   '从当前窗口分组创建规则': 'Create rules from groups in this window',
   '当前窗口没有可生成规则的分组：已有同名规则，或组内没有可用的网站。': 'No groups to import in this window: matching rules already exist, or the groups have no supported websites.',
@@ -29,8 +30,8 @@ const EN = {
 
   '选择设置页和弹出面板的显示语言，也可跟随浏览器。': 'Choose the language for settings and the popup, or follow your browser.',
   '严格模式': 'Strict mode',
-  '页面跳转到不匹配当前分组规则的网站时，自动移出分组；仅处理已启用规则对应的分组。':
-    'Automatically ungroup a tab when it navigates to a website outside its current group rule. Only groups with an enabled rule are affected.',
+  '页面跳转到不匹配本分组规则的网站时，自动移出本分组。':
+    'Automatically remove a tab from this group when it navigates to a website outside this group’s rule.',
 
   '自动更新分组规则': 'Prompt to update group rules',
   '操作结果提示': 'Show action results',
@@ -53,9 +54,9 @@ const EN = {
   '设置': 'Settings',
   '正在执行…': 'Working…',
   '无法打开设置，请重试。': 'Could not open settings. Try again.',
-  '分组置前': 'Groups first',
-  '同步后按固定标签、分组、游离标签排序，保留各自顺序；自动归组时不重排。':
-    'After sync, arrange pinned tabs, groups, then ungrouped tabs, preserving their relative order. Auto-grouping does not reorder tabs.',
+  '分组前置': 'Groups first',
+  '将分组移到前面、游离标签移到后面，保留各自顺序；同步、自动归组或分组成员变化后更新。':
+    'Move groups to the front and ungrouped tabs to the back, preserving their relative order. Update after sync, automatic grouping, or group membership changes.',
   '复制': 'Duplicate',
   '副本': 'Copy',
   '复制、调整顺序或删除': 'Duplicate, reorder or delete',
@@ -156,8 +157,8 @@ const EN = {
   '可选，例如「开发环境」': 'Optional, e.g. Development environment',
   '启用': 'Enabled',
   '启用该分组': 'Enable this group',
-  '命中后折叠': 'Collapse when grouped',
-  '命中后折叠该分组': 'Collapse this group when grouped',
+  '自动折叠': 'Auto-collapse',
+  '自动折叠该分组': 'Auto-collapse this group',
   '匹配路径': 'Match patterns',
   '匹配路径 {n}': 'Match pattern {n}',
   '每条规则至少保留一条匹配路径': 'Each rule needs at least one match pattern',
@@ -191,12 +192,30 @@ const EN = {
   '左下': 'Bottom left',
 
   // 标签页名规则
+  '标题条件': 'Title condition',
+  'URL 条件': 'URL condition',
+  '目标文本': 'Replacement',
+  '正则表达式，可留空': 'Regular expression, optional',
+  '正则主体，留空表示不限制': 'Regex body; leave empty for no restriction',
+  '留空表示不限制；如需匹配后续路径、参数等变体，请加 .*': 'Leave empty for no restriction; add .* to match trailing paths, parameters, or other variants',
+  '支持 ${title.1}、${url.1} 等捕获组': 'Supports captures such as ${title.1} and ${url.1}',
+  '规则{index}': 'Rule {index}',
+  '未匹配': 'No match',
+  '正则有误': 'Invalid regex',
+  "标题条件（正则，可留空）": "Title condition (regex, optional)",
+  "URL 条件（正则，可留空）": "URL condition (regex, optional)",
+  "目标文本（支持标题和 URL 捕获组）": "Replacement (title and URL capture groups)",
+  "测试用例（每条填写标题和 URL）": "Test cases (title and URL per case)",
+  "标题": "Title",
+  "URL": "URL",
+  "删除测试用例": "Delete test case",
+  "＋ 添加测试用例": "+ Add test case",
+  "暂无测试用例，请先添加。": "No test cases. Add one first.",
+  "按顺序使用首条命中的规则。标题和 URL 条件至少填写一个，同时填写时须同时命中。用 ${title.1}、${url.1} 引用捕获组，命名组用 ${title.name}、${url.name}；$$ 表示美元符号。目标文本是完整的新标题。标题和 URL 条件均默认完整匹配，无需填写 ^ 和 $；如需匹配后续路径、参数等变体，请显式添加 .*。": "Use the first matching rule. Enter at least one condition; both must match when provided. Use ${title.1} and ${url.1} for captures, or ${title.name} and ${url.name} for named captures; $$ inserts a dollar sign. The replacement is the complete new title. Both title and URL conditions match the entire value. No ^ or $ is needed. Explicitly add .* to allow trailing paths, parameters, or other variants.",
   '标签页名规则': 'Tab title rules',
   '标签页名规则：已启用': 'Tab title rules: on',
   '标签页名规则：未启用': 'Tab title rules: off',
   '按顺序匹配并改写标签页标题': 'Match and rewrite tab titles in order',
-  '按从上到下的顺序匹配，命中第一条就停止；只替换第一个匹配。目标文本可用 $1/$2、$<name>、$&、$$；需要加前缀的话直接写在目标文本里，例如 "W· $1"。':
-    'Rules are tried from top to bottom and stop at the first match; only the first match is replaced. The replacement supports $1/$2, $<name>, $&, $$. To add a prefix, put it directly in the replacement, e.g. "W· $1".',
   '还没有命名规则，点下方按钮添加。': 'No title rules yet. Add one with the button below.',
   '＋ 添加命名规则': '+ Add title rule',
   '描述（可选，例如：Jira 标题）': 'Description (optional, e.g. Jira title)',
