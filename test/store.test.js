@@ -29,8 +29,8 @@ test('默认配置能通过校验', () => {
 
 test('clone 产生独立副本', () => {
   const copy = clone(DEFAULT_CONFIG);
-  copy.rules[0].minTabs = 99;
-  assert.equal(DEFAULT_CONFIG.rules[0].minTabs, 1);
+  copy.rules[0].tabGroup.minTabs = 99;
+  assert.equal(DEFAULT_CONFIG.rules[0].tabGroup.minTabs, 1);
 });
 
 test('schemaVersion 不符时拒绝', () => {
@@ -106,11 +106,11 @@ test('patterns 必须是非空数组', () => {
 test('minTabs 必须 >= 1 的整数', () => {
   for (const bad of [0, 1.5, -2, '2', null]) {
     const config = validConfig();
-    config.rules[0].minTabs = bad;
+    config.rules[0].tabGroup.minTabs = bad;
     assert.equal(validateConfig(config).ok, false, `minTabs=${JSON.stringify(bad)} 应被拒绝`);
   }
   const okConfig = validConfig();
-  okConfig.rules[0].minTabs = 3;
+  okConfig.rules[0].tabGroup.minTabs = 3;
   assert.equal(validateConfig(okConfig).ok, true);
 });
 
@@ -129,7 +129,7 @@ test('未知分组颜色被拒绝，预设颜色全部接受', () => {
 test('enabled / collapsed 必须是布尔值', () => {
   const config = validConfig();
   config.rules[0].enabled = 'yes';
-  config.rules[0].collapsed = 1;
+  config.rules[0].tabGroup.collapsed = 1;
   const result = validateConfig(config);
   assert.equal(result.ok, false);
   assert.equal(result.errors.filter((error) => /enabled|collapsed/.test(error)).length, 2);
@@ -188,8 +188,7 @@ test('导出文本可被导入解析（round-trip）', () => {
     enabled: true,
     name: '代码',
     color: 'blue',
-    collapsed: false,
-    minTabs: 3,
+    tabGroup: { enabled: true, collapsed: false, minTabs: 3, strictMode: false },
     note: '攒够 3 个再归组',
     patterns: ['*://*.github.com/*', '*://gitlab.com/*']
   });
@@ -269,7 +268,7 @@ test('buildConfigFromRules：保留 highlight / titleRule 并规范化字段（�
   assert.equal(config.schemaVersion, SCHEMA_VERSION);
   assert.equal(config.rules[0].name, '开发');
   assert.equal(config.rules[0].note, '本地');
-  assert.equal(config.rules[0].minTabs, 1);
+  assert.equal(config.rules[0].tabGroup.minTabs, 1);
   assert.deepEqual(config.rules[0].patterns, ['*://localhost:*/*']);
   assert.equal(config.rules[0].highlight.enabled, true, 'highlight 不能在组装时丢失');
   assert.equal(config.rules[0].titleRule.enabled, true, 'titleRule 不能在组装时丢失');
@@ -445,15 +444,15 @@ test('全局提示开关：默认开启、兼容缺省、校验类型并保留�
 
 test('规则 strictMode：默认关闭、兼容缺省，配置构建及导入导出保留开关', () => {
   assert.equal('strictMode' in DEFAULT_CONFIG,false);
-  assert.equal(DEFAULT_CONFIG.rules[0].strictMode,false);
-  const old=validConfig();delete old.rules[0].strictMode;
+  assert.equal(DEFAULT_CONFIG.rules[0].tabGroup.strictMode,false);
+  const old=validConfig();delete old.rules[0].tabGroup.strictMode;
   assert.equal(validateConfig(old).ok,true);
-  const config=buildConfigFromRules([{id:'a',name:'A',patterns:['https://a/*'],strictMode:true},{id:'b',name:'B',patterns:['https://b/*']}]);
+  const config=buildConfigFromRules([{id:'a',name:'A',patterns:['https://a/*'],tabGroup:{strictMode:true}},{id:'b',name:'B',patterns:['https://b/*']}]);
   assert.equal('strictMode' in config,false);
   const parsed=parseConfigText(JSON.stringify(config));
-  assert.equal(parsed.config.rules[0].strictMode,true);
-  assert.equal(parsed.config.rules[1].strictMode,false);
-  config.rules[0].strictMode='true';
+  assert.equal(parsed.config.rules[0].tabGroup.strictMode,true);
+  assert.equal(parsed.config.rules[1].tabGroup.strictMode,false);
+  config.rules[0].tabGroup.strictMode='true';
   assert.equal(validateConfig(config).ok,false);
 });
 
@@ -477,7 +476,7 @@ test('追加导入：非法格式和规则拒绝，同名留待追加时重命�
 });
 
 test('旧全局 strictMode 迁移：只补齐缺省规则，组内显式值优先，不修改原对象',()=>{
-  const raw={...validConfig(),strictMode:true,rules:[
+  const raw={...validConfig(),schemaVersion:1,strictMode:true,rules:[
     {id:'a',name:'A',patterns:['https://a/*']},
     {id:'b',name:'B',patterns:['https://b/*'],strictMode:false},
     {id:'c',name:'C',patterns:['https://c/*'],strictMode:true}
@@ -486,11 +485,11 @@ test('旧全局 strictMode 迁移：只补齐缺省规则，组内显式值优�
   const result=validateConfig(raw);
   assert.equal(result.ok,true);
   assert.equal('strictMode' in result.config,false);
-  assert.deepEqual(result.config.rules.map(rule=>rule.strictMode),[true,false,true]);
+  assert.deepEqual(result.config.rules.map(rule=>rule.tabGroup.strictMode),[true,false,true]);
   assert.deepEqual(raw,before);
   assert.deepEqual(parseConfigText(JSON.stringify(result.config)).config,result.config);
   raw.strictMode=false;
-  assert.deepEqual(validateConfig(raw).config.rules.map(rule=>rule.strictMode),[false,false,true]);
+  assert.deepEqual(validateConfig(raw).config.rules.map(rule=>rule.tabGroup.strictMode),[false,false,true]);
 });
 
 test('追加导入：保留组内 strictMode，忽略旧全局 strictMode，不污染现有规则',()=>{
@@ -501,8 +500,8 @@ test('追加导入：保留组内 strictMode，忽略旧全局 strictMode，不�
   const result=parseConfigText(JSON.stringify(raw),{rulesOnly:true});
   assert.equal(result.ok,true);
   assert.equal('strictMode' in result.config,false);
-  assert.equal(result.config.rules[0].strictMode,undefined);
-  assert.equal(result.config.rules[1].strictMode,true);
+  assert.equal(result.config.rules[0].tabGroup.strictMode,false);
+  assert.equal(result.config.rules[1].tabGroup.strictMode,true);
 });
 
 test('schema 1：读取和两种导入均迁移标题规则与测试用例，保持模板效果且不修改输入', () => {
@@ -551,4 +550,53 @@ test('schema 1：坏标题规则不会在迁移时被静默吞掉', () => {
     config.rules[0].titleRule = spec;
     assert.equal(validateConfig(config).ok, false);
   }
+});
+
+test('schema 1 → 2：群组旧字段迁移，三种读取路径一致，不修改原输入', () => {
+  const raw = { schemaVersion: 1, rules: [{ id: 'a', name: 'A', patterns: ['https://a/*'],
+    minTabs: 4, collapsed: true, strictMode: true }] };
+  const before = JSON.stringify(raw);
+  for (const result of [validateConfig(raw), parseConfigText(before), parseConfigText(before, { rulesOnly: true })]) {
+    assert.equal(result.ok, true, result.errors?.join('\n'));
+    assert.equal(result.config.schemaVersion, 2);
+    assert.deepEqual(result.config.rules[0].tabGroup, { enabled: true, minTabs: 4, collapsed: true, strictMode: true });
+    for (const field of ['minTabs', 'collapsed', 'strictMode']) assert.equal(field in result.config.rules[0], false);
+  }
+  assert.equal(JSON.stringify(raw), before);
+});
+
+test('schema 2：tabGroup 缺省合法，完整构建与禁用状态导入导出保留，字段类型严格校验', () => {
+  const config = buildConfigFromRules([{ id: 'a', name: 'A', patterns: ['https://a/*'], tabGroup: { enabled: false, minTabs: 3, collapsed: true, strictMode: true } }]);
+  assert.equal(config.schemaVersion, 2);
+  assert.deepEqual(parseConfigText(JSON.stringify(config)).config, config);
+  const minimal = { schemaVersion: 2, rules: [{ id: 'a', name: 'A', patterns: ['https://a/*'] }] };
+  assert.equal(validateConfig(minimal).ok, true);
+  for (const tabGroup of [null, [], false, { enabled: 'false' }, { minTabs: 0 }, { minTabs: 1.5 }, { minTabs: '2' }, { collapsed: 1 }, { strictMode: null }]) {
+    const raw = structuredClone(minimal);
+    raw.rules[0].tabGroup = tabGroup;
+    assert.equal(validateConfig(raw).ok, false, JSON.stringify(tabGroup));
+  }
+  for (const field of ['minTabs', 'collapsed', 'strictMode']) {
+    const raw = structuredClone(minimal);
+    raw.rules[0][field] = field === 'minTabs' ? 2 : true;
+    assert.equal(validateConfig(raw).ok, false);
+  }
+});
+
+test('schema 1 迁移不会丢弃旧群组字段的非法值', () => {
+  for (const fields of [{ minTabs: null }, { collapsed: 'true' }, { strictMode: 'false' }]) {
+    assert.equal(validateConfig({ schemaVersion: 1, rules: [{ id: 'a', name: 'A', patterns: ['https://a/*'], ...fields }] }).ok, false);
+  }
+});
+
+test('当前 schema 2 不执行中间格式迁移，开发期 schema 3 和平铺群组字段被拒绝', async () => {
+  const { migrateConfig } = await import('../src/core/config-migration.js');
+  const config = validConfig();
+  assert.equal(config.schemaVersion, 2);
+  assert.equal(migrateConfig(config), config);
+  const old = { schemaVersion: 2, rules: [{ id: 'a', name: 'A', patterns: ['https://a/*'], minTabs: 3, collapsed: true }] };
+  assert.equal(validateConfig(old).ok, false);
+  const development = { ...config, schemaVersion: 3 };
+  assert.equal(migrateConfig(development), development);
+  assert.equal(validateConfig(development).ok, false);
 });

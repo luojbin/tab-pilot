@@ -1,3 +1,4 @@
+import { normalizeTabGroup, tabGroupEnabled } from '../core/tab-group.js';
 import browser from '../platform/browser.js';
 import { markAutomaticGrouping, clearAutomaticGrouping, finishAutomaticGrouping } from '../core/manual-group-rule.js';
 
@@ -7,7 +8,7 @@ import { markAutomaticGrouping, clearAutomaticGrouping, finishAutomaticGrouping 
  * 这是唯一直接调用 browser.tabs.group / browser.tabGroups.* 的层，
  * 规则引擎只产出“命中了哪条规则”，不关心浏览器 API。
  *
- * 一条规则对应一个分组，分组属性直接取自规则（name / color / collapsed）。
+ * 一条规则对应一个分组，分组属性取自规则的 name / color 及 tabGroup.collapsed。
  */
 const FALLBACK_COLOR = 'grey';
 
@@ -33,11 +34,13 @@ function buildGroupPatch(group, rule) {
 }
 
 /**
- * @param {object} rule 命中的规则，其 name / color / collapsed 决定分组属性
+ * @param {object} rule 命中的规则，其 name / color / tabGroup.collapsed 决定分组属性
  * @param {object} tab 触发事件的标签页，始终会被归组
  * @param {Array<object>} [companions] 同一规则下要一起归组的其他标签页
  */
 async function applyRule(rule, tab, companions) {
+  if (!tabGroupEnabled(rule)) return { ok: true, skipped: true, reason: 'tab-group-disabled', tabIds: [] };
+  const groupOptions = normalizeTabGroup(rule);
   const groupName = nameOf(rule);
   if (groupName === '') {
     return { ok: false, error: '规则的 name 为空，无法确定目标分组' };
@@ -69,7 +72,7 @@ async function applyRule(rule, tab, companions) {
         throw err;
       }
       // 自动折叠仅在实际有标签入组成功后触发；关闭也不主动展开已有组。
-      if (rule.collapsed === true) patch.collapsed = true;
+      if (groupOptions.collapsed === true) patch.collapsed = true;
     }
     if (Object.keys(patch).length > 0) await browser.tabGroups.update(existing.id, patch);
     return { ok: true, skipped: !entering, groupId: existing.id, created: false, tabIds };
@@ -88,8 +91,8 @@ async function applyRule(rule, tab, companions) {
   }
 
   const updateProperties = { title: groupName, color: colorOf(rule) };
-  if (typeof rule.collapsed === 'boolean') {
-    updateProperties.collapsed = rule.collapsed;
+  if (typeof groupOptions.collapsed === 'boolean') {
+    updateProperties.collapsed = groupOptions.collapsed;
   }
   await browser.tabGroups.update(groupId, updateProperties);
 
@@ -103,6 +106,8 @@ async function applyRule(rule, tab, companions) {
  */
 async function apply(rule, tab, context) {
   if (!rule || !tab) return [{ ok: false, error: '缺少规则或标签页信息' }];
+
+  if (!tabGroupEnabled(rule) || context?.thresholdMet === false) return [{ ok: true, skipped: true, reason: 'group-not-requested' }];
 
   // 版本不支持时给出明确日志，而不是抛一个难懂的 TypeError
   if (!browser.tabs || typeof browser.tabs.group !== 'function' || !browser.tabGroups) {

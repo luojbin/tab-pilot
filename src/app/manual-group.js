@@ -1,3 +1,4 @@
+import { tabGroupEnabled } from '../core/tab-group.js';
 import { websitePattern, expandWebsiteInput, consumeAutomaticGrouping } from '../core/manual-group-rule.js';
 import { ruleMatchesUrl } from '../core/rules.js';
 
@@ -27,7 +28,7 @@ export function createManualGroupController(api, store, onSaved = async () => {}
       const group = await api.tabGroups.get(item.groupId);
       const { config, errors } = await store.loadConfig();
       const rule = config.rules.find(rule => rule.id === item.ruleId);
-      if (errors || config.autoUpdateGroupRules === false || !rule || rule.name.trim() !== group.title.trim()) return false;
+      if (errors || config.autoUpdateGroupRules === false || !rule || !tabGroupEnabled(rule) || rule.name.trim() !== group.title.trim()) return false;
       return tab.groupId === item.groupId && tab.windowId === item.windowId &&
         group.windowId === item.windowId && websitePattern(tab.url) === item.pattern;
     } catch { return false; }
@@ -59,7 +60,7 @@ export function createManualGroupController(api, store, onSaved = async () => {}
         const group = await api.tabGroups.get(change.groupId);
         if (!group.title?.trim()) return;
         const rules = config.rules.filter(rule => rule.name.trim() === group.title.trim());
-        if (rules.length !== 1 || rules.some(rule => ruleMatchesUrl(rule, tab.url))) return;
+        if (rules.length !== 1 || !tabGroupEnabled(rules[0]) || rules.some(rule => ruleMatchesUrl(rule, tab.url))) return;
         // 仅现有 TabPilot 规则对应的分组参与提示。
         const item = { id: `${tabId}-${change.groupId}-${Date.now()}`, tabId,
           groupId: change.groupId, windowId: tab.windowId, pattern, name: group.title,
@@ -90,7 +91,7 @@ export function createManualGroupController(api, store, onSaved = async () => {}
       const rules = config.rules.filter(rule => rule.name.trim() === group.title.trim());
       if (rules.length > 1) return { ok: false, reason: 'stale' };
       const rule = config.rules.find(rule => rule.id === item.ruleId);
-      if (!rule || rule.name.trim() !== group.title.trim()) return { ok: false, reason: 'stale' };
+      if (!rule || !tabGroupEnabled(rule) || rule.name.trim() !== group.title.trim()) return { ok: false, reason: 'stale' };
       rule.patterns = [...new Set([...rule.patterns, ...patterns])];
       const saved = await store.saveConfig(config);
       if (!saved.ok) return { ok: false, reason: 'save-failed' };

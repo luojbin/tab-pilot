@@ -53,11 +53,11 @@ export async function startPopup(api = browser, doc = document, view = window, r
       const cancel = doc.getElementById('cancelPattern');
       form.hidden = false;
       doc.getElementById('question').textContent = t('是否将该网站加入“{name}”的匹配规则？').replace('{name}', () => pending.name);
-      // 名称通过 textContent 写入，避免用户分组名被当作 HTML。
+      // 名称通过 textContent 写入，避免用户规则组名被当作 HTML。
       doc.getElementById('patternLabel').textContent = t('匹配地址');
       input.value = pending.pattern;
       input.setAttribute('aria-describedby', 'question');
-      add.textContent = t('加入分组');
+      add.textContent = t('加入规则组');
       cancel.textContent = t('取消');
       status.textContent = '';
       let busy = false;
@@ -74,7 +74,7 @@ export async function startPopup(api = browser, doc = document, view = window, r
           if (!response?.ok) {
             const messages = {
               'invalid-pattern': '请输入有效的匹配地址。',
-              stale: '页面或分组已变化，请关闭后重新操作。'
+              stale: '页面或标签页群组已变化，请关闭后重新操作。'
             };
             status.textContent = t(messages[response?.reason] || '保存失败，请重试。');
             status.className = 'error';

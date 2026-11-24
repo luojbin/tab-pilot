@@ -4,8 +4,7 @@ import { copyRule } from '../src/core/copy-rule.js';
 import { colorForIndex } from '../src/app/store.js';
 
 const source = {
-  id: 'dev', name: '开发', enabled: true, color: 'green', minTabs: 3,
-  collapsed: true, strictMode: true, note: '环境', patterns: ['*://localhost/*'],
+  id: 'dev', name: '开发', enabled: true, color: 'green', tabGroup: {enabled:true,minTabs:3,collapsed:true,strictMode:true}, note: '环境', patterns: ['*://localhost/*'],
   highlight: { enabled: true, border: { sides: ['top'] } },
   titleRule: { enabled: true, rules: [{ titlePattern: '^x', urlPattern: '/(42)$', replacement: '${url.1}' }], testCases: [{ title: 'x', url: 'https://host/42' }] }
 };
@@ -14,6 +13,8 @@ test('复制规则：保留路径，按新序号取色且停用，嵌套数据�
   const before = structuredClone(source);
   const copy = copyRule(source, [source], 'copy', '副本', colorForIndex(1));
   assert.deepEqual(copy, { ...before, id: 'copy', name: '开发（副本）', enabled: false, color: colorForIndex(1) });
+  copy.tabGroup.enabled = false;
+  copy.tabGroup.minTabs = 10;
   copy.patterns[0] = '*://staging.localhost/*';
   copy.highlight.border.sides.push('bottom');
   copy.titleRule.rules[0].replacement = 'changed';

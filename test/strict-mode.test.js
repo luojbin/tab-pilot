@@ -6,7 +6,7 @@ function fixture() {
   const tab={id:1,windowId:2,groupId:3,pinned:false,url:'https://other.example/page'};
   const eventTab={...tab};
   const group={id:3,windowId:2,title:'工作'};
-  const config={rules:[{strictMode:true,name:'工作',enabled:true,minTabs:5,patterns:['https://work.example/*']}]};
+  const config={rules:[{tabGroup:{strictMode:true,minTabs:5},name:'工作',enabled:true,patterns:['https://work.example/*']}]};
   const removed=[];
   const api={tabs:{async get(){return {...tab};},async ungroup(id){removed.push(id);}},tabGroups:{async get(){return {...group};}}};
   return {tab,eventTab,group,config,removed,run:()=>enforceStrictGroup(api,config,eventTab)};
@@ -32,8 +32,8 @@ test('严格模式：路径、协议与重定向后网址也参与匹配',async(
 test('严格模式：缺省关闭、停用规则、无对应规则均不移出',async()=>{
   for(const mode of ['off','missing','disabled','unmanaged','duplicate']){
     const f=fixture();
-    if(mode==='off')f.config.rules[0].strictMode=false;
-    if(mode==='missing')delete f.config.rules[0].strictMode;
+    if(mode==='off')f.config.rules[0].tabGroup.strictMode=false;
+    if(mode==='missing')delete f.config.rules[0].tabGroup.strictMode;
     if(mode==='disabled')f.config.rules[0].enabled=false;
     if(mode==='unmanaged')f.group.title='手动组';
     if(mode==='duplicate')f.config.rules.push({...f.config.rules[0]});
@@ -55,13 +55,20 @@ test('严格模式：固定标签、过期归属及临时内部页不移出',asy
 
 test('严格模式逐组独立：其他规则开启不影响当前关闭的组',async()=>{
   const f=fixture();
-  f.config.rules.push({name:'资料',enabled:true,strictMode:false,patterns:['https://docs.example/*']});
+  f.config.rules.push({name:'资料',enabled:true,tabGroup:{strictMode:false},patterns:['https://docs.example/*']});
   f.group.title='资料';
   assert.equal(await f.run(),false);
-  f.config.rules[1].strictMode=true;
+  f.config.rules[1].tabGroup.strictMode=true;
   assert.equal(await f.run(),true);
-  f.config.rules[0].strictMode=false;
+  f.config.rules[0].tabGroup.strictMode=false;
   f.group.title='工作';
   assert.equal(await f.run(),false);
   assert.deepEqual(f.removed,[1]);
+});
+
+test('标签页群组关闭后，即使严格模式为 true 也不移出标签', async () => {
+  const f = fixture();
+  f.config.rules[0].tabGroup.enabled = false;
+  assert.equal(await f.run(), false);
+  assert.deepEqual(f.removed, []);
 });

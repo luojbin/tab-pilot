@@ -113,7 +113,7 @@ function reset() {
 }
 
 function rule(overrides) {
-  return {
+  const source = {
     id: 'dev-localhost',
     enabled: true,
     name: '开发',
@@ -124,6 +124,9 @@ function rule(overrides) {
     patterns: ['*://localhost:*/*'],
     ...(overrides || {})
   };
+  const { minTabs, collapsed, strictMode, ...rest } = source;
+  return { ...rest, tabGroup: { enabled: true, minTabs, collapsed,
+    ...(strictMode === undefined ? {} : { strictMode }), ...source.tabGroup } };
 }
 
 function configWith(rules, globalEnabled) {
@@ -260,8 +263,8 @@ test('阈值未达成时按窗口内标签数判断，不归组', async () => {
   await Background.flush();
 
   assert.equal(state.groupCalls.length, 0, '只有 2 个 github 标签，未达阈值 3');
-  const miss = Logger.recent().find((entry) => entry.message.startsWith('无规则命中'));
-  assert.match(miss.message, /数量不足（2\/3）/);
+  const miss = Logger.recent().find((entry) => entry.message.startsWith('已确定规则归属'));
+  assert.equal(miss.detail.ruleId, 'code-github');
   assert.equal(miss.detail.steps[0].count, 2);
   assert.equal(miss.detail.steps[0].thresholdMet, false);
 });
@@ -383,7 +386,7 @@ test('addRule：同 id 覆盖而不是产生重复规则', async () => {
 
   const github = state.storedConfig.rules.filter((item) => item.id === 'code-github');
   assert.equal(github.length, 1);
-  assert.equal(github[0].minTabs, 2);
+  assert.equal(github[0].tabGroup.minTabs, 2);
 });
 
 test('addRule：缺少规则 id 时拒绝', async () => {
@@ -929,7 +932,7 @@ test('保存旧全局严格配置：迁移到规则，落盘不再包含全局 s
   const result=await Debug.setConfig(raw);
   assert.equal(result.ok,true);
   assert.equal('strictMode' in state.storedConfig,false);
-  assert.deepEqual(state.storedConfig.rules.map(rule=>rule.strictMode),[true,false]);
+  assert.deepEqual(state.storedConfig.rules.map(rule=>rule.tabGroup.strictMode),[true,false]);
 });
 
 test('自动折叠：创建新组时执行，阈值同批重复命中不重复入组或折叠',async()=>{
@@ -1018,4 +1021,55 @@ test('page-style：schema 2 的 URL-only 标题规则也会下发', async () => 
   assert.ok(style);
   assert.equal(style.titleRule.rules[0].urlPattern, '/item/([0-9]+)$');
   assert.equal(style.titleRule.testCases[0].title, 'App');
+});
+
+test('规则归属与浏览器群组分离：关闭群组或阈值不足仍下发首条规则的标识和标题', async () => {
+  for (const enabled of [false, true]) {
+    reset();
+    const first = rule({ id: 'first', name: '页面规则', tabGroup: { enabled, minTabs: enabled ? 3 : 1, collapsed: true, strictMode: true } });
+    first.highlight = { enabled: true, border: { sides: ['top'] } };
+    first.titleRule = { enabled: true, rules: [{ titlePattern: 'App', replacement: 'New title' }], testCases: [] };
+    const fallback = rule({ id: 'fallback', name: '兜底组' });
+    state.storedConfig = { schemaVersion: 2, rules: [first, fallback] };
+    const tab = localhostTab(1, 1);
+    state.tabsByWindow = { 1: [tab] };
+    Background.schedule(tab);
+    await Background.flush();
+    assert.equal(state.groupCalls.length, 0);
+    const stats = await Background.syncAll();
+    assert.equal(stats.grouped, 0);
+    assert.equal(stats.skipped, 1);
+    const style = await sendMessage({ type: 'page-style', url: tab.url }, { tab });
+    assert.equal(style.ruleId, 'first');
+    assert.equal(style.highlight.enabled, true);
+    assert.equal(style.titleRule.rules[0].replacement, 'New title');
+    state.storedConfig.rules[0].enabled = false;
+    const next = await sendMessage({ type: 'page-style', url: tab.url }, { tab });
+    assert.equal(next, null, '总开关关闭才跳过该规则，后续规则未启用页面效果');
+  }
+});
+
+test('群组关闭不会主动删除已有组，也不参与按规则折叠', async () => {
+  reset();
+  state.storedConfig = { schemaVersion: 2, rules: [rule({ tabGroup: { enabled: false, collapsed: true, strictMode: true } })] };
+  state.existingGroups = [{ id: 42, windowId: 1, title: '开发', collapsed: false }];
+  const tab = { ...localhostTab(1, 1), groupId: 42 };
+  state.tabsByWindow = { 1: [tab] };
+  await Background.syncAll({ includeGrouped: true });
+  await Background.collapseGroups('syncRuleCollapse', state.storedConfig, 1);
+  assert.equal(state.groupCalls.length, 0);
+  assert.equal(state.updateCalls.length, 0);
+  assert.equal(state.ungroupCalls.length, 0);
+});
+
+test('阈值批量归组不吸收归属前面规则的标签', async () => {
+  reset();
+  const first = rule({ id: 'specific', name: '特定', patterns: ['http://localhost:3000/special/*'], tabGroup: { enabled: false } });
+  const second = rule({ id: 'general', name: '一般', tabGroup: { minTabs: 2 } });
+  state.storedConfig = { schemaVersion: 2, rules: [first, second] };
+  const tabs = [localhostTab(1, 1, 'http://localhost:3000/special/a'), localhostTab(2, 1), localhostTab(3, 1)];
+  state.tabsByWindow = { 1: tabs };
+  Background.schedule(tabs[1]);
+  await Background.flush();
+  assert.deepEqual(state.groupCalls[0].tabIds, [2, 3]);
 });

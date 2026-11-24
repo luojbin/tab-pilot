@@ -1,3 +1,4 @@
+import { normalizeTabGroup } from '../core/tab-group.js';
 import browser from '../platform/browser.js';
 import { createIcon } from './icons.js';
 import { rulesFromGroups } from '../core/rules-from-groups.js';
@@ -18,10 +19,10 @@ import {
 } from './i18n.js';
 
 /**
- * TabPilot 配置页逻辑（两栏：左侧分组列表 + 右侧分组详情）
+ * TabPilot 配置页逻辑（两栏：左侧规则组列表 + 右侧规则组详情）
  *
- * 左侧只负责「选哪个分组、叫什么、什么颜色、是否启用」以及排序/删除；
- * 右侧负责选中分组的详细配置（匹配路径、阈值、折叠、备注），
+ * 左侧只负责「选哪个规则组、叫什么、什么颜色、是否启用」以及排序/删除；
+ * 右侧负责选中规则组的详细配置（匹配路径、阈值、折叠、备注），
  * 也为后续的标签页重命名、页面内高亮预留了位置。
  */
 const els = {
@@ -156,7 +157,7 @@ function setStatus(kind, message, details) {
   applyI18n(els.status);
 }
 
-// ---------------- 左侧：分组列表 ----------------
+// ---------------- 左侧：规则组列表 ----------------
 
 function menuButton(label, onClick, disabled, extraClass, icon) {
   const element = document.createElement('button');
@@ -213,7 +214,7 @@ function renderList() {
   if (state.rules.length === 0) {
     const empty = document.createElement('li');
     empty.className = 'empty';
-    empty.textContent = '还没有分组，点右上角 ＋ 添加。';
+    empty.textContent = '还没有规则组，点右上角 ＋ 添加。';
     els.list.appendChild(empty);
     applyI18n(els.list);
     syncDirtyState();
@@ -240,8 +241,8 @@ function renderList() {
     const name = document.createElement('span');
     name.className = 'group-name';
     name.setAttribute('data-i18n-skip', '');
-    name.textContent = rule.name || t('未命名分组');
-    name.title = rule.name || t('未命名分组');
+    name.textContent = rule.name || t('未命名规则组');
+    name.title = rule.name || t('未命名规则组');
 
     // 只读的 iOS 风格拨杆：表示启用状态，切换在右栏
     const stateSwitch = document.createElement('span');
@@ -257,7 +258,7 @@ function renderList() {
     menuToggle.className = 'menu-toggle icon-button';
     menuToggle.append(createIcon('menu'));
     menuToggle.title = '复制、调整顺序或删除';
-    menuToggle.setAttribute('aria-label', '分组操作菜单');
+    menuToggle.setAttribute('aria-label', '规则组操作菜单');
     menuToggle.setAttribute('aria-haspopup', 'menu');
     menuToggle.setAttribute('aria-expanded', String(openMenus.has(rule.id)));
     menuToggle.addEventListener('click', (event) => {
@@ -271,7 +272,7 @@ function renderList() {
     menu.className = 'group-menu';
     menu.setAttribute('role', 'menu');
     menu.addEventListener('click', event => event.stopPropagation());
-    menu.setAttribute('aria-label', '分组操作菜单');
+    menu.setAttribute('aria-label', '规则组操作菜单');
     menu.hidden = !openMenus.has(rule.id);
     menu.append(
       menuButton('上移', () => moveRule(rule.id, -1), index === 0, '', 'arrow-up'),
@@ -315,8 +316,8 @@ function renderList() {
 }
 
 /**
- * 左栏选中态：全局配置条目与分组条目互斥。
- * 点分组时只改类、不重建列表（保住 ⋯ 菜单状态），所以两块列表都要手动同步。
+ * 左栏选中态：全局配置条目与规则组条目互斥。
+ * 点规则组时只改类、不重建列表（保住 操作菜单状态），所以两块列表都要手动同步。
  */
 function syncSelection() {
   for (const item of els.list.querySelectorAll('.group-item')) {
@@ -349,8 +350,8 @@ function updateListItem(rule) {
 
   const name = item.querySelector('.group-name');
   if (name) {
-    name.textContent = rule.name || t('未命名分组');
-    name.title = rule.name || t('未命名分组');
+    name.textContent = rule.name || t('未命名规则组');
+    name.title = rule.name || t('未命名规则组');
   }
 
   const swatch = item.querySelector('.swatch');
@@ -428,12 +429,12 @@ async function addRulesFromWindow() {
     ]);
     const generated = rulesFromGroups(state.rules, groups, tabs, currentWindow.id, newRuleId);
     if (!generated.length) {
-      setStatus('info', t('当前窗口没有可生成规则的分组：已有同名规则，或组内没有可用的网站。'));
+      setStatus('info', t('当前窗口没有可生成规则组的标签页群组：已有同名规则组，或组内没有可用的网站。'));
       return;
     }
     const checked = Store.validateConfig({ ...Store.DEFAULT_CONFIG, rules: generated });
     if (!checked.ok) {
-      setStatus('error', t('从当前窗口创建规则失败。'), checked.errors);
+      setStatus('error', t('从当前窗口创建规则组失败。'), checked.errors);
       return;
     }
     state.rules.push(...generated);
@@ -441,9 +442,9 @@ async function addRulesFromWindow() {
     persistSelected();
     renderList();
     renderDetail();
-    setStatus('info', t('已从当前窗口创建 {count} 条规则，请保存并同步后生效。').replace('{count}', String(generated.length)));
+    setStatus('info', t('已从当前窗口创建 {count} 个规则组，请保存并同步后生效。').replace('{count}', String(generated.length)));
   } catch (err) {
-    setStatus('error', t('从当前窗口创建规则失败。'), [String(err)]);
+    setStatus('error', t('从当前窗口创建规则组失败。'), [String(err)]);
   } finally {
     busy = false;
     syncDirtyState();
@@ -455,11 +456,9 @@ function addRule() {
   const rule = {
     id: newRuleId(),
     enabled: true,
-    name: `新分组 ${state.rules.length + 1}`,
+    name: `新规则组 ${state.rules.length + 1}`,
     color: Store.colorForIndex(state.rules.length),
-    collapsed: false,
-    strictMode: false,
-    minTabs: 1,
+    tabGroup: { enabled: true, minTabs: 1, collapsed: false, strictMode: false },
     note: '',
     patterns: ['']
   };
@@ -521,7 +520,7 @@ function moveRule(id, delta) {
   renderDetail();
 }
 
-// ---------------- 右栏：分组详情 ----------------
+// ---------------- 右栏：规则组详情 ----------------
 
 const SECTION_KEY = 'tabpilot:sections:v2';
 
@@ -593,7 +592,7 @@ function createSection(id, title, body, options) {
 
 // ---------------- 标签页名规则 ----------------
 
-// 仅保存设置页的展示状态，不写入分组规则。
+// 仅保存设置页的展示状态，不写入规则组。
 const foldedTitleRules = new WeakSet();
 
 function ensureTitleRule(rule) {
@@ -1144,7 +1143,7 @@ function createHighlightSection(rule) {
 
   const toggleLabel = document.createElement('label');
   toggleLabel.className = 'field field-switch';
-  toggleLabel.append(document.createTextNode('在该分组的页面上显示标识'));
+  toggleLabel.append(document.createTextNode('在该规则组的页面上显示标识'));
   const slot = document.createElement('span');
   slot.className = 'switch-slot';
   const toggleInput = document.createElement('input');
@@ -1179,7 +1178,7 @@ function createHighlightSection(rule) {
   borderBlock.className = 'highlight-block';
   const borderLabel = document.createElement('span');
   borderLabel.className = 'block-label';
-  borderLabel.textContent = '边框（颜色取自该分组）';
+  borderLabel.textContent = '边框（颜色取自该规则组）';
   const borderChecks = document.createElement('div');
   borderChecks.className = 'checks';
   const sideNames = { top: '上', right: '右', bottom: '下', left: '左' };
@@ -1218,7 +1217,7 @@ function createHighlightSection(rule) {
   bannerBlock.className = 'highlight-block';
   const bannerLabel = document.createElement('span');
   bannerLabel.className = 'block-label';
-  bannerLabel.textContent = 'Banner（显示分组名，四个角为斜向）';
+  bannerLabel.textContent = 'Banner（显示规则组名，四个角为斜向）';
   const bannerChecks = document.createElement('div');
   bannerChecks.className = 'checks';
   const positionNames = {
@@ -1297,7 +1296,7 @@ function createColorPicker(rule) {
   button.className = 'color-select';
   button.setAttribute('aria-haspopup', 'listbox');
   button.setAttribute('aria-expanded', 'false');
-  button.setAttribute('aria-label', '分组颜色');
+  button.setAttribute('aria-label', '规则组颜色');
 
   const swatch = document.createElement('span');
   swatch.className = 'swatch';
@@ -1377,38 +1376,39 @@ function renderDetail() {
     const empty = document.createElement('p');
     empty.className = 'empty';
     empty.textContent = state.rules.length === 0
-      ? '左侧还没有分组。点「＋」新建一个分组，再把要匹配的地址填进来。'
-      : '从左侧选择一个分组，查看并编辑它的详细配置。';
+      ? '左侧还没有规则组。点「＋」新建一个规则组，再把要匹配的地址填进来。'
+      : '从左侧选择一个规则组，查看并编辑它的详细配置。';
     els.detail.appendChild(empty);
     applyI18n(els.detail);
     syncDirtyState();
     return;
   }
 
+  rule.tabGroup = normalizeTabGroup(rule);
   const index = state.rules.indexOf(rule);
 
   const head = document.createElement('div');
   head.className = 'detail-head';
   const title = document.createElement('h2');
-  title.textContent = '分组详情';
+  title.textContent = '规则组详情';
   const meta = document.createElement('span');
   meta.className = 'muted';
   meta.textContent = `第 ${index + 1} 个 · 顺序即优先级`;
   head.append(title, meta);
 
-  // 第一行：分组名 + 颜色 + 阈值
+  // 第一行：规则名、颜色及总开关
   const firstRow = document.createElement('div');
   firstRow.className = 'detail-row';
 
   const nameLabel = document.createElement('label');
   nameLabel.className = 'field field-name';
-  nameLabel.append(document.createTextNode('分组名'));
+  nameLabel.append(document.createTextNode('规则组名'));
   const nameInput = document.createElement('input');
   nameInput.type = 'text';
   nameInput.className = 'field-name-input';
   nameInput.value = rule.name || '';
   nameInput.placeholder = '例如「开发」';
-  nameInput.setAttribute('aria-label', '分组名');
+  nameInput.setAttribute('aria-label', '规则组名');
   nameInput.addEventListener('input', () => {
     rule.name = nameInput.value;
     updateListItem(rule);
@@ -1423,21 +1423,24 @@ function renderDetail() {
 
   const thresholdLabel = document.createElement('label');
   thresholdLabel.className = 'field field-threshold';
-  thresholdLabel.append(document.createTextNode('阈值'));
+  const thresholdTitle = document.createElement('span');
+  thresholdTitle.className = 'threshold-title';
+  thresholdTitle.textContent = '阈值';
+  thresholdLabel.append(thresholdTitle);
   const threshold = document.createElement('input');
   threshold.type = 'number';
   threshold.className = 'min-tabs';
   threshold.min = '1';
   threshold.step = '1';
-  threshold.value = String(rule.minTabs == null ? 1 : rule.minTabs);
-  threshold.title = '同一窗口内命中该分组的标签数达到该值才归组（1 = 立刻归组）';
-  threshold.setAttribute('aria-label', '分组阈值');
+  threshold.value = String(rule.tabGroup.minTabs == null ? 1 : rule.tabGroup.minTabs);
+  threshold.title = '同一窗口内命中该规则组的标签数达到该值才归组（1 = 立刻归组）';
+  threshold.setAttribute('aria-label', '标签页群组阈值');
   threshold.addEventListener('input', () => {
-    rule.minTabs = Number(threshold.value);
+    rule.tabGroup.minTabs = Number(threshold.value);
   });
   thresholdLabel.append(threshold);
 
-  firstRow.append(nameLabel, colorLabel, thresholdLabel);
+  firstRow.append(nameLabel, colorLabel);
 
   // 第二行：备注（可拖动缩放的文本域）
   const noteRow = document.createElement('div');
@@ -1467,7 +1470,7 @@ function renderDetail() {
   enabledInput.type = 'checkbox';
   enabledInput.className = 'field-enabled';
   enabledInput.checked = rule.enabled !== false;
-  enabledInput.setAttribute('aria-label', '启用该分组');
+  enabledInput.setAttribute('aria-label', '启用该规则组');
   const enabledSwitch = document.createElement('span');
   enabledSwitch.className = 'switch-ui';
   enabledSwitch.setAttribute('aria-hidden', 'true');
@@ -1480,34 +1483,42 @@ function renderDetail() {
 
   const collapsedLabel = document.createElement('label');
   collapsedLabel.className = 'field field-switch';
-  collapsedLabel.title = '仅在新建分组或有标签从组外移入时自动折叠，组内跳转不改变折叠状态。';
+  collapsedLabel.title = '仅在新建标签页群组或有标签从组外移入时自动折叠，组内跳转不改变折叠状态。';
   collapsedLabel.append(document.createTextNode('自动折叠'));
   const collapsedSlot = document.createElement('span');
   collapsedSlot.className = 'switch-slot';
   const collapsedInput = document.createElement('input');
   collapsedInput.type = 'checkbox';
   collapsedInput.className = 'field-collapsed';
-  collapsedInput.checked = rule.collapsed === true;
-  collapsedInput.setAttribute('aria-label', '自动折叠该分组');
+  collapsedInput.checked = rule.tabGroup.collapsed === true;
+  collapsedInput.setAttribute('aria-label', '自动折叠该标签页群组');
   const collapsedSwitch = document.createElement('span');
   collapsedSwitch.className = 'switch-ui';
   collapsedSwitch.setAttribute('aria-hidden', 'true');
   collapsedInput.addEventListener('change', () => {
-    rule.collapsed = collapsedInput.checked;
+    rule.tabGroup.collapsed = collapsedInput.checked;
   });
   collapsedSlot.append(collapsedInput, collapsedSwitch);
   collapsedLabel.append(collapsedSlot);
 
-  const strictLabel = createGlobalSwitch('严格模式', rule.strictMode === true, checked => {
-    rule.strictMode = checked;
+  const strictLabel = createGlobalSwitch('严格模式', rule.tabGroup.strictMode === true, checked => {
+    rule.tabGroup.strictMode = checked;
   });
-  strictLabel.title = '页面跳转到不匹配本分组规则的网站时，自动移出本分组。';
+  strictLabel.title = '页面跳转到不匹配本规则组的网站时，自动移出当前标签页群组。';
   firstRow.append(enabledLabel);
+  const groupLabel = createGlobalSwitch('标签页群组', rule.tabGroup.enabled !== false, checked => {
+    rule.tabGroup.enabled = checked;
+    syncTabGroupControls();
+  });
+  const groupBlock = document.createElement('div');
+  groupBlock.className = 'tab-group-controls';
   const ruleSwitchCards = document.createElement('div');
   ruleSwitchCards.className = 'global-switch-cards';
   for (const [field, description, id] of [
-    [collapsedLabel, '新建分组或有标签从组外移入时自动折叠；组内跳转或刷新保持当前状态。', 'rule-collapse-description'],
-    [strictLabel, '页面跳转到不匹配本分组规则的网站时，自动移出本分组。', 'rule-strict-description']
+    [groupLabel, '是否需要创建标签页群组', 'rule-tab-group-description'],
+    [thresholdLabel, '窗口内符合规则的标签页数达到阈值才创建群组', 'rule-threshold-description'],
+    [collapsedLabel, '新建标签页群组或有标签从组外移入时自动折叠；组内跳转或刷新保持当前状态。', 'rule-collapse-description'],
+    [strictLabel, '页面跳转到不匹配本规则组的网站时，自动移出当前标签页群组。', 'rule-strict-description']
   ]) {
     const card = document.createElement('div');
     card.className = 'global-switch-card';
@@ -1519,6 +1530,14 @@ function renderDetail() {
     card.append(field, hint);
     ruleSwitchCards.append(card);
   }
+
+  function syncTabGroupControls() {
+    const disabled = rule.tabGroup.enabled === false;
+    [threshold, collapsedInput, strictLabel.querySelector('input')].forEach(input => { input.disabled = disabled; });
+    [...ruleSwitchCards.children].slice(1).forEach(card => card.classList.toggle('disabled', disabled));
+  }
+  groupBlock.append(ruleSwitchCards);
+  syncTabGroupControls();
 
   const patternsSection = document.createElement('div');
   patternsSection.className = 'fieldset';
@@ -1572,7 +1591,7 @@ function renderDetail() {
   patternsSection.append(patternsTitle, patterns, addPattern, patternHint);
 
   const basicBody = document.createElement('div');
-  basicBody.append(firstRow, ruleSwitchCards, noteRow, patternsSection);
+  basicBody.append(firstRow, noteRow, patternsSection);
 
   const highlightBody = document.createElement('div');
   highlightBody.append(createHighlightSection(rule));
@@ -1580,7 +1599,22 @@ function renderDetail() {
   const tabTitleBody = document.createElement('div');
   tabTitleBody.append(createTitleRuleSection(rule));
 
-  // 折叠时的状态提示：两个区块都用只读拨杆表示启停
+  const groupStatus = document.createElement('span');
+  groupStatus.className = 'switch-ui';
+  groupStatus.setAttribute('aria-hidden', 'true');
+  const syncGroupStatus = () => {
+    const enabled = rule.tabGroup.enabled !== false;
+    groupStatus.classList.toggle('on', enabled);
+    groupStatus.title = t(enabled ? '标签页群组：已启用' : '标签页群组：未启用');
+  };
+  syncGroupStatus();
+  groupLabel.querySelector('input').addEventListener('change', syncGroupStatus);
+  const groupSection = createSection('tabGroup', '标签页群组', groupBlock, {
+    defaultOpen: false,
+    status: groupStatus
+  });
+
+  // 折叠时的状态提示：功能区块用只读拨杆表示启停
   const highlightStatus = document.createElement('span');
   highlightStatus.className = 'switch-ui';
   highlightStatus.setAttribute('aria-hidden', 'true');
@@ -1622,6 +1656,7 @@ function renderDetail() {
   els.detail.append(
     head,
     createSection('basic', '基础配置', basicBody, { defaultOpen: true }),
+    groupSection,
     highlightSection,
     tabTitleSection
   );
@@ -1731,9 +1766,9 @@ function renderGlobalDetail() {
   actionSelect.className = 'click-action-select';
   for (const [value, label] of [
     ['sync', '仅同步（检查未归组的标签）'],
-    ['syncRuleCollapse', '同步并按规则折叠分组'],
-    ['syncCollapseInactive', '同步并折叠非活动分组'],
-    ['syncCollapseAll', '同步并折叠所有分组']
+    ['syncRuleCollapse', '同步并按规则折叠标签页群组'],
+    ['syncCollapseInactive', '同步并折叠非活动标签页群组'],
+    ['syncCollapseAll', '同步并折叠所有标签页群组']
   ]) {
     const option = document.createElement('option');
     option.value = value;
@@ -1749,26 +1784,26 @@ function renderGlobalDetail() {
 
   const actionHint = document.createElement('p');
   actionHint.className = 'hint small';
-  actionHint.textContent = '点图标时先同步，再按所选方式折叠分组；折叠只影响点击时所在的窗口。';
-  const orderField = createGlobalSwitch('分组前置', state.groupsFirst, (checked) => {
+  actionHint.textContent = '点图标时先同步，再按所选方式折叠标签页群组；折叠只影响点击时所在的窗口。';
+  const orderField = createGlobalSwitch('标签页群组前置', state.groupsFirst, (checked) => {
     state.groupsFirst = checked;
     syncDirtyState();
   });
   const orderHint = document.createElement('p');
   orderHint.className = 'hint small';
-  orderHint.textContent = '将分组移到前面、游离标签移到后面，保留各自顺序；同步、自动归组或分组成员变化后更新。';
+  orderHint.textContent = '将标签页群组移到前面、游离标签移到后面，保留各自顺序；同步、自动归组或标签页群组成员变化后更新。';
   const resultField = createGlobalSwitch('操作结果提示', state.showActionResult, checked => {
     state.showActionResult = checked;
   });
   const resultHint = document.createElement('p');
   resultHint.className = 'hint small';
   resultHint.textContent = '使用插件图标快捷功能后显示操作结果；关闭时执行完成后直接关闭弹出面板。';
-  const updateField = createGlobalSwitch('自动更新分组规则', state.autoUpdateGroupRules, checked => {
+  const updateField = createGlobalSwitch('自动更新规则组匹配规则', state.autoUpdateGroupRules, checked => {
     state.autoUpdateGroupRules = checked;
   });
   const updateHint = document.createElement('p');
   updateHint.className = 'hint small';
-  updateHint.textContent = '手动将标签页拖入已有规则的分组时，提示是否添加该网站的匹配规则。';
+  updateHint.textContent = '手动将标签页拖入已有规则组的标签页群组时，提示是否添加该网站的匹配规则。';
   const languageHint = document.createElement('p');
   languageHint.className = 'hint small';
   languageHint.textContent = '选择设置页和弹出面板的显示语言，也可跟随浏览器。';
@@ -1798,7 +1833,7 @@ function renderGlobalDetail() {
   configTitle.textContent = '配置管理';
   const configHint = document.createElement('p');
   configHint.className = 'hint small';
-  configHint.textContent = '导出已保存的配置，或选择替换导入、仅追加分组规则。';
+  configHint.textContent = '导出已保存的配置，或选择替换导入、仅追加规则组。';
   const actions = document.createElement('div');
   actions.className = 'global-actions';
 
@@ -1817,7 +1852,7 @@ function renderGlobalDetail() {
   const appendButton = document.createElement('button');
   appendButton.type = 'button';
   appendButton.textContent = '追加导入…';
-  appendButton.title = '仅追加文件中的分组规则，保留当前全局设置';
+  appendButton.title = '仅追加文件中的规则组，保留当前全局设置';
   let importMode = 'replace';
   const fileInput = document.createElement('input');
   fileInput.type = 'file';
@@ -1932,8 +1967,8 @@ function markInvalid(errors) {
 
   const indexes = new Set();
   for (const error of errors) {
-    // 一条错误可能同时点名两个分组（例如重名：`rules[1].name 重复：…（与 rules[0] 同名）`），
-    // 把这些分组都高亮出来。
+    // 一条错误可能同时点名两个规则组（例如重名：`rules[1].name 重复：…（与 rules[0] 同名）`），
+    // 把这些规则组都高亮出来。
     for (const found of String(error).matchAll(/rules\[(\d+)\]/g)) {
       indexes.add(Number(found[1]));
     }
@@ -1993,7 +2028,7 @@ async function persist(label) {
   const summary = stats && typeof stats.grouped === 'number'
     ? `；同步完成：归组 ${stats.grouped} 个，跳过 ${stats.skipped} 个，失败 ${stats.failed} 个`
     : '';
-  setStatus('ok', `${label}成功，共 ${config.rules.length} 个分组${summary}`);
+  setStatus('ok', `${label}成功，共 ${config.rules.length} 个规则组${summary}`);
   return true;
 }
 
@@ -2074,7 +2109,7 @@ function exportToFile() {
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 
-  setStatus('ok', `已导出 ${config.rules.length} 个分组到 ${name}`);
+  setStatus('ok', `已导出 ${config.rules.length} 个规则组到 ${name}`);
 }
 
 function applyConfig(config) {
@@ -2100,11 +2135,11 @@ async function appendFromText(text, label) {
   if (busy) return;
   const parsed = Store.parseConfigText(text, { rulesOnly: true });
   if (!parsed.ok) {
-    setStatus('error', t('追加导入失败，文件中的分组规则不合法。'), parsed.errors);
+    setStatus('error', t('追加导入失败，文件中的规则组不合法。'), parsed.errors);
     return;
   }
   if (!parsed.config.rules.length) {
-    setStatus('info', t('文件中没有可追加的分组规则。'));
+    setStatus('info', t('文件中没有可追加的规则组。'));
     return;
   }
   const count = state.rules.length;
@@ -2114,7 +2149,7 @@ async function appendFromText(text, label) {
     setStatus('error', t('追加导入失败，请先修正当前配置。'), checked.errors);
     return;
   }
-  const confirmation = t('将文件中的分组追加到末尾并保存当前配置？文件中的全局设置将被忽略，同名分组将添加“-导入”后缀。');
+  const confirmation = t('将文件中的规则组追加到末尾并保存当前配置？文件中的全局设置将被忽略，同名规则组将添加“-导入”后缀。');
   if (!window.confirm(`${confirmation}\n\n${label}`)) {
     setStatus('info', '已取消导入');
     return;
@@ -2153,7 +2188,7 @@ async function importFromText(text, label) {
 
   const config = parsed.config;
   const confirmed = window.confirm(
-    t(`用导入的配置替换当前配置？\n\n来源：${label}\n分组数：${config.rules.length}`)
+    t(`用导入的配置替换当前配置？\n\n来源：${label}\n规则组数：${config.rules.length}`)
   );
   if (!confirmed) {
     setStatus('info', '已取消导入');
@@ -2221,7 +2256,7 @@ async function load() {
   } else {
     setStatus(
       'info',
-      `当前配置：${source === 'storage' ? '来自 storage' : '内置默认'}，共 ${config.rules.length} 个分组`
+      `当前配置：${source === 'storage' ? '来自 storage' : '内置默认'}，共 ${config.rules.length} 个规则组`
     );
   }
   syncDirtyState();
@@ -2240,7 +2275,7 @@ async function reset() {
 /**
  * 没有「访问所有网站」的 host 权限时，content script 不会注入，
  * 页面内标识和标签页改名会静默失效。权限状态变化后重绘当前详情面板：
- * 全局配置里显示授权入口，分组详情里按开关显示红色提醒。
+ * 全局配置里显示授权入口，规则组详情里按开关显示红色提醒。
  */
 async function syncPermissionState() {
   if (!CAN_MANAGE_HOST_PERMISSION) return;

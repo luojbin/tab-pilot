@@ -186,11 +186,11 @@
   .switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
   .switch input { width: 16px; height: 16px; margin: 0; }
 
-  /* 缺少 host 权限时的提示：全局配置里有一块权限区域，分组详情里按开关显示 */
+  /* 缺少 host 权限时的提示：全局配置里有一块权限区域，规则组详情里按开关显示 */
   .hint.small.permission-warning { color: var(--error); }
   .permission-config { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--divider); }
 
-  /* 整体分栏：左侧分组列表 + 右侧详情，中间一条竖线 */
+  /* 整体分栏：左侧规则组列表 + 右侧详情，中间一条竖线 */
   .layout {
     display: grid;
     grid-template-columns: 300px minmax(0, 1fr);
@@ -240,7 +240,7 @@
   .add-rule-menu button:hover { background: var(--panel); transform: none; }
   .panel-head h2 { margin: 0; font-size: 13px; font-weight: 600; color: var(--muted); }
 
-  /* 全局配置单独置顶，与分组列表用分隔线隔开 */
+  /* 全局配置单独置顶，与规则组列表用分隔线隔开 */
   .global-list {
     list-style: none;
     margin: 0 0 12px;
@@ -253,7 +253,7 @@
   .global-actions button { flex: 1 1 auto; padding: 6px 8px; font-size: 12px; }
   .global-config { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--divider); }
 
-  /* ---------- 左栏：分组列表（列表行，不是卡片） ---------- */
+  /* ---------- 左栏：规则组列表（列表行，不是卡片） ---------- */
   .group-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
   .group-item { border-radius: 6px; }
   .group-list .group-row[draggable="true"] { cursor: grab; }
@@ -334,12 +334,12 @@
   /* 导出被未保存修改挡住时的提示：用错误色，比普通 hint 更醒目 */
   .hint.small.export-blocked { color: var(--error); }
 
-  /* ---------- 右栏：分组详情 ---------- */
+  /* ---------- 右栏：规则组详情 ---------- */
   .detail-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
   .detail-head h2 { margin: 0; font-size: 16px; }
   .detail-head .muted { color: var(--muted); font-size: 12.5px; }
 
-  /* 第一行：分组名 + 颜色 + 阈值 */
+  /* 第一行：规则组名 + 颜色 + 阈值 */
   .detail-row {
     display: flex;
     flex-wrap: wrap;
@@ -387,7 +387,9 @@
   .global-switch-card select { width: 100%; box-sizing: border-box; font-weight: 400; }
   .global-switch-card .hint { margin: 10px 0 0; overflow-wrap: anywhere; }
   .field-color { flex: none; }
-  .field-threshold { flex: none; width: 110px; }
+  .field-threshold { flex: none; }
+  .global-switch-card .threshold-title { color: var(--fg); font-size: 14px; font-weight: 600; }
+  .tab-group-controls .global-switch-card.disabled { opacity: 0.5; }
   .field input[type="text"],
   .field input[type="number"],
   .field textarea,
@@ -817,18 +819,18 @@
     <aside class="groups">
       <ul id="globalList" class="global-list"></ul>
       <div class="panel-head">
-        <h2>分组</h2>
+        <h2>规则组</h2>
         <div class="add-rule-control">
-          <button id="addRule" class="icon" type="button" title="添加分组规则" aria-label="添加分组规则" aria-haspopup="menu" aria-expanded="false" aria-controls="addRuleMenu"></button>
+          <button id="addRule" class="icon" type="button" title="添加规则组" aria-label="添加规则组" aria-haspopup="menu" aria-expanded="false" aria-controls="addRuleMenu"></button>
           <div id="addRuleMenu" class="add-rule-menu" role="menu" hidden>
             <button id="addBlankRule" type="button" role="menuitem">新建空白规则</button>
-            <button id="rulesFromWindow" type="button" role="menuitem">从当前窗口分组创建规则</button>
+            <button id="rulesFromWindow" type="button" role="menuitem">基于现有标签页群组创建</button>
           </div>
         </div>
       </div>
       <ul id="groupList" class="group-list"></ul>
       <p class="hint small">
-        顶部「全局配置」管理语言和配置导入导出；下方分组列表用于选中分组，重命名、改颜色、启用 / 停用在右侧完成。可拖拽调整顺序；⋯ 菜单可以复制、调整顺序或删除。
+        顶部「全局配置」管理语言和配置导入导出；下方规则组列表用于选中规则组，重命名、改颜色、启用 / 停用在右侧完成。可拖拽调整顺序；操作菜单可以复制、调整顺序或删除。
       </p>
     </aside>
 

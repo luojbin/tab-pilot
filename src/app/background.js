@@ -1,3 +1,4 @@
+import { normalizeTabGroup, tabGroupEnabled } from '../core/tab-group.js';
 import browser from '../platform/browser.js';
 import { enforceStrictGroup } from './strict-mode.js';
 import { createManualGroupController } from './manual-group.js';
@@ -96,6 +97,11 @@ async function processTab(tab, rules, allTabs) {
       steps
     });
     return;
+  }
+
+  if (!matched.groupEnabled || !matched.thresholdMet) {
+    Logger.info('已确定规则归属，未执行标签页群组', { tabId: tab.id, ruleId: matched.ruleId, steps });
+    return false;
   }
 
   // 配了阈值的规则：达成时把同窗口内命中该规则的标签一起归组，
@@ -217,7 +223,7 @@ async function syncAll(options) {
           tabs: windowTabs,
           windowId
         });
-        if (!matched) {
+        if (!matched || !matched.groupEnabled || !matched.thresholdMet) {
           stats.skipped += 1;
           continue;
         }
@@ -267,7 +273,7 @@ async function collapseGroups(mode, config, windowId) {
   // 只有“按规则折叠”需要规则；规则里的 collapsed 就是基础配置的「自动折叠」
   const ruleCollapsedNames = new Set(
     rules
-      .filter((rule) => rule && rule.enabled !== false && rule.collapsed === true)
+      .filter((rule) => rule && rule.enabled !== false && tabGroupEnabled(rule) && normalizeTabGroup(rule).collapsed === true)
       .map((rule) => rule.name)
   );
 
@@ -377,7 +383,7 @@ browser.runtime.onStartup.addListener(() => {
 
 /**
  * 页面内标识：给定 URL，返回该页面应渲染的分组标识（没有则 null）。
- * 与规则引擎共用一套匹配逻辑，阈值也照常生效。
+ * 与规则引擎共用首条 URL 命中的归属，忽略群组开关和阈值。
  */
 async function resolvePageStyle(tab, url) {
   const { config } = await Store.loadConfig();
@@ -386,10 +392,9 @@ async function resolvePageStyle(tab, url) {
   if (targetUrl === '' || isIgnorable(targetUrl)) return null;
 
   const windowId = tab && typeof tab.windowId === 'number' ? tab.windowId : undefined;
-  const allTabs = windowId === undefined ? null : await tabsInWindow(windowId);
   const pseudoTab = { id: -1, windowId, url: targetUrl, groupId: -1 };
 
-  const { matched } = Rules.explain(pseudoTab, config.rules, { tabs: allTabs, windowId });
+  const { matched } = Rules.explain(pseudoTab, config.rules, { windowId });
   if (!matched) {
     Logger.info('页面标识查询：未命中分组', { url: targetUrl });
     return null;

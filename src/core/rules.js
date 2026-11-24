@@ -1,3 +1,4 @@
+import { tabGroupEnabled } from './tab-group.js';
 /**
  * TabPilot 规则引擎（纯函数层）
  *
@@ -6,7 +7,7 @@
  *
  * 规则模型（schemaVersion 2）：
  *   一条规则 = 一个标签页分组
- *   { id, enabled, name, color, collapsed, minTabs, note, patterns[] }
+ *   { id, enabled, name, color, tabGroup{...}, note, patterns[] }
  *   `patterns` 可包含多个匹配路径，任一命中即视为该规则的 URL 命中；
  *   规则在数组中的顺序就是优先级，靠前的先匹配。
  */
@@ -161,7 +162,7 @@ function normalizeRules(rules) {
 
 /** 读取规则自身定义的阈值 `minTabs`，非法值回退到 1。 */
 function minTabsOf(rule) {
-  const raw = rule ? rule.minTabs : undefined;
+  const raw = rule?.tabGroup?.minTabs;
   if (raw === undefined || raw === null) return DEFAULT_MIN_TABS;
   const value = Number(raw);
   if (!Number.isFinite(value) || value < 1) return DEFAULT_MIN_TABS;
@@ -172,15 +173,16 @@ function minTabsOf(rule) {
  * 统计同一窗口内命中该规则的标签页数量（含目标标签自身）。
  * 阈值按规则独立计算，所以这里必须以“这条规则”为单位过滤。
  */
-function countMatchingTabs(tabs, rule, windowId) {
+function countMatchingTabs(tabs, rule, windowId, rules) {
   if (!Array.isArray(tabs)) return 1;
   let count = 0;
+  const owners = rules ? normalizeRules(rules) : null;
   for (const tab of tabs) {
     if (!tab) continue;
     if (windowId !== undefined && windowId !== null && tab.windowId !== windowId) {
       continue;
     }
-    if (ruleMatchesUrl(rule, tabUrl(tab))) count += 1;
+    if (ruleMatchesUrl(rule, tabUrl(tab)) && (!owners || owners.find(item => ruleMatchesUrl(item, tabUrl(tab))) === rule)) count += 1;
   }
   return count;
 }
@@ -190,8 +192,7 @@ function countMatchingTabs(tabs, rule, windowId) {
  *
  * 语义要点：
  * - 规则按配置顺序匹配，靠前的优先；一个 tab 最多命中一条规则。
- * - 命中 URL 但数量未达阈值的规则不生效，继续尝试下一条规则，
- *   这样“攒够 3 个再归组”的规则不会挡住后面的兜底规则。
+ * - 首条 URL 命中即确定归属；阈值和 tabGroup 开关只控制浏览器分组动作。
  *
  * @param {object} tab 标签页（需要 id / url / windowId）
  * @param {Array} rules 配置中的规则数组
@@ -218,7 +219,8 @@ function explain(tab, rules, context) {
     : tab.windowId;
   const tabs = Array.isArray(ctx.tabs) ? ctx.tabs : null;
 
-  for (const rule of normalizeRules(rules)) {
+  const activeRules = normalizeRules(rules);
+  for (const rule of activeRules) {
     const pattern = matchedPatternOf(rule, url);
     if (pattern === null) {
       steps.push({ ruleId: rule.id, urlMatched: false, hit: false });
@@ -228,7 +230,7 @@ function explain(tab, rules, context) {
     const minTabs = minTabsOf(rule);
     // 目标 tab 自身已经命中 URL，所以数量至少为 1；
     // 取 max 是为了兼容调用方传入的标签页列表不含自身的情况。
-    const counted = tabs ? countMatchingTabs(tabs, rule, windowId) : 1;
+    const counted = tabs ? countMatchingTabs(tabs, rule, windowId, activeRules) : 1;
     const count = Math.max(1, counted);
     const thresholdMet = count >= minTabs;
 
@@ -239,33 +241,31 @@ function explain(tab, rules, context) {
       count,
       minTabs,
       thresholdMet,
-      hit: thresholdMet
+      hit: true
     });
 
-    if (thresholdMet) {
-      // 达成阈值时，同窗口内命中该规则的标签都算“该进这一组”的候选，
-      // 由调用方决定哪些真的需要移动（已在别的组里的不该被动）。
-      const candidateIds = tabs
-        ? Array.from(
-            new Set(
-              tabs
-                .filter(
-                  (item) =>
-                    item &&
-                    (windowId === undefined || windowId === null || item.windowId === windowId) &&
-                    ruleMatchesUrl(rule, tabUrl(item))
-                )
-                .map((item) => item.id)
-                .concat([tab.id])
-            )
+    // 同窗口中归属本规则的标签作为候选；阈值只控制调用方是否执行归组，
+    // 由调用方决定哪些真的需要移动（已在别的组里的不该被动）。
+    const candidateIds = tabs
+      ? Array.from(
+          new Set(
+            tabs
+              .filter(
+                (item) =>
+                  item &&
+                  (windowId === undefined || windowId === null || item.windowId === windowId) &&
+                  activeRules.find(candidate => ruleMatchesUrl(candidate, tabUrl(item))) === rule
+              )
+              .map((item) => item.id)
+              .concat([tab.id])
           )
-        : [tab.id];
+        )
+      : [tab.id];
 
-      return {
-        matched: { ruleId: rule.id, rule, minTabs, tabIds: candidateIds },
-        steps
-      };
-    }
+    return {
+      matched: { ruleId: rule.id, rule, minTabs, thresholdMet, groupEnabled: tabGroupEnabled(rule), tabIds: candidateIds },
+      steps
+    };
   }
 
   return { matched: null, steps };

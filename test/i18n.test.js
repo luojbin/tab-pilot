@@ -7,13 +7,16 @@ test('i18n：静态文案与模板切换到英文', () => {
   setLanguage('en');
 
   assert.equal(t('TabPilot 设置'), 'TabPilot Settings');
+  assert.equal(t('规则组'), 'Rule groups');
+  assert.equal(t('规则组名'), 'Rule group name');
+  assert.equal(t('标签页群组前置'), 'Groups first');
   assert.equal(t('保存并同步'), 'Save & sync');
-  assert.equal(t('第 2 个 · 顺序即优先级'), 'Group 2 · order = priority');
-  assert.equal(t('新分组 3'), 'New group 3');
+  assert.equal(t('第 2 个 · 顺序即优先级'), 'Rule group 2 · order = priority');
+  assert.equal(t('新规则组 3'), 'New rule group 3');
   assert.equal(t('匹配路径 2'), 'Match pattern 2');
   assert.equal(
-    t('保存成功，共 2 个分组；同步完成：归组 1 个，跳过 1 个，失败 0 个'),
-    'Saved: 2 groups; sync done: 1 grouped, 1 skipped, 0 failed'
+    t('保存成功，共 2 个规则组；同步完成：归组 1 个，跳过 1 个，失败 0 个'),
+    'Saved: 2 rule groups; sync done: 1 grouped, 1 skipped, 0 failed'
   );
 });
 

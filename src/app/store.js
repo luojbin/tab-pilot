@@ -1,5 +1,6 @@
 import browser from '../platform/browser.js';
 import { migrateConfig } from '../core/config-migration.js';
+import { normalizeTabGroup } from '../core/tab-group.js';
 import { compilePattern } from '../core/title-rule.js';
 
 /**
@@ -10,12 +11,12 @@ import { compilePattern } from '../core/title-rule.js';
  *
  * 配置结构（schemaVersion 2，兼容迁移正式 schema 1）：
  *   { schemaVersion, rules: [rule] }
- *   rule = { id, enabled, name, color, collapsed, minTabs, note, patterns[],
+ *   rule = { id, enabled, name, color, tabGroup{...}, note, patterns[],
  *            highlight{...}, titleRule{...} }
  * 一条规则对应一个标签页分组，`patterns` 里可以有多个匹配路径，
  * 规则在数组中的顺序就是优先级（越靠前越高）。
  *
- * 说明：正式 schema 1 自动迁移至 2；早期开发格式不提供迁移，
+ * 说明：正式 schema 1 直接迁移至 2；早期开发格式不提供迁移，
  * 与当前编号相同的旧开发数据仍必须通过当前字段校验。
  */
 const CONFIG_KEY = 'tabpilot:config';
@@ -81,9 +82,7 @@ const DEFAULT_CONFIG = {
       enabled: true,
       name: '开发',
       color: 'green',
-      collapsed: false,
-      strictMode: false,
-      minTabs: 1,
+      tabGroup: { enabled: true, minTabs: 1, collapsed: false, strictMode: false },
       note: '本地开发环境',
       patterns: ['*://localhost:*/*'],
       highlight: {
@@ -143,7 +142,8 @@ function validateConfig(raw, options) {
       `schemaVersion 必须为 ${SCHEMA_VERSION}，收到 ${JSON.stringify(raw.schemaVersion)}`
     );
   }
-  for (const key of ['autoUpdateGroupRules', 'showActionResult', 'strictMode']) {
+  if ('strictMode' in raw) errors.push('strictMode 已移至 rules[].tabGroup.strictMode');
+  for (const key of ['autoUpdateGroupRules', 'showActionResult']) {
     if (raw[key] !== undefined && typeof raw[key] !== 'boolean') {
       errors.push(`${key} 必须是布尔值`);
     }
@@ -200,27 +200,21 @@ function validateConfig(raw, options) {
     if (rule.enabled !== undefined && typeof rule.enabled !== 'boolean') {
       errors.push(`${where}.enabled 必须是布尔值`);
     }
-    if (rule.collapsed !== undefined && typeof rule.collapsed !== 'boolean') {
-      errors.push(`${where}.collapsed 必须是布尔值`);
+    for (const field of ['minTabs', 'collapsed', 'strictMode']) {
+      if (field in rule) errors.push(`${where}.${field} 已移至 tabGroup.${field}`);
     }
-    if (rule.strictMode !== undefined && typeof rule.strictMode !== 'boolean') {
-      errors.push(`${where}.strictMode 必须是布尔值`);
+    if (rule.tabGroup !== undefined) {
+      if (!isPlainObject(rule.tabGroup)) errors.push(`${where}.tabGroup 必须是对象`);
+      else {
+        for (const field of ['enabled', 'collapsed', 'strictMode']) {
+          if (rule.tabGroup[field] !== undefined && typeof rule.tabGroup[field] !== 'boolean') errors.push(`${where}.tabGroup.${field} 必须是布尔值`);
+        }
+        if (rule.tabGroup.minTabs !== undefined && (!Number.isInteger(rule.tabGroup.minTabs) || rule.tabGroup.minTabs < 1)) errors.push(`${where}.tabGroup.minTabs 必须是 >= 1 的整数`);
+      }
     }
     if (rule.note !== undefined && typeof rule.note !== 'string') {
       errors.push(`${where}.note 必须是字符串`);
     }
-    if (rule.minTabs !== undefined) {
-      const minTabs = rule.minTabs;
-      if (
-        typeof minTabs !== 'number' ||
-        !Number.isFinite(minTabs) ||
-        minTabs < 1 ||
-        Math.floor(minTabs) !== minTabs
-      ) {
-        errors.push(`${where}.minTabs 必须是 >= 1 的整数`);
-      }
-    }
-
     if (rule.titleRule !== undefined) {
       const at = `${where}.titleRule`;
       if (!isPlainObject(rule.titleRule)) {
@@ -334,11 +328,6 @@ function validateConfig(raw, options) {
   // 兼容已发布配置：旧全局开关不再生效，也不再写入新配置。
   const config = { ...raw };
   delete config.globalEnabled;
-  // 全局严格模式迁移到规则，显式的组内设置优先；不修改原始导入对象。
-  if (raw.strictMode !== undefined) {
-    config.rules = raw.rules.map(rule => ({ ...rule, strictMode: rule.strictMode ?? raw.strictMode }));
-  }
-  delete config.strictMode;
   return { ok: true, config };
 }
 
@@ -429,9 +418,7 @@ function buildConfigFromRules(rules, clickAction, language, groupsFirst = false,
         enabled: !rule || rule.enabled !== false,
         name: String(rule && rule.name != null ? rule.name : '').trim(),
         color: rule && GROUP_COLORS.includes(rule.color) ? rule.color : DEFAULT_COLOR,
-        collapsed: Boolean(rule && rule.collapsed === true),
-        strictMode: rule?.strictMode === true,
-        minTabs: rule && rule.minTabs != null ? rule.minTabs : DEFAULT_MIN_TABS,
+        tabGroup: normalizeTabGroup(rule),
         note: String(rule && rule.note != null ? rule.note : '').trim(),
         patterns: (Array.isArray(rule && rule.patterns) ? rule.patterns : [])
           .map((pattern) => String(pattern).trim())

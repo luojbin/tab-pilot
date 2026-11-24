@@ -144,3 +144,15 @@ test('关闭自动更新：重新打开 popup 时忽略持久化待确认项',as
   assert.equal(await reloaded.pending(1),null);
   assert.equal(f.badges.at(-1).text,'');
 });
+
+test('标签页群组关闭：手动拖入不提示，既有请求不能继续写入规则', async () => {
+  const f = fixture();
+  await f.capture();
+  const pending = await f.controller.pending(1);
+  f.config.rules[0].tabGroup = { enabled: false };
+  assert.equal(await f.controller.pending(1), null);
+  const result = await f.controller.add(1, pending.id, 'https://new.example/*');
+  assert.equal(result.ok, false);
+  await f.capture();
+  assert.equal(await f.controller.pending(1), null);
+});

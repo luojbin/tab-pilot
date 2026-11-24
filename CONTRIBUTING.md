@@ -24,7 +24,7 @@ src/
   core/
     rules.js           URL 匹配、优先级、阈值与 explain（纯函数）
     highlight.js       标识规格、颜色与布局计算（纯函数）
-    config-migration.js 正式 schema 1 → 2 的无副作用迁移
+    config-migration.js schema 1 → 2 的无副作用迁移
     title-rule.js      标题正则编译、替换与批量测试（纯函数）
     manual-group-rule.js 网站默认模式、输入扩写与自动归组标记
     copy-rule.js       独立规则副本、唯一名称与默认停用
@@ -117,7 +117,7 @@ npm run build:chromium  # 仅 Chromium
 
 ## 配置格式
 
-完整字段约束、历史 schema 1 / 当前 schema 2 及迁移关系见 [配置 JSON 格式参考](docs/schema-reference.md)。
+正式 schema 1 和当前 schema 2 的字段约束及迁移关系见 [配置 JSON 格式参考](docs/schema-reference.md)。
 
 配置保存在 `browser.storage.local` 的 `tabpilot:config`（见 `src/app/store.js`），导入 / 导出文件使用同一结构，当前为 `schemaVersion: 2`。一条规则对应一个标签页分组，`patterns` 里多个匹配路径任一命中即归组，数组顺序即优先级：
 
@@ -135,9 +135,7 @@ npm run build:chromium  # 仅 Chromium
       "enabled": true,
       "name": "代码",
       "color": "blue",
-      "collapsed": false,
-      "strictMode": false,
-      "minTabs": 3,
+      "tabGroup": { "enabled": true, "minTabs": 3, "collapsed": false, "strictMode": false },
       "note": "代码托管：攒够 3 个再归组",
       "patterns": ["*://*.github.com/*", "*://gitlab.com/*"],
       "highlight": {
@@ -157,7 +155,9 @@ npm run build:chromium  # 仅 Chromium
 }
 ```
 
-旧 `globalEnabled` 字段读取/导入时忽略，保存结果不再包含该字段。严格模式使用规则上的可选布尔字段 `rules[].strictMode`，缺省关闭；旧全局 strictMode 迁移至缺省的规则，显式组内值优先，保存后不再写全局字段。追加导入忽略旧全局 strictMode。正式 schema 1 配置在读取、替换导入和追加导入时自动迁移至 2：pattern → titlePattern，urlPattern 默认为空，testText 非空行 → testCases 的 {title, url: ""}。replacement 始终生成完整新标题；旧捕获组模板语法保留；新版标题条件要求整标题匹配，旧版片段条件需手动补充 .*。URL 条件默认完整匹配；如需允许后续路径、参数等内容需显式添加 .*；保存和导出只写 schema 2。不支持早期开发过渡格式。旧版配置可升级读取；新导出文件不再满足旧版必需的全局开关字段，不保证可直接回退使用。追加导入保留本机全局设置，只检查文件 schemaVersion 和 rules，并在合并后校验唯一名称/id。
+当前规则将浏览器群组设置收拢至 `tabGroup: { enabled, minTabs, collapsed, strictMode }`，默认开启群组、阈值 1、自动折叠和严格模式关闭。规则总开关控制整条规则；tabGroup.enabled 只控制原生群组操作。首条 URL 命中即确定归属，阈值不足不再落入后续规则。计数和批量候选仅包含同窗口首条归属本规则的标签，页面标识和重命名不受群组开关或阈值限制。
+
+正式 schema 1 在读取及两种导入时直接迁移至 2；旧规则的 minTabs / collapsed / strictMode 移入 tabGroup，默认 enabled 为 true。schema 1 还会先迁移旧标题字段至双来源结构。旧 globalEnabled 忽略并移除，过渡全局严格模式补齐缺省的规则值。追加导入忽略全局设置；新导出使用 schema 2，不保证能导入旧插件。schema 2 以本节和当前源码为准。
 
 字段含义、取值范围和校验规则见 [PRD 数据模型](docs/PRD.md#5-数据模型)；校验入口是 `src/app/store.js` 的 `validateConfig`。`schemaVersion` 只在配置结构不兼容变更时递增，与插件版本号解耦；`highlight` / `titleRule` 缺省时由配置页按默认值补齐。
 
@@ -180,9 +180,9 @@ npm run build:chromium  # 仅 Chromium
 | `i18n.test.js` | 文案和模板翻译；不代表整页翻译覆盖 |
 | `bundle.test.js` | 实际打包四个入口；在两种 API 命名空间下执行后台和内容脚本，验证归组与消息 |
 
-当前完整测试为 **224 项通过**（含四项打包回归）。打包冒烟编译四入口并执行后台/内容脚本，只解析配置页和 popup 脚本；其他测试用桩验证部分 DOM/事件和 API 行为，未在真实浏览器中运行整页 UI。
+当前完整测试为 **235 项通过**（含四项打包回归）。打包冒烟编译四入口并执行后台/内容脚本，只解析配置页和 popup 脚本；其他测试用桩验证部分 DOM/事件和 API 行为，未在真实浏览器中运行整页 UI。
 
-受限环境可在单进程执行不依赖浏览器全局桩的 **142 项**：
+受限环境可在单进程执行不依赖浏览器全局桩的 **149 项**：
 
 ```bash
 node --test --test-isolation=none test/append-rules.test.js test/copy-rule.test.js test/highlight.test.js test/i18n.test.js test/reorder-rules.test.js test/rules-from-groups.test.js test/rules.test.js test/store.test.js test/strict-mode.test.js test/title-rule.test.js test/toolbar-feedback.test.js test/toolbar-menu.test.js
@@ -241,7 +241,7 @@ node --test --test-isolation=none test/append-rules.test.js test/copy-rule.test.
   console.log('配置来源:', source, '校验错误:', errors ?? '无');
   console.table(config.rules.map(r => ({
     id: r.id, enabled: r.enabled, name: r.name,
-    patterns: r.patterns.join(' | '), minTabs: r.minTabs ?? 1,
+    patterns: r.patterns.join(' | '), tabGroup: r.tabGroup,
     highlight: r.highlight?.enabled ?? false,
     titleRule: r.titleRule?.enabled ?? false
   })));
@@ -252,7 +252,7 @@ node --test --test-isolation=none test/append-rules.test.js test/copy-rule.test.
 })();
 ```
 
-如果要补同步，可执行 `await TabPilotDebug.syncAll()`，它默认跳过已分组标签并打印汇总统计。需要查看逐标签判定时，刷新未分组的目标标签并观察后台事件日志：未命中的 `steps` 说明路径或阈值原因，命中后的 `results` 说明分组动作是否成功。计数按同一窗口、同一规则统计。
+如果要补同步，可执行 `await TabPilotDebug.syncAll()`，它默认跳过已分组标签并打印汇总统计。需要查看逐标签判定时，刷新未分组的目标标签并观察后台事件日志：`steps` 说明 URL 归属和群组阈值判断，命中后的 `results` 说明分组动作是否成功。计数按同一窗口、同一规则统计。
 
 `TabPilotStore`、`TabPilotRules` 等内部对象已不再暴露到全局，不能在控制台直接调用。需要单步检查纯规则引擎时，在源码和测试中使用模块导入。
 

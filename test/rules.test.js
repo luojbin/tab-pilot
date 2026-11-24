@@ -25,8 +25,7 @@ function rule(id, patterns, extra) {
     enabled: true,
     name: id,
     color: 'blue',
-    collapsed: false,
-    minTabs: 1,
+    tabGroup: { enabled: true, collapsed: false, minTabs: 1 },
     note: '',
     patterns,
     ...(extra || {})
@@ -37,7 +36,7 @@ const devRule = rule('dev-localhost', ['*://localhost:*/*'], { name: '开发', c
 const codeRule = rule('code-github', ['*://*.github.com/*'], {
   name: '代码',
   color: 'blue',
-  minTabs: 3
+  tabGroup: { minTabs: 3 }
 });
 const fallbackRule = rule('zz-fallback', ['*://*/*'], { name: '其他', color: 'grey' });
 
@@ -139,7 +138,8 @@ test('阈值：同一规则标签数不足 minTabs 时不归组', () => {
   const first = tab(1, 'https://www.github.com/a');
   const target = tab(2, 'https://gist.github.com/b');
   const result = explain(target, [codeRule], { tabs: [first, target] });
-  assert.equal(result.matched, null);
+  assert.equal(result.matched.ruleId, 'code-github');
+  assert.equal(result.matched.thresholdMet, false);
   assert.equal(result.steps[0].count, 2);
   assert.equal(result.steps[0].minTabs, 3);
   assert.equal(result.steps[0].thresholdMet, false);
@@ -156,10 +156,11 @@ test('阈值：达到 minTabs 时归组', () => {
   assert.equal(result.rule.name, '代码');
 });
 
-test('阈值：未达成时继续尝试后续规则', () => {
+test('阈值：未达成时仍归属首条命中，不尝试后续规则', () => {
   const target = tab(1, 'https://www.github.com/a');
   const result = match(target, [codeRule, fallbackRule], { tabs: [target] });
-  assert.equal(result.ruleId, 'zz-fallback');
+  assert.equal(result.ruleId, 'code-github');
+  assert.equal(result.thresholdMet, false);
 });
 
 test('阈值：只统计同一窗口内的标签', () => {
@@ -195,10 +196,10 @@ test('explain：steps 记录命中的具体路径', () => {
 
 test('minTabsOf：缺省与非法值回退到 1', () => {
   assert.equal(minTabsOf({}), DEFAULT_MIN_TABS);
-  assert.equal(minTabsOf({ minTabs: 0 }), 1);
-  assert.equal(minTabsOf({ minTabs: 2.5 }), 2);
-  assert.equal(minTabsOf({ minTabs: '3' }), 3);
-  assert.equal(minTabsOf({ minTabs: 4 }), 4);
+  assert.equal(minTabsOf({ tabGroup: { minTabs: 0 } }), 1);
+  assert.equal(minTabsOf({ tabGroup: { minTabs: 2.5 } }), 2);
+  assert.equal(minTabsOf({ tabGroup: { minTabs: '3' } }), 3);
+  assert.equal(minTabsOf({ tabGroup: { minTabs: 4 } }), 4);
 });
 
 test('normalizeRules：保持顺序并过滤不可用规则', () => {
@@ -291,4 +292,29 @@ test('expandPattern：展开结果能被规则引擎匹配（IP 任意端口/无
   assert.equal(match(tab(1, 'http://192.168.3.213/'), [ipRule], {}).ruleId, 'lan');
   assert.equal(match(tab(2, 'http://192.168.3.213:8080/admin'), [ipRule], {}).ruleId, 'lan');
   assert.equal(match(tab(3, 'https://192.168.3.214/'), [ipRule], {}), null);
+});
+
+test('标签页群组关闭：仍命中首条规则，不落入后续开启群组的规则', () => {
+  const target = tab(1, 'https://example.com/a');
+  const first = rule('style-only', ['*://example.com/*'], { tabGroup: { enabled: false, minTabs: 5 } });
+  const result = explain(target, [first, fallbackRule], { tabs: [target] });
+  assert.equal(result.matched.ruleId, 'style-only');
+  assert.equal(result.matched.groupEnabled, false);
+  assert.equal(result.matched.thresholdMet, false);
+  assert.equal(result.steps.length, 1);
+});
+
+test('阈值和批量候选只统计首条命中归属，后续规则不抢占前面规则的页面', () => {
+  const first = rule('first', ['https://example.com/special/*']);
+  const second = rule('second', ['https://example.com/*'], { tabGroup: { minTabs: 2 } });
+  const tabs = [tab(1, 'https://example.com/special/a'), tab(2, 'https://example.com/common')];
+  const below = explain(tabs[1], [first, second], { tabs });
+  assert.equal(below.matched.ruleId, 'second');
+  assert.equal(below.steps.at(-1).count, 1);
+  assert.equal(below.matched.thresholdMet, false);
+  assert.deepEqual(below.matched.tabIds, [2]);
+  tabs.push(tab(3, 'https://example.com/another'));
+  const ready = explain(tabs[1], [first, second], { tabs });
+  assert.equal(ready.matched.thresholdMet, true);
+  assert.deepEqual(ready.matched.tabIds, [2, 3]);
 });
