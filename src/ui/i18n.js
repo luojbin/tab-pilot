@@ -191,7 +191,18 @@ const EN = {
   '右下': 'Bottom right',
   '左下': 'Bottom left',
 
+  '上移': 'Move up',
+  '删除': 'Delete',
+  '添加匹配路径': 'Add match pattern',
+  '添加命名规则': 'Add title rule',
+  '添加测试用例': 'Add test case',
+
   // 标签页名规则
+  '展开全部规则': 'Expand all rules',
+  '折叠全部规则': 'Collapse all rules',
+  '未命名规则': 'Untitled rule',
+  '展开重命名规则': 'Expand title rule',
+  '折叠重命名规则': 'Collapse title rule',
   '标题条件': 'Title condition',
   'URL 条件': 'URL condition',
   '目标文本': 'Replacement',

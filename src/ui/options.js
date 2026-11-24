@@ -1,4 +1,5 @@
 import browser from '../platform/browser.js';
+import { createIcon } from './icons.js';
 import { rulesFromGroups } from '../core/rules-from-groups.js';
 import { reorderRules } from '../core/reorder-rules.js';
 import { createRuleDrag } from './rule-drag.js';
@@ -157,10 +158,15 @@ function setStatus(kind, message, details) {
 
 // ---------------- 左侧：分组列表 ----------------
 
-function menuButton(label, onClick, disabled, extraClass) {
+function menuButton(label, onClick, disabled, extraClass, icon) {
   const element = document.createElement('button');
   element.type = 'button';
-  element.textContent = label;
+  element.setAttribute('role', 'menuitem');
+  element.tabIndex = -1;
+  const text = document.createElement('span');
+  text.textContent = label;
+  if (icon) element.append(createIcon(icon));
+  element.append(text);
   if (extraClass) element.classList.add(extraClass);
   element.disabled = Boolean(disabled);
   element.addEventListener('click', (event) => {
@@ -248,10 +254,11 @@ function renderList() {
 
     const menuToggle = document.createElement('button');
     menuToggle.type = 'button';
-    menuToggle.className = 'menu-toggle';
-    menuToggle.textContent = '⋯';
+    menuToggle.className = 'menu-toggle icon-button';
+    menuToggle.append(createIcon('menu'));
     menuToggle.title = '复制、调整顺序或删除';
     menuToggle.setAttribute('aria-label', '分组操作菜单');
+    menuToggle.setAttribute('aria-haspopup', 'menu');
     menuToggle.setAttribute('aria-expanded', String(openMenus.has(rule.id)));
     menuToggle.addEventListener('click', (event) => {
       event.stopPropagation();
@@ -262,13 +269,41 @@ function renderList() {
 
     const menu = document.createElement('div');
     menu.className = 'group-menu';
+    menu.setAttribute('role', 'menu');
+    menu.addEventListener('click', event => event.stopPropagation());
+    menu.setAttribute('aria-label', '分组操作菜单');
     menu.hidden = !openMenus.has(rule.id);
     menu.append(
-      menuButton('↑ 上移', () => moveRule(rule.id, -1), index === 0),
-      menuButton('↓ 下移', () => moveRule(rule.id, 1), index === state.rules.length - 1),
-      menuButton('复制', () => duplicateRule(rule.id)),
-      menuButton('✕ 删除', () => removeRule(rule.id), false, 'delete')
+      menuButton('上移', () => moveRule(rule.id, -1), index === 0, '', 'arrow-up'),
+      menuButton('下移', () => moveRule(rule.id, 1), index === state.rules.length - 1, '', 'arrow-down'),
+      menuButton('复制', () => duplicateRule(rule.id), false, '', 'copy'),
+      menuButton('删除', () => removeRule(rule.id), false, 'delete', 'close')
     );
+
+    const focusMenuItem = (last = false) => {
+      const items = menu.querySelectorAll('button:not(:disabled)');
+      (last ? items[items.length - 1] : items[0])?.focus();
+    };
+    menuToggle.addEventListener('keydown', event => {
+      if (!['ArrowDown', 'ArrowUp'].includes(event.key)) return;
+      event.preventDefault();
+      if (!openMenus.has(rule.id)) toggleMenu(rule.id);
+      focusMenuItem(event.key === 'ArrowUp');
+    });
+    menu.addEventListener('keydown', event => {
+      const items = [...menu.querySelectorAll('button:not(:disabled)')];
+      if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+        event.preventDefault();
+        const index = items.indexOf(document.activeElement);
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1
+          : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+        items[next]?.focus();
+      } else if (event.key === 'Escape' || event.key === 'Tab') {
+        if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); }
+        closeMenus();
+        menuToggle.focus();
+      }
+    });
 
     item.addEventListener('click', () => selectRule(rule.id));
 
@@ -344,6 +379,7 @@ function closeMenus() {
 }
 
 function toggleMenu(id) {
+  closeAddRuleMenu();
   if (openMenus.has(id)) openMenus.delete(id);
   else {
     openMenus.clear();
@@ -352,7 +388,16 @@ function toggleMenu(id) {
   for (const item of els.list.querySelectorAll('.group-item')) {
     const open = openMenus.has(item.dataset.id);
     const menu = item.querySelector('.group-menu');
-    if (menu) menu.hidden = !open;
+    if (menu) {
+      menu.hidden = !open;
+      if (open) {
+        menu.classList.remove('open-up');
+        const bounds = item.getBoundingClientRect();
+        const height = menu.getBoundingClientRect().height;
+        menu.classList.toggle('open-up', bounds.bottom + height + 6 > window.innerHeight && bounds.top > height + 6);
+        menu.querySelector('button:not(:disabled)')?.focus();
+      }
+    }
     const toggle = item.querySelector('.menu-toggle');
     if (toggle) toggle.setAttribute('aria-expanded', String(open));
   }
@@ -518,9 +563,7 @@ function createSection(id, title, body, options) {
   statusSlot.className = 'section-status';
   if (opts.status) statusSlot.append(opts.status);
 
-  const chevron = document.createElement('span');
-  chevron.className = 'section-chevron';
-  chevron.textContent = '▾';
+  const chevron = createIcon('chevron-down', 'section-chevron');
 
   head.append(titleEl, statusSlot, chevron);
 
@@ -550,8 +593,16 @@ function createSection(id, title, body, options) {
 
 // ---------------- 标签页名规则 ----------------
 
+// 仅保存设置页的展示状态，不写入分组规则。
+const foldedTitleRules = new WeakSet();
+
 function ensureTitleRule(rule) {
-  rule.titleRule = TitleRule.normalizeTitleRule(rule);
+  const previous = rule.titleRule?.rules;
+  const normalized = TitleRule.normalizeTitleRule(rule);
+  normalized.rules.forEach((entry, index) => {
+    if (previous?.[index] && foldedTitleRules.has(previous[index])) foldedTitleRules.add(entry);
+  });
+  rule.titleRule = normalized;
   return rule.titleRule;
 }
 
@@ -600,7 +651,7 @@ function titleField(labelText, className, value, placeholder, onInput, showLabel
   return label;
 }
 
-function createTitleRuleCard(rule, spec, entry, index) {
+function createTitleRuleCard(rule, spec, entry, index, foldControls) {
   const card = document.createElement('div');
   card.className = 'title-rule-card';
 
@@ -621,10 +672,20 @@ function createTitleRuleCard(rule, spec, entry, index) {
     rule.titleRule = spec;
   });
 
+  const fold = document.createElement('button');
+  fold.type = 'button';
+  fold.className = 'title-rule-fold icon-button';
+
+  const summary = document.createElement('button');
+  summary.type = 'button';
+  summary.className = 'title-rule-summary';
+  summary.setAttribute('data-i18n-skip', '');
+
   const up = document.createElement('button');
   up.type = 'button';
-  up.className = 'title-rule-move';
-  up.textContent = '↑';
+  up.className = 'title-rule-move icon-button';
+  up.append(createIcon('arrow-up'));
+  up.setAttribute('aria-label', '上移');
   up.title = '上移（靠前的规则先匹配）';
   up.disabled = index === 0;
   up.addEventListener('click', () => {
@@ -637,8 +698,9 @@ function createTitleRuleCard(rule, spec, entry, index) {
 
   const down = document.createElement('button');
   down.type = 'button';
-  down.className = 'title-rule-move';
-  down.textContent = '↓';
+  down.className = 'title-rule-move icon-button';
+  down.append(createIcon('arrow-down'));
+  down.setAttribute('aria-label', '下移');
   down.title = '下移';
   down.disabled = index === spec.rules.length - 1;
   down.addEventListener('click', () => {
@@ -651,16 +713,17 @@ function createTitleRuleCard(rule, spec, entry, index) {
 
   const remove = document.createElement('button');
   remove.type = 'button';
-  remove.className = 'title-rule-remove';
-  remove.textContent = '✕';
+  remove.className = 'title-rule-remove icon-button icon-button-danger';
+  remove.append(createIcon('close'));
   remove.title = '删除这条命名规则';
+  remove.setAttribute('aria-label', remove.title);
   remove.addEventListener('click', () => {
     spec.rules.splice(index, 1);
     rule.titleRule = spec;
     renderDetail();
   });
 
-  head.append(order, description, up, down, remove);
+  head.append(order, description, summary, fold, up, down, remove);
 
   const patternField = titleField(
     '标题条件',
@@ -689,7 +752,30 @@ function createTitleRuleCard(rule, spec, entry, index) {
       entry.urlPattern = value;
       rule.titleRule = spec;
     }, true, '$');
-  card.append(head, patternField, urlField, replacementField);
+  const fields = [patternField, urlField, replacementField];
+  const syncFoldState = () => {
+    const folded = foldedTitleRules.has(entry);
+    fields.forEach(field => { field.hidden = folded; });
+    description.hidden = folded;
+    summary.hidden = !folded;
+    summary.textContent = entry.description.trim() ? entry.description : t('未命名规则');
+    summary.title = summary.textContent;
+    summary.setAttribute('aria-expanded', String(!folded));
+    fold.replaceChildren(createIcon(folded ? 'chevron-right' : 'chevron-down'));
+    fold.title = t(folded ? '展开重命名规则' : '折叠重命名规则');
+    fold.setAttribute('aria-label', fold.title);
+    fold.setAttribute('aria-expanded', String(!folded));
+  };
+  const toggleFold = () => {
+    if (foldedTitleRules.has(entry)) foldedTitleRules.delete(entry);
+    else foldedTitleRules.add(entry);
+    syncFoldState();
+  };
+  fold.addEventListener('click', toggleFold);
+  summary.addEventListener('click', toggleFold);
+  card.append(head, ...fields);
+  foldControls?.push(syncFoldState);
+  syncFoldState();
   return card;
 }
 
@@ -732,10 +818,33 @@ function createTitleRuleSection(rule) {
   hint.textContent =
     '按顺序使用首条命中的规则。标题和 URL 条件至少填写一个，同时填写时须同时命中。用 ${title.1}、${url.1} 引用捕获组，命名组用 ${title.name}、${url.name}；$$ 表示美元符号。目标文本是完整的新标题。标题和 URL 条件均默认完整匹配，无需填写 ^ 和 $；如需匹配后续路径、参数等变体，请显式添加 .*。';
 
+  const foldControls = [];
+  const listToolbar = document.createElement('div');
+  listToolbar.className = 'title-rule-list-toolbar';
+  const bulkFoldButton = (label, icon, folded) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'icon-button';
+    button.title = label;
+    button.setAttribute('aria-label', label);
+    button.append(createIcon(icon));
+    button.addEventListener('click', () => {
+      spec.rules.forEach(entry => {
+        if (folded) foldedTitleRules.add(entry);
+        else foldedTitleRules.delete(entry);
+      });
+      foldControls.forEach(sync => sync());
+    });
+    return button;
+  };
+  const expandAll = bulkFoldButton('展开全部规则', 'expand-all', false);
+  const collapseAll = bulkFoldButton('折叠全部规则', 'collapse-all', true);
+  listToolbar.append(expandAll, collapseAll);
+
   const list = document.createElement('div');
   list.className = 'title-rule-list';
   spec.rules.forEach((entry, index) => {
-    list.append(createTitleRuleCard(rule, spec, entry, index));
+    list.append(createTitleRuleCard(rule, spec, entry, index, foldControls));
   });
   if (spec.rules.length === 0) {
     const empty = document.createElement('p');
@@ -747,7 +856,8 @@ function createTitleRuleSection(rule) {
   const addButton = document.createElement('button');
   addButton.type = 'button';
   addButton.className = 'add-title-rule';
-  addButton.textContent = '＋ 添加命名规则';
+  addButton.classList.add('icon-label');
+  addButton.append(createIcon('plus'), document.createTextNode('添加命名规则'));
   addButton.addEventListener('click', () => {
     spec.rules.push({ titlePattern: '', urlPattern: '', replacement: '', description: '' });
     rule.titleRule = spec;
@@ -768,8 +878,10 @@ function createTitleRuleSection(rule) {
       const url = titleField('URL', 'title-test-url', row.url, 'URL', value => { row.url = value; }, false);
       const remove = document.createElement('button');
       remove.type = 'button';
-      remove.textContent = '✕';
+      remove.className = 'title-test-remove row-delete-button icon-button icon-button-danger';
+      remove.append(createIcon('close'));
       remove.title = '删除测试用例';
+      remove.setAttribute('aria-label', remove.title);
       remove.addEventListener('click', () => {
         spec.testCases.splice(index, 1);
         renderTestCases();
@@ -782,7 +894,8 @@ function createTitleRuleSection(rule) {
   renderTestCases();
   const addTest = document.createElement('button');
   addTest.type = 'button';
-  addTest.textContent = '＋ 添加测试用例';
+  addTest.className = 'icon-label';
+  addTest.append(createIcon('plus'), document.createTextNode('添加测试用例'));
   addTest.addEventListener('click', () => {
     spec.testCases.push({ title: '', url: '' });
     renderTestCases();
@@ -849,7 +962,7 @@ function createTitleRuleSection(rule) {
     if (warning) warning.hidden = disabled;
     section.querySelectorAll('input, button, textarea').forEach((element) => {
       if (element === toggleInput) return;
-      element.disabled = disabled;
+      element.disabled = disabled || (spec.rules.length === 0 && (element === expandAll || element === collapseAll));
     });
   }
 
@@ -861,7 +974,7 @@ function createTitleRuleSection(rule) {
 
   const parts = [toggleLabel];
   if (warning) parts.push(warning);
-  parts.push(hint, list, addButton, testBox);
+  parts.push(hint, listToolbar, list, addButton, testBox);
   section.append(...parts);
   syncEnabledState();
   return section;
@@ -1192,9 +1305,7 @@ function createColorPicker(rule) {
   const label = document.createElement('span');
   label.className = 'color-name';
   label.textContent = COLOR_LABEL[rule.color] || COLOR_LABEL.grey;
-  const caret = document.createElement('span');
-  caret.className = 'caret';
-  caret.textContent = '▾';
+  const caret = createIcon('chevron-down', 'caret');
   button.append(swatch, label, caret);
 
   const menu = document.createElement('div');
@@ -1435,9 +1546,10 @@ function renderDetail() {
 
     const remove = document.createElement('button');
     remove.type = 'button';
-    remove.className = 'icon';
-    remove.textContent = '✕';
+    remove.className = 'row-delete-button icon-button icon-button-danger';
+    remove.append(createIcon('close'));
     remove.title = values.length === 1 ? '每条规则至少保留一条匹配路径' : '删除这条匹配路径';
+    remove.setAttribute('aria-label', '删除这条匹配路径');
     remove.disabled = values.length === 1;
     remove.addEventListener('click', () => removePattern(rule, patternIndex));
 
@@ -1448,7 +1560,8 @@ function renderDetail() {
   const addPattern = document.createElement('button');
   addPattern.type = 'button';
   addPattern.className = 'add-pattern';
-  addPattern.textContent = '＋ 添加匹配路径';
+  addPattern.classList.add('icon-label');
+  addPattern.append(createIcon('plus'), document.createTextNode('添加匹配路径'));
   addPattern.addEventListener('click', () => addPatternRow(rule));
 
   const patternHint = document.createElement('p');
@@ -2175,6 +2288,8 @@ function revokeHostPermission() {
 
 // ---------------- 事件绑定 ----------------
 
+els.addRule.replaceChildren(createIcon('plus'), createIcon('chevron-down', 'add-rule-chevron'));
+
 els.save.addEventListener('click', () => {
   save().catch((err) => setStatus('error', `保存失败：${String(err)}`));
 });
@@ -2222,14 +2337,15 @@ document.addEventListener('input', syncDirtyState);
 document.addEventListener('change', syncDirtyState);
 
 
-// 点空白处或按 Esc 收起颜色面板
+// 点空白处或按 Esc 收起菜单和颜色面板
 document.addEventListener('click', event => {
-  if (!els.addRuleMenu.contains(event.target) && event.target !== els.addRule) closeAddRuleMenu();
+  if (!event.target.closest('.group-menu, .menu-toggle')) closeMenus();
+  if (!els.addRuleMenu.contains(event.target) && !els.addRule.contains(event.target)) closeAddRuleMenu();
   if (closeColorMenu) closeColorMenu();
 });
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {
-    closeAddRuleMenu();
+    closeMenus();
     if (closeColorMenu) closeColorMenu();
   }
 });

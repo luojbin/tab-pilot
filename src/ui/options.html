@@ -101,7 +101,50 @@
     filter: brightness(1.06);
     box-shadow: 0 5px 16px rgba(37, 99, 235, 0.42);
   }
-  button.icon { padding: 3px 9px; line-height: 1.2; }
+  .ui-icon {
+    display: inline-block;
+    flex: none;
+    width: 18px;
+    height: 18px;
+    vertical-align: middle;
+    pointer-events: none;
+  }
+  .icon-label, button.icon { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+  button.icon { padding: 5px 8px; line-height: 1.2; }
+  /* 所有独立图标按钮共用尺寸、边框和交互样式。 */
+  .icon-button {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    align-self: center;
+    box-sizing: border-box;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--muted);
+    box-shadow: none;
+    transform: none;
+    transition: color 0.15s ease, background 0.15s ease;
+  }
+  .icon-button .ui-icon { width: 16px; height: 16px; }
+  .icon-button:hover:not(:disabled) {
+    color: var(--accent);
+    border-color: var(--border);
+    background: var(--mini-btn-bg-hover);
+    box-shadow: none;
+    transform: none;
+  }
+  .icon-button.icon-button-danger:hover:not(:disabled) {
+    color: var(--error);
+    background: rgba(198, 40, 40, 0.1);
+  }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #addRule .add-rule-chevron { width: 16px; height: 16px; transition: transform 0.15s ease; }
+  #addRule[aria-expanded="true"] .add-rule-chevron { transform: rotate(180deg); }
 
   /* 区块标题：hover 也不要有阴影 / 边框 / 位移，只保留文字变色 */
   button.section-head,
@@ -117,9 +160,6 @@
   .section-head,
   .color-select,
   .color-option,
-  .title-rule-move,
-  .title-rule-remove,
-  .group-row .menu-toggle,
   button.icon {
     box-shadow: none;
     transform: none;
@@ -127,15 +167,11 @@
   .section-head:hover,
   .color-select:hover,
   .color-option:hover,
-  .title-rule-move:hover:not(:disabled),
-  .title-rule-remove:hover,
-  .group-row .menu-toggle:hover:not(:disabled),
   button.icon:hover:not(:disabled) {
     transform: none;
     box-shadow: none;
   }
   button.icon { background: transparent; }
-  .group-row .menu-toggle { background: transparent; }
 
   /* 顶部工具栏：一条横栏，不加卡片边框 */
   .toolbar {
@@ -258,18 +294,39 @@
     white-space: nowrap;
     cursor: pointer;
   }
-  .group-row .menu-toggle {
-    flex: none;
-    padding: 2px 7px;
-    border-color: transparent;
-    background: transparent;
-    color: var(--muted);
+  .group-menu {
+    position: absolute;
+    z-index: 30;
+    top: calc(100% + 4px);
+    right: 8px;
+    min-width: 150px;
+    max-height: min(240px, calc(100vh - 24px));
+    overflow-y: auto;
+    padding: 5px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    box-shadow: 0 6px 20px #0002;
   }
-  .group-row .menu-toggle:hover:not(:disabled) { border-color: var(--border); }
-  .group-menu { display: flex; gap: 6px; padding: 0 8px 8px 30px; }
+  .group-menu.open-up { top: auto; bottom: calc(100% + 4px); }
   .group-menu[hidden] { display: none; }
-  .group-menu button { flex: 1 1 auto; padding: 5px 6px; font-size: 12px; }
+  .group-menu button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 7px 10px;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    box-shadow: none;
+    text-align: left;
+    font-size: 13px;
+  }
+  .group-menu button:hover:not(:disabled) { background: var(--panel); box-shadow: none; transform: none; }
+  .group-menu .ui-icon { width: 16px; height: 16px; }
   .group-menu button.delete { color: var(--error); }
+  .group-menu button.delete:hover:not(:disabled) { background: rgba(198, 40, 40, 0.1); }
 
   .hint { color: var(--muted); font-size: 12.5px; margin: 0; }
   .hint.small { font-size: 12px; margin-top: 10px; }
@@ -416,7 +473,8 @@
   }
   .color-select:hover { border-color: var(--accent); }
   .color-select .swatch { width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(0, 0, 0, 0.18); }
-  .color-select .caret { color: var(--muted); font-size: 10px; }
+  .color-select .caret { color: var(--muted); transition: transform 0.15s ease; }
+  .color-select[aria-expanded="true"] .caret { transform: rotate(180deg); }
   .color-menu {
     position: absolute;
     z-index: 20;
@@ -467,7 +525,7 @@
     font: 13px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
   }
   .pattern-row input:focus { outline: none; border-color: var(--accent); }
-  .add-pattern { align-self: flex-start; font-size: 13px; padding: 5px 10px; }
+  .add-pattern { align-self: flex-start; margin-top: 12px; font-size: 13px; padding: 5px 10px; }
 
   /* 右栏三段式配置区块 */
   .config-section { border-top: 1px solid var(--divider); }
@@ -495,13 +553,14 @@
   }
   .section-status[hidden] { display: none; }
   .section-status .switch-ui { pointer-events: none; }
-  .section-chevron { color: var(--muted); font-size: 12px; transition: transform 0.15s ease; }
+  .section-chevron { color: var(--muted); transition: transform 0.15s ease; }
   .section-head[aria-expanded="false"] .section-chevron { transform: rotate(-90deg); }
   .section-body { padding-bottom: 18px; }
   .section-body[hidden] { display: none; }
 
   /* 标签页名规则 */
   .title-rule-controls { display: flex; flex-direction: column; gap: 12px; }
+  .title-rule-list-toolbar { display: flex; justify-content: flex-end; gap: 8px; }
   .title-rule-list { display: flex; flex-direction: column; gap: 10px; }
   .title-rule-card {
     display: flex;
@@ -543,38 +602,42 @@
     color: inherit;
     font: 13px/1.4 inherit;
   }
+  .title-rule-summary {
+    flex: 1;
+    min-width: 0;
+    padding: 4px 6px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: inherit;
+    box-shadow: none;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .title-rule-summary:hover:not(:disabled),
+  .title-rule-summary:active:not(:disabled) {
+    color: var(--accent);
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    transform: none;
+  }
+  .title-rule-card > .field[hidden],
+  .title-rule-head > [hidden] { display: none; }
   .title-rule-desc:focus { outline: none; border-bottom-color: var(--accent); }
-  .title-rule-move,
-  .title-rule-remove {
-    flex: none;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
+  .title-rule-head .icon-button {
     width: 26px;
     height: 26px;
-    padding: 0;
     border: 0;
     border-radius: 7px;
     background: transparent;
-    color: var(--muted);
-    font-size: 13px;
-    line-height: 1;
-    cursor: pointer;
-    box-shadow: none;
-    transition: color 0.15s ease, background 0.15s ease;
   }
-  .title-rule-move:hover:not(:disabled) {
-    color: var(--accent);
+  .title-rule-head .icon-button:hover:not(:disabled) {
     background: var(--mini-btn-bg-hover);
   }
-  .title-rule-move:disabled {
-    opacity: 0.28;
-    cursor: default;
-    background: transparent;
-  }
-  .title-rule-remove { font-size: 15px; }
-  .title-rule-remove:hover {
-    color: var(--error);
+  .title-rule-head .icon-button-danger:hover:not(:disabled) {
     background: rgba(198, 40, 40, 0.1);
   }
   .add-title-rule { align-self: flex-start; font-size: 13px; padding: 6px 14px; }
@@ -636,7 +699,6 @@
   }
   .title-test-case { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: end; margin-bottom: 8px; }
   .title-test-case input { width: 100%; min-width: 0; }
-  .title-test-case button { margin-bottom: 2px; }
   @media (max-width: 700px) { .title-test-case { grid-template-columns: 1fr; } }
   .title-test-run { align-self: flex-start; font-size: 13px; padding: 6px 14px; }
   .title-test-output {
@@ -651,6 +713,8 @@
   .title-test-arrow { color: var(--muted); flex: none; }
   .title-test-dst { color: var(--ok); word-break: break-word; }
   .title-test-dst.warn { color: var(--warn); }
+
+  @media (prefers-reduced-motion: reduce) { .ui-icon { transition: none !important; } }
 
   /* 页面内标识：效果预览 */
   .preview-box {
@@ -755,7 +819,7 @@
       <div class="panel-head">
         <h2>分组</h2>
         <div class="add-rule-control">
-          <button id="addRule" class="icon" type="button" title="添加分组规则" aria-label="添加分组规则" aria-haspopup="menu" aria-expanded="false" aria-controls="addRuleMenu">＋ ▾</button>
+          <button id="addRule" class="icon" type="button" title="添加分组规则" aria-label="添加分组规则" aria-haspopup="menu" aria-expanded="false" aria-controls="addRuleMenu"></button>
           <div id="addRuleMenu" class="add-rule-menu" role="menu" hidden>
             <button id="addBlankRule" type="button" role="menuitem">新建空白规则</button>
             <button id="rulesFromWindow" type="button" role="menuitem">从当前窗口分组创建规则</button>
