@@ -137,6 +137,8 @@
 
 ## 5. 数据模型
 
+各格式版本的字段、默认值、JSON 示例和迁移约定见 [配置 JSON 格式参考](schema-reference.md)。
+
 `schemaVersion: 2`（1.3.0 标题双来源规则升级，自动迁移正式 schema 1）。一条规则对应一个标签页分组，`patterns` 可包含多个匹配路径，数组顺序即优先级，`highlight` 描述页面内标识，`titleRule` 描述标签页名规则。
 
 ```json

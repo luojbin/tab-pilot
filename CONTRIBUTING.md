@@ -117,6 +117,8 @@ npm run build:chromium  # 仅 Chromium
 
 ## 配置格式
 
+完整字段约束、历史 schema 1 / 当前 schema 2 及迁移关系见 [配置 JSON 格式参考](docs/schema-reference.md)。
+
 配置保存在 `browser.storage.local` 的 `tabpilot:config`（见 `src/app/store.js`），导入 / 导出文件使用同一结构，当前为 `schemaVersion: 2`。一条规则对应一个标签页分组，`patterns` 里多个匹配路径任一命中即归组，数组顺序即优先级：
 
 ```json

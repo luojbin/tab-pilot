@@ -11,7 +11,7 @@
 
 > 当前源码版本为 **1.3.0**；功能与验收进度见 [开发计划](docs/development-plan.md)。v1.2.0 已发布并完成三浏览器验证，1.3.0 的新增功能验证状态单独记录。
 
-> 从源码构建、调试及发布见 [CONTRIBUTING.md](CONTRIBUTING.md)；产品需求与验收见 [docs/PRD.md](docs/PRD.md)。
+> 从源码构建、调试及发布见 [CONTRIBUTING.md](CONTRIBUTING.md)；产品需求与验收见 [docs/PRD.md](docs/PRD.md)；配置文件格式与历史版本见 [schema-reference](docs/schema-reference.md)。
 
 ---
 
