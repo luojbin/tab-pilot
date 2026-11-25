@@ -204,6 +204,10 @@ const EN = {
   '窗口内符合规则的标签页数达到阈值才创建群组': 'Create a group only when the number of matching tabs in the window reaches the threshold',
 
   // 标签页名规则
+  '命名规则必须是对象': 'The title rule must be an object',
+  '标题条件和 URL 条件至少填写一个正则': 'Enter at least one title or URL regular expression',
+  'pattern 已改为 titlePattern/urlPattern': 'Use titlePattern/urlPattern instead of pattern',
+  '描述': 'Description',
   '展开全部规则': 'Expand all rules',
   '折叠全部规则': 'Collapse all rules',
   '未命名规则': 'Untitled rule',
@@ -240,8 +244,6 @@ const EN = {
   '下移': 'Move down',
   '删除这条命名规则': 'Delete this title rule',
   '源文本（正则表达式）': 'Source (regular expression)',
-  '目标文本（可用 $1/$2 引用匹配组）':
-    'Replacement (use $1/$2 for capture groups)',
   '测试文本（每行一个标题）': 'Test text (one title per line)',
   '查看效果': 'Preview',
   '正则有误，未应用': 'Invalid regex; not applied',
@@ -282,6 +284,14 @@ const EN = {
 };
 
 const PATTERNS = [
+  [/^规则组“([\s\S]*)”的第 (\d+) 条命名规则：([\s\S]+)$/,
+    (match, name, entry, reason) => `Rule group “${name}”, title rule ${entry}: ${translateText(reason)}`],
+  [/^第 (\d+) 个规则组的第 (\d+) 条命名规则：(.+)$/,
+    (match, group, entry, reason) => `Rule group ${group}, title rule ${entry}: ${translateText(reason)}`],
+  [/^(标题条件|URL 条件)不是合法的正则：(.+)$/,
+    (match, field, reason) => `${translateExact(field)} is not a valid regex: ${reason}`],
+  [/^(标题条件|URL 条件|目标文本|描述)必须是字符串$/,
+    (match, field) => `${translateExact(field)} must be a string`],
   [/^第 (\d+) 个 · 顺序即优先级$/, 'Rule group $1 · order = priority'],
   [/^新规则组 (\d+)$/, 'New rule group $1'],
   [/^匹配路径 (\d+)$/, 'Match pattern $1'],

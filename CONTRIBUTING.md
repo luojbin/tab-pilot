@@ -170,7 +170,8 @@ npm run build:chromium  # 仅 Chromium
 | `rules.test.js` | URL、优先级、阈值、窗口隔离、路径补全 |
 | `store.test.js` | 配置校验、默认值、导入导出数据 |
 | `highlight.test.js` | 标识规格、边界和布局计算 |
-| `title-rule.test.js` | 双条件、双来源捕获组、旧模板兼容、非法正则、结构化测试 |
+| `validation-errors.test.js` | 结构化错误定位、旧路径回退、重名关联及实际设置页高亮回归 |
+| `title-rule.test.js` | 双条件、双来源捕获组、旧模板迁移转换、非法正则、结构化测试 |
 | `background.test.js` | 浏览器 mock 下的事件、同步、消息与配置处理 |
 | `copy-rule.test.js` / `append-rules.test.js` | 深拷贝、追加导入、名称/id 冲突与数据保护 |
 | `reorder-rules.test.js` / `rules-from-groups.test.js` | 拖动事件与顺序边界、当前窗口规则生成与去重 |
@@ -180,12 +181,12 @@ npm run build:chromium  # 仅 Chromium
 | `i18n.test.js` | 文案和模板翻译；不代表整页翻译覆盖 |
 | `bundle.test.js` | 实际打包四个入口；在两种 API 命名空间下执行后台和内容脚本，验证归组与消息 |
 
-当前完整测试为 **235 项通过**（含四项打包回归）。打包冒烟编译四入口并执行后台/内容脚本，只解析配置页和 popup 脚本；其他测试用桩验证部分 DOM/事件和 API 行为，未在真实浏览器中运行整页 UI。
+当前完整测试为 **246 项通过**（含四项打包回归）。打包冒烟编译四入口并执行后台/内容脚本，只解析配置页和 popup 脚本；其他测试用桩验证部分 DOM/事件和 API 行为，未在真实浏览器中运行整页 UI。
 
-受限环境可在单进程执行不依赖浏览器全局桩的 **149 项**：
+受限环境可在单进程执行不依赖浏览器全局桩的 **160 项**：
 
 ```bash
-node --test --test-isolation=none test/append-rules.test.js test/copy-rule.test.js test/highlight.test.js test/i18n.test.js test/reorder-rules.test.js test/rules-from-groups.test.js test/rules.test.js test/store.test.js test/strict-mode.test.js test/title-rule.test.js test/toolbar-feedback.test.js test/toolbar-menu.test.js
+node --test --test-isolation=none test/append-rules.test.js test/copy-rule.test.js test/highlight.test.js test/i18n.test.js test/reorder-rules.test.js test/rules-from-groups.test.js test/rules.test.js test/store.test.js test/strict-mode.test.js test/title-rule.test.js test/toolbar-feedback.test.js test/toolbar-menu.test.js test/validation-errors.test.js
 ```
 
 `background`、`manual-group`、`popup`、`tab-order` 测试文件依赖各自的全局 API 桩，应使用 npm test 的独立进程，不要与上述文件在单进程混跑；bundle 测试另需 esbuild 子进程。部分逻辑测试通过不等于完整发布验证。
@@ -293,3 +294,5 @@ npm run build:firefox
 - 改变架构、命令、调试接口或发布步骤时，更新本指南。
 - 新增或修改逻辑时，按影响运行相关测试；修改配置页 DOM 交互后进行手工验证。
 - 新增依赖时同步提交 `package.json`、`package-lock.json`。修改源码后重新构建，不提交 `node_modules/`、`dist/` 或 `output/`。
+
+配置校验失败保留 `errors: string[]` 作为展示文案，并返回 `errorDetails` 的规则组索引、相关规则组及命名规则字段路径。设置页优先使用结构化位置高亮，避免把内层命名规则索引当作外层规则组号。

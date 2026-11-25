@@ -33,3 +33,16 @@ test('i18n：未知文本和用户数据不被改写', () => {
   assert.equal(t('开发环境'), '开发环境');
   assert.equal(t('localhost:3000'), 'localhost:3000');
 });
+
+test('命名规则错误：规则组、条目序号与具体原因均能切换中英文', () => {
+  setLanguage('en');
+  assert.equal(t('规则组“工作”的第 1 条命名规则：标题条件和 URL 条件至少填写一个正则'),
+    'Rule group “工作”, title rule 1: Enter at least one title or URL regular expression');
+  assert.equal(t('规则组“工作”的第 2 条命名规则：URL 条件不是合法的正则：Invalid regular expression'),
+    'Rule group “工作”, title rule 2: URL condition is not a valid regex: Invalid regular expression');
+  assert.equal(t('规则组“全局配置”的第 4 条命名规则：目标文本必须是字符串'),
+    'Rule group “全局配置”, title rule 4: Replacement must be a string');
+  setLanguage('zh');
+  const text = '规则组“工作”的第 1 条命名规则：标题条件和 URL 条件至少填写一个正则';
+  assert.equal(t(text), text);
+});

@@ -21,7 +21,7 @@ function spec(rules, extras) {
   };
 }
 
-const JIRA = { titlePattern: '^\\[(.*?)\\]\\s*(.*)$', replacement: '$2 · $1', description: '' };
+const JIRA = { titlePattern: '^\\[(.*?)\\]\\s*(.*)$', replacement: '${title.2} · ${title.1}', description: '' };
 
 test('normalizeTitleRule：缺省时给出关闭状态和空规则组', () => {
   assert.deepEqual(normalizeTitleRule({}), DEFAULT_TITLE_RULE);
@@ -76,7 +76,7 @@ test('applyTitleRules：支持捕获组重排与命名组', () => {
   assert.equal(reorder.result, 'Jira - 看板 · 工作');
 
   const named = applyTitleRules(
-    spec([{ titlePattern: '^(?<site>\\w+) - (?<page>.+)$', replacement: '$<page> · $<site>' }]),
+    spec([{ titlePattern: '^(?<site>\\w+) - (?<page>.+)$', replacement: '${title.page} · ${title.site}' }]),
     'jira - 看板'
   );
   assert.equal(named.result, '看板 · jira');
@@ -159,9 +159,9 @@ test('双条件必须同时命中；URL-only 替换整个标题', () => {
   assert.equal(applyTitleRules(rule, 'Else', 'https://host/other/abc').result, 'abc: Else');
 });
 
-test('捕获缺省、模板转义、捕获生成完整标题及旧模板语法', () => {
+test('捕获缺省、模板转义、捕获生成完整标题及新版模板语法', () => {
   const rule = spec([{ titlePattern: '(a)(b)?', urlPattern: 'https://host/(x)?$',
-    replacement: '${title.2}/${url.1}/${title.unknown}/${url.99}/$${url.1}/$1/$12/$&' }]);
+    replacement: '${title.2}/${url.1}/${title.unknown}/${url.99}/$${url.1}/${title.1}/${title.1}2/${title.0}' }]);
   assert.equal(applyTitleRules(rule, 'a', 'https://host/').result, '////${url.1}/a/a2/a');
 });
 
@@ -174,7 +174,7 @@ test('URL 正则非法被跳过；结构化测试保留空标题和标题空格'
   assert.equal(rows[1].ruleIndex, 1);
 });
 
-test('schema 1 迁移后的模板完整标题匹配时保留旧模板语法，包括原有字面量 scoped 模板', async () => {
+test('schema 1 迁移统一转换捕获语法并保留字面量，不依赖运行期旧语法', async () => {
   const { migrateConfig } = await import('../src/core/config-migration.js');
   const title = 'abc';
   const pattern = '(?<first>a)(b)(c)?';
@@ -229,4 +229,9 @@ test('同一个正则用于标题和 URL 时均为完整匹配，显式通配符
   const wildcard = spec([{ urlPattern: 'https://host/item.*', replacement: 'matched' }]);
   assert.equal(applyTitleRules(wildcard, 'App', 'https://host/item?x=1').result, 'matched');
   assert.equal(applyTitleRules(urlRule, 'App', 'https://host/item?x=1').matched, false);
+});
+
+test('运行期只支持新版捕获语法，旧 $N / 命名 / 完整匹配引用均按普通文本处理', () => {
+  const rule = spec([{ titlePattern: '(?<app>App)', replacement: '${title.1}/${title.app}/$1/$<app>/$&' }]);
+  assert.equal(applyTitleRules(rule, 'App').result, 'App/App/$1/$<app>/$&');
 });

@@ -258,7 +258,7 @@ test('buildConfigFromRules：保留 highlight / titleRule 并规范化字段（�
       titleRule: {
         enabled: true,
         rules: [
-          { titlePattern: '^(.*)$', replacement: '[T] X $1', description: '测试' }
+          { titlePattern: '^(.*)$', replacement: '[T] X ${title.1}', description: '测试' }
         ],
         testCases: [{ title: 'a', url: '' }, { title: 'b', url: '' }]
       }
@@ -273,7 +273,7 @@ test('buildConfigFromRules：保留 highlight / titleRule 并规范化字段（�
   assert.equal(config.rules[0].highlight.enabled, true, 'highlight 不能在组装时丢失');
   assert.equal(config.rules[0].titleRule.enabled, true, 'titleRule 不能在组装时丢失');
   assert.equal(config.rules[0].titleRule.rules[0].titlePattern, '^(.*)$');
-  assert.equal(config.rules[0].titleRule.rules[0].replacement, '[T] X $1');
+  assert.equal(config.rules[0].titleRule.rules[0].replacement, '[T] X ${title.1}');
   assert.deepEqual(config.rules[0].titleRule.testCases, [{ title: 'a', url: '' }, { title: 'b', url: '' }]);
   assert.equal(validateConfig(config).ok, true);
 });
@@ -303,7 +303,7 @@ test('titleRule：规则里的非法正则被拒绝', () => {
   };
   const result = validateConfig(bad);
   assert.equal(result.ok, false);
-  assert.match(result.errors.join('\n'), /titleRule\.rules\[0\]\.titlePattern 不是合法的正则/);
+  assert.match(result.errors.join('\n'), /规则组“开发”的第 1 条命名规则：标题条件不是合法的正则/);
 });
 
 test('titleRule：空 pattern 被拒绝', () => {
@@ -311,7 +311,7 @@ test('titleRule：空 pattern 被拒绝', () => {
   bad.rules[0].titleRule = { enabled: true, rules: [{ titlePattern: '   ' }], testCases: [] };
   const result = validateConfig(bad);
   assert.equal(result.ok, false);
-  assert.match(result.errors.join('\n'), /titlePattern\/urlPattern 至少填写一个正则/);
+  assert.match(result.errors.join('\n'), /标题条件和 URL 条件至少填写一个正则/);
 });
 
 test('highlight：边框与 banner 的不透明度各自校验 0~100', () => {
@@ -515,7 +515,7 @@ test('schema 1：读取和两种导入均迁移标题规则与测试用例，保
     assert.equal(result.ok, true, result.errors?.join('\n'));
     assert.equal(result.config.schemaVersion, 2);
     const spec = result.config.rules[0].titleRule;
-    assert.deepEqual(spec.rules[0], { titlePattern: '^(.*)$', urlPattern: '', replacement: '$1 $${url.1} $$', description: 'legacy' });
+    assert.deepEqual(spec.rules[0], { titlePattern: '^(.*)$', urlPattern: '', replacement: '${title.1} $${url.1} $$', description: 'legacy' });
     assert.deepEqual(spec.testCases, [{ title: 'Alpha', url: '' }, { title: 'Beta', url: '' }]);
     assert.equal('testText' in spec, false);
     assert.equal(validateConfig(result.config).ok, true);
@@ -599,4 +599,67 @@ test('当前 schema 2 不执行中间格式迁移，开发期 schema 3 和平铺
   const development = { ...config, schemaVersion: 3 };
   assert.equal(migrateConfig(development), development);
   assert.equal(validateConfig(development).ok, false);
+});
+
+test('命名规则校验：显示规则组名和条目序号，结构化索引和字段路径不混淆', () => {
+  const config = { schemaVersion: 2, rules: Array.from({ length: 3 }, (_, i) => ({ id: `r${i}`, name: `G${i}`, patterns: ['https://host/*'] })) };
+  config.rules[2].titleRule = { enabled: true, rules: [{ titlePattern: '[' }, { urlPattern: 42, replacement: 7 }] };
+  const result = validateConfig(config);
+  assert.equal(result.ok, false);
+  assert.match(result.errors[0], /^规则组“G2”的第 1 条命名规则：标题条件不是合法的正则：/);
+  assert.ok(result.errors.some(message => message.includes('第 2 条命名规则：URL 条件必须是字符串')));
+  assert.deepEqual(result.errorDetails.map(error => error.ruleIndex), result.errors.map(() => 2));
+  assert.equal(result.errorDetails[0].entryIndex, 0);
+  assert.equal(result.errorDetails[0].path, 'rules[2].titleRule.rules[0].titlePattern');
+  assert.ok(result.errorDetails.some(error => error.entryIndex === 1 && error.path.endsWith('.replacement')));
+  config.rules[2].name = '';
+  assert.ok(validateConfig(config).errors.some(message => message.startsWith('第 3 个规则组的第 1 条命名规则：')));
+});
+
+test('普通字段和重名校验：包含结构化位置，原有字符串错误仍可用', () => {
+  const result = validateConfig({ schemaVersion: 2, rules: [
+    { id: 'a', name: 'A', patterns: ['https://a/*'] },
+    { id: 'b', name: 'A', patterns: ['https://b/*'], tabGroup: { minTabs: 0 }, highlight: { border: { width: 0 }, banner: { fontSize: 99 } } }
+  ] });
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.every(message => typeof message === 'string'));
+  assert.equal(result.errorDetails.length, result.errors.length);
+  assert.ok(result.errorDetails.every(error => error.ruleIndex === 1));
+  assert.deepEqual(result.errorDetails.find(error => error.message.includes('name 重复')).relatedRuleIndexes, [0]);
+});
+
+test('schema 1 标题迁移严格采用旧 pattern 并清空 URL，统一数字/命名/完整匹配引用', async () => {
+  const { applyTitleRules } = await import('../src/core/title-rule.js');
+  for (const [pattern, replacement, expectedTemplate, expectedTitle] of [
+    ['(App)', '$1', '${title.1}', 'App'],
+    ['(?<app>App)', '$<app>', '${title.app}', 'App'],
+    ['App', '$&', '${title.0}', 'App'],
+    ['App', "X$`$'", 'X', 'X']
+  ]) {
+    const raw = { schemaVersion: 1, rules: [{ id: 'a', name: 'A', patterns: ['https://host/*'], titleRule: { enabled: true,
+      rules: [{ pattern, titlePattern: 'Other', urlPattern: 'https://other/*', replacement }] } }] };
+    const before = JSON.stringify(raw);
+    for (const result of [validateConfig(raw), parseConfigText(before), parseConfigText(before, { rulesOnly: true })]) {
+      assert.equal(result.ok, true, result.errors?.join('\n'));
+      const rule = result.config.rules[0];
+      const migrated = rule.titleRule.rules[0];
+      assert.equal('pattern' in migrated, false);
+      assert.equal(migrated.titlePattern, pattern);
+      assert.equal(migrated.urlPattern, '');
+      assert.equal(migrated.replacement, expectedTemplate);
+      assert.equal(applyTitleRules(rule, 'App', 'https://host/42').result, expectedTitle);
+      assert.equal(applyTitleRules(rule, 'prefix App suffix', 'https://host/42').matched, false);
+    }
+    assert.equal(JSON.stringify(raw), before);
+  }
+});
+
+test('schema 1 迁移：真正空条件和非空非法表达式或类型仍拒绝，不静默删条目', () => {
+  for (const entry of [{}, { pattern: '' }, { pattern: '', titlePattern: '', urlPattern: ' ' },
+    { pattern: '[', titlePattern: 'App' }, { pattern: 42, titlePattern: 'App' }, { titlePattern: 'App', urlPattern: 'https://host/*' },
+    { pattern: '', titlePattern: 'App' }, { pattern: null, titlePattern: 'App' }, { titlePattern: 'App', urlPattern: 42 }]) {
+    const result = validateConfig({ schemaVersion: 1, rules: [{ id: 'a', name: 'A', patterns: ['https://host/*'], titleRule: { rules: [entry] } }] });
+    assert.equal(result.ok, false, JSON.stringify(entry));
+    assert.ok(result.errorDetails.every(error => error.ruleIndex === 0));
+  }
 });

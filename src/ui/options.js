@@ -1,3 +1,4 @@
+import { invalidRuleIndexes } from '../core/validation-errors.js';
 import { normalizeTabGroup } from '../core/tab-group.js';
 import browser from '../platform/browser.js';
 import { createIcon } from './icons.js';
@@ -456,7 +457,7 @@ function addRule() {
   const rule = {
     id: newRuleId(),
     enabled: true,
-    name: `新规则组 ${state.rules.length + 1}`,
+    name: t(`新规则组 ${state.rules.length + 1}`),
     color: Store.colorForIndex(state.rules.length),
     tabGroup: { enabled: true, minTabs: 1, collapsed: false, strictMode: false },
     note: '',
@@ -1965,17 +1966,10 @@ function markInvalid(errors) {
   }
   if (!Array.isArray(errors)) return;
 
-  const indexes = new Set();
-  for (const error of errors) {
-    // 一条错误可能同时点名两个规则组（例如重名：`rules[1].name 重复：…（与 rules[0] 同名）`），
-    // 把这些规则组都高亮出来。
-    for (const found of String(error).matchAll(/rules\[(\d+)\]/g)) {
-      indexes.add(Number(found[1]));
-    }
-  }
-  if (indexes.size === 0) return;
+  const indexes = invalidRuleIndexes(errors);
+  if (indexes.length === 0) return;
 
-  const firstIndex = Math.min(...indexes);
+  const firstIndex = indexes[0];
   const firstRule = state.rules[firstIndex];
   if (firstRule && state.selectedId !== firstRule.id) selectRule(firstRule.id);
 
@@ -2008,14 +2002,14 @@ async function persist(label) {
   const checked = Store.validateConfig(config);
   if (checked.ok !== true) {
     setStatus('error', `${label}失败，请修正以下问题：`, checked.errors);
-    markInvalid(checked.errors);
+    markInvalid(checked.errorDetails || checked.errors);
     return false;
   }
 
   const result = await Store.saveConfig(config);
   if (result.ok !== true) {
     setStatus('error', `${label}失败，请修正以下问题：`, result.errors);
-    markInvalid(result.errors);
+    markInvalid(result.errorDetails || result.errors);
     return false;
   }
 

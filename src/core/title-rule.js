@@ -53,26 +53,16 @@ function compileEntry(entry) {
   }
 }
 
-/** 单次展开，捕获结果中的 $ 不会再次被解释；旧 $1/$<name> 等仍取标题。 */
-function renderReplacement(template, titleMatch, urlMatch, source) {
-  return template.replace(/\$\$|\$\{(title|url)\.([^}]+)\}|\$<([^>]+)>|\$(\d{1,2}|&|`|')/g,
-    (token, scope, key, name, legacy) => {
+/** 仅展开新版双来源模板；捕获结果中的 $ 不会再次被解释。 */
+function renderReplacement(template, titleMatch, urlMatch) {
+  return template.replace(/\$\$|\$\{(title|url)\.([^}]+)\}/g,
+    (token, scope, key) => {
       if (token === '$$') return '$';
-      if (scope) {
-        const match = scope === 'title' ? titleMatch : urlMatch;
-        return /^\d+$/.test(key) ? match[Number(key)] ?? '' : match.groups?.[key] ?? '';
-      }
-      if (name !== undefined) return titleMatch.groups ? titleMatch.groups[name] ?? '' : token;
-      if (legacy === '&') return titleMatch[0];
-      if (legacy === '`') return source.slice(0, titleMatch.index);
-      if (legacy === "'") return source.slice(titleMatch.index + titleMatch[0].length);
-      const index = Number(legacy);
-      if (index > 0 && index < titleMatch.length) return titleMatch[index] ?? '';
-      if (legacy.length === 2 && Number(legacy[0]) > 0 && Number(legacy[0]) < titleMatch.length) return (titleMatch[Number(legacy[0])] ?? '') + legacy[1];
-      return token;
+      const match = scope === 'title' ? titleMatch : urlMatch;
+      return /^\d+$/.test(key) ? match[Number(key)] ?? '' : match.groups?.[key] ?? '';
     });
 }
-const wholeMatch = text => Object.assign([text], { index: 0, input: text });
+const wholeMatch = text => [text];
 function applyTitleRules(rule, text, url = '') {
   const source = typeof text === 'string' ? text : '';
   const address = typeof url === 'string' ? url : '';
@@ -87,7 +77,7 @@ function applyTitleRules(rule, text, url = '') {
     const titleMatch = compiled.titleRegex ? compiled.titleRegex.exec(source) : wholeMatch(source);
     const urlMatch = compiled.urlRegex ? compiled.urlRegex.exec(address) : wholeMatch(address);
     if (!titleMatch || !urlMatch) continue;
-    const result = renderReplacement(compiled.replacement, titleMatch, urlMatch, source);
+    const result = renderReplacement(compiled.replacement, titleMatch, urlMatch);
     return { ok: true, matched: true, result, ruleIndex: index, reason: null, error: null };
   }
   return outcome(true, firstError ? 'invalid-regex' : 'no-match', firstError);

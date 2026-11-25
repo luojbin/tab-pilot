@@ -107,7 +107,7 @@ function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function checkInteger(value, min, max, path, errors) {
+function checkInteger(value, min, max, path, report) {
   if (value === undefined) return;
   if (
     typeof value !== 'number' ||
@@ -116,13 +116,13 @@ function checkInteger(value, min, max, path, errors) {
     value < min ||
     value > max
   ) {
-    errors.push(`${path} 必须是 ${min}~${max} 的整数`);
+    report(`${path} 必须是 ${min}~${max} 的整数`);
   }
 }
 
 /**
- * 校验配置对象。返回 { ok: true, config } 或 { ok: false, errors: string[] }。
- * 错误信息带字段路径，配置页直接展示。
+ * 校验配置对象。返回 { ok: true, config } 或 { ok: false, errors: string[], errorDetails: object[] }。
+ * 错误提供展示文案和结构化位置；命名规则文案显示规则组名和从 1 开始的条目序号。
  *
  * @param {object} raw 待校验配置
  * @param {{allowDuplicateNames?: boolean}} [options] 仅供 loadConfig 放宽重名校验：
@@ -132,34 +132,41 @@ function checkInteger(value, min, max, path, errors) {
 function validateConfig(raw, options) {
   raw = migrateConfig(raw);
   const errors = [];
+  const errorDetails = [];
+  let ruleIndex;
+  const report = (message, details = {}) => {
+    errors.push(message);
+    errorDetails.push({ message, ...(ruleIndex === undefined ? {} : { ruleIndex }), ...details });
+  };
   const opts = options || {};
 
   if (!isPlainObject(raw)) {
-    return { ok: false, errors: ['配置必须是一个对象'] };
+    report('配置必须是一个对象');
+    return { ok: false, errors, errorDetails };
   }
   if (raw.schemaVersion !== SCHEMA_VERSION) {
-    errors.push(
+    report(
       `schemaVersion 必须为 ${SCHEMA_VERSION}，收到 ${JSON.stringify(raw.schemaVersion)}`
     );
   }
-  if ('strictMode' in raw) errors.push('strictMode 已移至 rules[].tabGroup.strictMode');
+  if ('strictMode' in raw) report('strictMode 已移至 rules[].tabGroup.strictMode');
   for (const key of ['autoUpdateGroupRules', 'showActionResult']) {
     if (raw[key] !== undefined && typeof raw[key] !== 'boolean') {
-      errors.push(`${key} 必须是布尔值`);
+      report(`${key} 必须是布尔值`);
     }
   }
   if (raw.groupsFirst !== undefined && typeof raw.groupsFirst !== 'boolean') {
-    errors.push('groupsFirst 必须是布尔值');
+    report('groupsFirst 必须是布尔值');
   }
   if (raw.clickAction !== undefined && !CLICK_ACTIONS.includes(raw.clickAction)) {
-    errors.push(`clickAction 必须是 ${CLICK_ACTIONS.join('/')} 之一`);
+    report(`clickAction 必须是 ${CLICK_ACTIONS.join('/')} 之一`);
   }
   if (raw.language !== undefined && !LANGUAGES.includes(raw.language)) {
-    errors.push(`language 必须是 ${LANGUAGES.join('/')} 之一`);
+    report(`language 必须是 ${LANGUAGES.join('/')} 之一`);
   }
   if (!Array.isArray(raw.rules)) {
-    errors.push('rules 必须是数组');
-    return { ok: false, errors };
+    report('rules 必须是数组');
+    return { ok: false, errors, errorDetails };
   }
 
   const seenIds = new Set();
@@ -167,22 +174,23 @@ function validateConfig(raw, options) {
   // 颜色 / 折叠会互相覆盖，因此保存与导入时拒绝重名；比较用 trim 后的名字。
   const seenNames = new Map();
   raw.rules.forEach((rule, index) => {
+    ruleIndex = index;
     const where = `rules[${index}]`;
     if (!isPlainObject(rule)) {
-      errors.push(`${where} 必须是对象`);
+      report(`${where} 必须是对象`);
       return;
     }
 
     if (typeof rule.id !== 'string' || rule.id.trim() === '') {
-      errors.push(`${where}.id 必须是非空字符串`);
+      report(`${where}.id 必须是非空字符串`);
     } else if (seenIds.has(rule.id)) {
-      errors.push(`${where}.id 重复：${rule.id}`);
+      report(`${where}.id 重复：${rule.id}`);
     } else {
       seenIds.add(rule.id);
     }
 
     if (typeof rule.name !== 'string' || rule.name.trim() === '') {
-      errors.push(`${where}.name 必须是非空字符串`);
+      report(`${where}.name 必须是非空字符串`);
     }
     const trimmedName = typeof rule.name === 'string' ? rule.name.trim() : '';
     if (trimmedName !== '') {
@@ -191,76 +199,79 @@ function validateConfig(raw, options) {
         seenNames.set(trimmedName, index);
       } else if (opts.allowDuplicateNames !== true) {
         // 只报后面那条：配置页据此高亮需要改名的分组
-        errors.push(`${where}.name 重复：${trimmedName}（与 rules[${firstIndex}] 同名）`);
+        report(`${where}.name 重复：${trimmedName}（与 rules[${firstIndex}] 同名）`, { relatedRuleIndexes: [firstIndex] });
       }
     }
     if (rule.color !== undefined && !GROUP_COLORS.includes(rule.color)) {
-      errors.push(`${where}.color 必须是 ${GROUP_COLORS.join('/')} 之一`);
+      report(`${where}.color 必须是 ${GROUP_COLORS.join('/')} 之一`);
     }
     if (rule.enabled !== undefined && typeof rule.enabled !== 'boolean') {
-      errors.push(`${where}.enabled 必须是布尔值`);
+      report(`${where}.enabled 必须是布尔值`);
     }
     for (const field of ['minTabs', 'collapsed', 'strictMode']) {
-      if (field in rule) errors.push(`${where}.${field} 已移至 tabGroup.${field}`);
+      if (field in rule) report(`${where}.${field} 已移至 tabGroup.${field}`);
     }
     if (rule.tabGroup !== undefined) {
-      if (!isPlainObject(rule.tabGroup)) errors.push(`${where}.tabGroup 必须是对象`);
+      if (!isPlainObject(rule.tabGroup)) report(`${where}.tabGroup 必须是对象`);
       else {
         for (const field of ['enabled', 'collapsed', 'strictMode']) {
-          if (rule.tabGroup[field] !== undefined && typeof rule.tabGroup[field] !== 'boolean') errors.push(`${where}.tabGroup.${field} 必须是布尔值`);
+          if (rule.tabGroup[field] !== undefined && typeof rule.tabGroup[field] !== 'boolean') report(`${where}.tabGroup.${field} 必须是布尔值`);
         }
-        if (rule.tabGroup.minTabs !== undefined && (!Number.isInteger(rule.tabGroup.minTabs) || rule.tabGroup.minTabs < 1)) errors.push(`${where}.tabGroup.minTabs 必须是 >= 1 的整数`);
+        if (rule.tabGroup.minTabs !== undefined && (!Number.isInteger(rule.tabGroup.minTabs) || rule.tabGroup.minTabs < 1)) report(`${where}.tabGroup.minTabs 必须是 >= 1 的整数`);
       }
     }
     if (rule.note !== undefined && typeof rule.note !== 'string') {
-      errors.push(`${where}.note 必须是字符串`);
+      report(`${where}.note 必须是字符串`);
     }
     if (rule.titleRule !== undefined) {
       const at = `${where}.titleRule`;
       if (!isPlainObject(rule.titleRule)) {
-        errors.push(`${at} 必须是对象`);
+        report(`${at} 必须是对象`);
       } else {
         const titleRule = rule.titleRule;
         if (titleRule.enabled !== undefined && typeof titleRule.enabled !== 'boolean') {
-          errors.push(`${at}.enabled 必须是布尔值`);
+          report(`${at}.enabled 必须是布尔值`);
         }
-        if ('testText' in titleRule) errors.push(`${at}.testText 已改为 testCases`);
+        if ('testText' in titleRule) report(`${at}.testText 已改为 testCases`);
         if (titleRule.testCases !== undefined) {
-          if (!Array.isArray(titleRule.testCases)) errors.push(`${at}.testCases 必须是数组`);
+          if (!Array.isArray(titleRule.testCases)) report(`${at}.testCases 必须是数组`);
           else titleRule.testCases.forEach((row, index) => {
             if (!isPlainObject(row) || typeof row.title !== 'string' || typeof row.url !== 'string') {
-              errors.push(`${at}.testCases[${index}] 必须包含 title 和 url 字符串`);
+              report(`${at}.testCases[${index}] 必须包含 title 和 url 字符串`);
             }
           });
         }
         if (titleRule.rules !== undefined) {
           if (!Array.isArray(titleRule.rules)) {
-            errors.push(`${at}.rules 必须是数组`);
+            report(`${at}.rules 必须是数组`);
           } else {
-            titleRule.rules.forEach((entry, index) => {
-              const entryAt = `${at}.rules[${index}]`;
+            titleRule.rules.forEach((entry, entryIndex) => {
+              const entryAt = `${at}.rules[${entryIndex}]`;
+              const groupLabel = typeof rule.name === 'string' && rule.name.trim()
+                ? `规则组“${rule.name}”` : `第 ${ruleIndex + 1} 个规则组`;
+              const label = `${groupLabel}的第 ${entryIndex + 1} 条命名规则`;
+              const entryError = (reason, field) => report(`${label}：${reason}`, {
+                entryIndex, path: field ? `${entryAt}.${field}` : entryAt
+              });
               if (!isPlainObject(entry)) {
-                errors.push(`${entryAt} 必须是对象`);
+                entryError('命名规则必须是对象');
                 return;
               }
-              if ('pattern' in entry) errors.push(`${entryAt}.pattern 已改为 titlePattern/urlPattern`);
+              if ('pattern' in entry) entryError('pattern 已改为 titlePattern/urlPattern', 'pattern');
+              const names = { titlePattern: '标题条件', urlPattern: 'URL 条件' };
               for (const field of ['titlePattern', 'urlPattern']) {
-                if (entry[field] !== undefined && typeof entry[field] !== 'string') errors.push(`${entryAt}.${field} 必须是字符串`);
+                if (entry[field] !== undefined && typeof entry[field] !== 'string') entryError(`${names[field]}必须是字符串`, field);
                 else if (typeof entry[field] === 'string' && entry[field].trim()) {
                   try { compilePattern(entry[field]); }
-                  catch (err) { errors.push(`${entryAt}.${field} 不是合法的正则：${err.message || err}`); }
+                  catch (err) { entryError(`${names[field]}不是合法的正则：${err.message || err}`, field); }
                 }
               }
               if (!(typeof entry.titlePattern === 'string' && entry.titlePattern.trim()) &&
                   !(typeof entry.urlPattern === 'string' && entry.urlPattern.trim())) {
-                errors.push(`${entryAt}.titlePattern/urlPattern 至少填写一个正则`);
+                entryError('标题条件和 URL 条件至少填写一个正则');
               }
-              if (entry.replacement !== undefined && typeof entry.replacement !== 'string') {
-                errors.push(`${entryAt}.replacement 必须是字符串`);
-              }
-              if (entry.description !== undefined && typeof entry.description !== 'string') {
-                errors.push(`${entryAt}.description 必须是字符串`);
-              }
+              if (entry.replacement !== undefined && typeof entry.replacement !== 'string') entryError('目标文本必须是字符串', 'replacement');
+              if (entry.description !== undefined && typeof entry.description !== 'string') entryError('描述必须是字符串', 'description');
             });
           }
         }
@@ -270,61 +281,61 @@ function validateConfig(raw, options) {
     if (rule.highlight !== undefined) {
       const at = `${where}.highlight`;
       if (!isPlainObject(rule.highlight)) {
-        errors.push(`${at} 必须是对象`);
+        report(`${at} 必须是对象`);
       } else {
         const highlight = rule.highlight;
 
         if (highlight.enabled !== undefined && typeof highlight.enabled !== 'boolean') {
-          errors.push(`${at}.enabled 必须是布尔值`);
+          report(`${at}.enabled 必须是布尔值`);
         }
 
         if (highlight.border !== undefined) {
           if (!isPlainObject(highlight.border)) {
-            errors.push(`${at}.border 必须是对象`);
+            report(`${at}.border 必须是对象`);
           } else {
             if (highlight.border.sides !== undefined) {
               if (!Array.isArray(highlight.border.sides)) {
-                errors.push(`${at}.border.sides 必须是数组`);
+                report(`${at}.border.sides 必须是数组`);
               } else if (highlight.border.sides.some((side) => typeof side !== 'string')) {
-                errors.push(`${at}.border.sides 只能包含字符串`);
+                report(`${at}.border.sides 只能包含字符串`);
               }
             }
-            checkInteger(highlight.border.width, 1, 24, `${at}.border.width`, errors);
-            checkInteger(highlight.border.opacity, 0, 100, `${at}.border.opacity`, errors);
+            checkInteger(highlight.border.width, 1, 24, `${at}.border.width`, report);
+            checkInteger(highlight.border.opacity, 0, 100, `${at}.border.opacity`, report);
           }
         }
 
         if (highlight.banner !== undefined) {
           if (!isPlainObject(highlight.banner)) {
-            errors.push(`${at}.banner 必须是对象`);
+            report(`${at}.banner 必须是对象`);
           } else {
             if (highlight.banner.positions !== undefined) {
               if (!Array.isArray(highlight.banner.positions)) {
-                errors.push(`${at}.banner.positions 必须是数组`);
+                report(`${at}.banner.positions 必须是数组`);
               } else if (highlight.banner.positions.some((item) => typeof item !== 'string')) {
-                errors.push(`${at}.banner.positions 只能包含字符串`);
+                report(`${at}.banner.positions 只能包含字符串`);
               }
             }
-            checkInteger(highlight.banner.size, 8, 160, `${at}.banner.size`, errors);
-            checkInteger(highlight.banner.fontSize, 8, 32, `${at}.banner.fontSize`, errors);
-            checkInteger(highlight.banner.opacity, 0, 100, `${at}.banner.opacity`, errors);
+            checkInteger(highlight.banner.size, 8, 160, `${at}.banner.size`, report);
+            checkInteger(highlight.banner.fontSize, 8, 32, `${at}.banner.fontSize`, report);
+            checkInteger(highlight.banner.opacity, 0, 100, `${at}.banner.opacity`, report);
           }
         }
       }
     }
 
     if (!Array.isArray(rule.patterns) || rule.patterns.length === 0) {
-      errors.push(`${where}.patterns 必须是非空数组（至少一个匹配路径）`);
+      report(`${where}.patterns 必须是非空数组（至少一个匹配路径）`);
       return;
     }
     rule.patterns.forEach((pattern, patternIndex) => {
       if (typeof pattern !== 'string' || pattern.trim() === '') {
-        errors.push(`${where}.patterns[${patternIndex}] 必须是非空字符串`);
+        report(`${where}.patterns[${patternIndex}] 必须是非空字符串`);
       }
     });
   });
 
-  if (errors.length > 0) return { ok: false, errors };
+  if (errors.length > 0) return { ok: false, errors, errorDetails };
   // 兼容已发布配置：旧全局开关不再生效，也不再写入新配置。
   const config = { ...raw };
   delete config.globalEnabled;
