@@ -64,7 +64,7 @@ for (const [namespace, target] of [['browser', 'firefox140'], ['chrome', 'chrome
           }
         }
       },
-      console,
+      console, setInterval() { return 1; },
       location: { href: tab.url },
       document: { documentElement: { setAttribute(name, value) { marks.push(value); } } },
       window: { addEventListener() {} }
@@ -147,5 +147,99 @@ for (const [namespace, target] of [['browser', 'firefox140'], ['chrome', 'chrome
     resolveOld(style);
     await tick();
     assert.equal(document.title, 'App', '过期后台响应不能重新启用已关闭规则');
+  });
+}
+
+for (const [namespace, target] of [['browser', 'firefox140'], ['chrome', 'chrome116']]) {
+  test(`SPA 路由打包回归：${namespace} 的未命中/纯高亮、主动通知、兜底和乱序响应`, async () => {
+    const { outputFiles } = await build({
+      absWorkingDir: fileURLToPath(new URL('..', import.meta.url)), entryPoints: ['src/app/content.js'],
+      bundle: true, format: 'iife', platform: 'browser', target, write: false
+    });
+    const script = new vm.Script(outputFiles[0].text);
+    const element = () => ({ style: {}, children: [], setAttribute() {},
+      appendChild(child) { this.children.push(child); child.parentNode = this; },
+      removeChild(child) { this.children = this.children.filter(item => item !== child); child.parentNode = null; }
+    });
+    const location = { href: 'https://host/off' };
+    const document = { title: 'App', head: {}, body: element(), documentElement: element(), createElement: element };
+    const styles = {
+      a: { ruleId: 'a', name: 'A', colorHex: 'red', titleRule: { enabled: false } },
+      b: { ruleId: 'b', name: 'B', colorHex: 'blue', titleRule: { enabled: true,
+        rules: [{ titlePattern: 'App', urlPattern: 'https://host/(?<code>[^/?#]+).*', replacement: '${url.code}' }] } },
+      c: { ruleId: 'c', name: 'C', colorHex: 'green', titleRule: { enabled: false } },
+      d: { ruleId: 'd', name: 'D', colorHex: 'purple', titleRule: { enabled: true,
+        rules: [{ titlePattern: 'App', replacement: 'D' }] } }
+    };
+    for (const style of Object.values(styles)) style.highlight = {
+      enabled: true, border: { sides: ['top'], width: 4, opacity: 100 }, banner: { positions: [] }
+    };
+    const queries = [], events = {}, intervals = [];
+    let message, observer;
+    const lookup = ({ url }) => styles[new URL(url).pathname.slice(1)] || null;
+    let responder = lookup;
+    const context = vm.createContext({
+      [namespace]: { runtime: { onMessage: { addListener(fn) { message = fn; } },
+        async sendMessage(value) { queries.push(value); return responder(value); } } },
+      document, location, URL, console: { info() {}, warn() {} },
+      window: { addEventListener(type, fn) { events[type] = fn; } },
+      MutationObserver: class { constructor(fn) { observer = fn; } observe() {} disconnect() {} },
+      setInterval(fn) { intervals.push(fn); return intervals.length; }, clearInterval() {}
+    });
+    const tick = () => new Promise(resolve => setImmediate(resolve));
+    const notify = () => message({ type: 'tabpilot:refresh', reason: 'navigation' });
+    const color = () => document.body.children[0]?.children[0]?.style.background;
+    script.runInContext(context);
+    await tick();
+    assert.equal(document.body.children.length, 0);
+    assert.equal(intervals.length, 1, '未命中时也保留 URL 兜底');
+    location.href = 'https://host/a';
+    intervals[0]();
+    await tick();
+    assert.equal(color(), 'red', '从未命中进入只开高亮的规则');
+    location.href = 'https://host/b';
+    const before = queries.length;
+    notify();
+    assert.equal(queries.length, before + 1, '主动通知不等待轮询');
+    await tick();
+    assert.equal(document.title, 'b');
+    assert.equal(color(), 'blue');
+    location.href = 'https://host/c'; notify(); await tick();
+    assert.equal(document.title, 'App');
+    assert.equal(color(), 'green');
+    location.href = 'https://host/off'; intervals[0](); await tick();
+    assert.equal(document.body.children.length, 0);
+    location.href = 'https://host/b';
+    const initial = queries.length;
+    events.popstate(); events.hashchange(); notify(); intervals[0]();
+    assert.equal(queries.length, initial + 1, '重复来源合并同一 URL 的在途请求');
+    await tick();
+    assert.equal(document.title, 'b', '停止重命名后仍能重新进入重命名规则');
+    let resolveRoute;
+    responder = () => new Promise(resolve => { resolveRoute = resolve; });
+    location.href = 'https://host/d'; document.title = 'App';
+    observer();
+    assert.equal(document.title, 'App', 'URL 已变时不允许旧规则先改写标题');
+    const pending = queries.length;
+    observer(); intervals[0](); notify();
+    assert.equal(queries.length, pending);
+    resolveRoute(styles.d); await tick();
+    assert.equal(document.title, 'D');
+    let resolveOld;
+    responder = () => new Promise(resolve => { resolveOld = resolve; });
+    location.href = 'https://host/a'; notify();
+    responder = lookup;
+    location.href = 'https://host/c'; notify(); await tick();
+    resolveOld(styles.a); await tick();
+    assert.equal(color(), 'green', '快速切换后忽略旧响应');
+    assert.equal(document.title, 'App');
+    location.href = 'https://host/b'; notify(); await tick();
+    responder = () => { throw new Error('temporary message failure'); };
+    message({ type: 'tabpilot:refresh' }); await tick();
+    assert.equal(document.title, 'App');
+    responder = lookup;
+    intervals[0](); await tick();
+    assert.equal(document.title, 'b', '同 URL 强制刷新失败后也能由兜底恢复');
+    assert.equal(intervals.length, 1, '多次路由和功能切换不会重复启动定时器');
   });
 }

@@ -364,7 +364,17 @@ browser.tabs.onCreated.addListener((tab) => {
   schedule(tab, { groupChanged: Number.isInteger(tab?.groupId) && tab.groupId >= 0 });
 });
 
+/** URL 更新独立刷新页面效果，不依赖群组开关、阈值或动作结果。 */
+async function refreshNavigatedPage(tabId) {
+  try {
+    await browser.tabs.sendMessage(tabId, { type: 'tabpilot:refresh', reason: 'navigation' });
+  } catch {
+    // 新文档可能尚未注入，或该页面不允许内容脚本；初始化查询/URL 兜底负责恢复。
+  }
+}
+
 browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.url) refreshNavigatedPage(tabId);
   manualGroup.capture(tabId, changeInfo, tab).catch(err => Logger.warn('手动分组提示失败', String(err)));
   const navigation = changeInfo.status === 'complete' || Boolean(changeInfo.url);
   const groupChanged = Number.isInteger(changeInfo.groupId);

@@ -113,7 +113,7 @@ npm run build:chromium  # 仅 Chromium
 
 后台打开 popup 的版本边界见 [Firefox 官方说明](https://blog.mozilla.org/addons/2026/04/23/webextensions-api-changes-firefox-149-152/) 和 [Chromium action.openPopup](https://developer.chrome.com/docs/extensions/reference/api/action#method-openPopup)。这不影响用户直接点击图标打开 popup。
 
-事件页和 service worker 都可能被回收。内存日志、tab 事件防抖队列和自动归组抑制标记不持久化；手动补规则的待确认项保存在 storage.local 的 `tabpilot:manual-group-requests`，不属于导出配置。不能将进程一直存活作为业务前提。标题改写通过 MutationObserver 监听，并使用 1.5 秒间隔检查兜底。
+事件页和 service worker 都可能被回收。内存日志、tab 事件防抖队列和自动归组抑制标记不持久化；手动补规则的待确认项保存在 storage.local 的 `tabpilot:manual-group-requests`，不属于导出配置。不能将进程一直存活作为业务前提。后台通过 tabs.onUpdated 的 URL 变化定向通知内容脚本，页面重新查询规则并同步高亮和标题；该通知独立于归组、阈值和严格模式的执行。内容脚本保留 popstate / hashchange 监听及独立的 1.5 秒 URL 兜底，未命中或关闭重命名时也运行；标题变更另由 MutationObserver 监听。相同 URL 的重复导航请求合并，配置变更仍强制刷新，过期响应被丢弃。
 
 ## 配置格式
 
@@ -181,9 +181,9 @@ npm run build:chromium  # 仅 Chromium
 | `i18n.test.js` | 文案和模板翻译；不代表整页翻译覆盖 |
 | `bundle.test.js` | 实际打包四个入口；在两种 API 命名空间下执行后台和内容脚本，验证归组与消息 |
 
-当前完整测试为 **246 项通过**（含四项打包回归）。打包冒烟编译四入口并执行后台/内容脚本，只解析配置页和 popup 脚本；其他测试用桩验证部分 DOM/事件和 API 行为，未在真实浏览器中运行整页 UI。
+完整测试已通过，包含打包回归。打包冒烟编译四入口并执行后台/内容脚本，只解析配置页和 popup 脚本；其他测试用桩验证部分 DOM/事件和 API 行为，未在真实浏览器中运行整页 UI。
 
-受限环境可在单进程执行不依赖浏览器全局桩的 **160 项**：
+受限环境可在单进程执行不依赖浏览器全局桩的测试子集：
 
 ```bash
 node --test --test-isolation=none test/append-rules.test.js test/copy-rule.test.js test/highlight.test.js test/i18n.test.js test/reorder-rules.test.js test/rules-from-groups.test.js test/rules.test.js test/store.test.js test/strict-mode.test.js test/title-rule.test.js test/toolbar-feedback.test.js test/toolbar-menu.test.js test/validation-errors.test.js

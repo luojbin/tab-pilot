@@ -1073,3 +1073,48 @@ test('阈值批量归组不吸收归属前面规则的标签', async () => {
   await Background.flush();
   assert.deepEqual(state.groupCalls[0].tabIds, [2, 3]);
 });
+
+test('SPA URL 更新定向刷新内容脚本，不依赖群组开启或阈值达成', async () => {
+  for (const tabGroup of [{ enabled: false }, { enabled: true, minTabs: 5 }]) {
+    reset();
+    state.storedConfig = { schemaVersion: 2, rules: [rule({ tabGroup })] };
+    const tab = localhostTab(1, 1);
+    state.tabsByWindow = { 1: [tab] };
+    listeners.updated[0](tab.id, { url: tab.url }, tab);
+    assert.deepEqual(state.pageMessages, [{ tabId: tab.id, message: { type: 'tabpilot:refresh', reason: 'navigation' } }]);
+    await Background.flush();
+    assert.equal(state.groupCalls.length, 0);
+  }
+});
+
+test('内容脚本刷新独立于严格移出，消息发送失败不阻止后台归组', async () => {
+  reset();
+  const tab = { ...localhostTab(1, 1), groupId: 42, url: 'https://outside.example/' };
+  state.tabsByWindow = { 1: [tab] };
+  state.existingGroups = [{ id: 42, windowId: 1, title: '开发' }];
+  state.storedConfig = { schemaVersion: 2, rules: [rule({ tabGroup: { strictMode: true } })] };
+  listeners.updated[0](tab.id, { url: tab.url }, tab);
+  await Background.flush();
+  assert.equal(state.pageMessages.length, 1);
+  assert.deepEqual(state.ungroupCalls, [1]);
+  reset();
+  const regular = localhostTab(2, 1);
+  state.tabsByWindow = { 1: [regular] };
+  const original = browser.tabs.sendMessage;
+  browser.tabs.sendMessage = async () => { throw new Error('Receiving end does not exist'); };
+  try {
+    listeners.updated[0](regular.id, { url: regular.url }, regular);
+    await Background.flush();
+    assert.equal(state.groupCalls.length, 1);
+  } finally { browser.tabs.sendMessage = original; }
+});
+
+test('标题和群组成员变化不触发导航刷新，避免重命名和归组消息循环', async () => {
+  reset();
+  const tab = localhostTab(1, 1);
+  state.tabsByWindow = { 1: [tab] };
+  listeners.updated[0](tab.id, { title: 'Renamed' }, tab);
+  listeners.updated[0](tab.id, { groupId: 42 }, { ...tab, groupId: 42 });
+  await Background.flush();
+  assert.equal(state.pageMessages.length, 0);
+});

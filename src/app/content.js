@@ -127,7 +127,7 @@ let styleUrl = null;
 let refreshSequence = 0;
 let titleObserver = null;
 let observedTitleRoot = null;
-let titleWatchdog = null;
+let pendingRefresh = null;
 let loggedNoMatch = false;
 let loggedInvalid = false;
 
@@ -136,10 +136,6 @@ function stopTitleWatch() {
   if (titleObserver) {
     titleObserver.disconnect();
     titleObserver = null;
-  }
-  if (titleWatchdog) {
-    clearInterval(titleWatchdog);
-    titleWatchdog = null;
   }
   watchedTitleRule = null;
   watchedRuleSignature = null;
@@ -166,6 +162,10 @@ function restoreTitle() {
  * 所以只要规则开着就持续尝试，直到某个标题命中。
  */
 function attemptTitle() {
+  if (location.href !== styleUrl) {
+    refresh();
+    return false;
+  }
   const rule = watchedTitleRule;
   if (!TitleRule || !rule || rule.enabled !== true) return false;
 
@@ -255,21 +255,16 @@ function watchTitleChanges(titleRule) {
 
   ensureTitleObserver();
 
-  if (!titleWatchdog) {
-    titleWatchdog = setInterval(() => {
-      // 页面可能整体替换 <head>，定期把观察器重新挂到当前的 head 上
-      ensureTitleObserver();
-      if (location.href !== styleUrl) refresh();
-      else attemptTitle();
-    }, 1500);
-  }
 
   attemptTitle();
 }
 
-async function refresh() {
-  const sequence = ++refreshSequence;
+async function refresh(force = false) {
   const url = location.href;
+  if (!force && (styleUrl === url || pendingRefresh?.url === url)) return;
+  const sequence = ++refreshSequence;
+  const request = { url, sequence };
+  pendingRefresh = request;
   let style = null;
   try {
     style = await browser.runtime.sendMessage({ type: 'page-style', url });
@@ -277,10 +272,14 @@ async function refresh() {
     styleUrl = url;
   } catch (err) {
     if (sequence !== refreshSequence || location.href !== url) return;
+    styleUrl = null;
+    restoreTitle();
     mark('off');
     console.warn('[TabPilot] 页面标识查询失败', err);
     removeRoot();
     return;
+  } finally {
+    if (pendingRefresh === request) pendingRefresh = null;
   }
   if (!style) {
     restoreTitle();
@@ -307,12 +306,21 @@ async function refresh() {
 }
 
 browser.runtime.onMessage.addListener((message) => {
-  if (message && message.type === MESSAGE_REFRESH) refresh();
+  if (message && message.type === MESSAGE_REFRESH) refresh(message.reason !== 'navigation');
 });
 
 // 单页应用切换路由时重新判断
 window.addEventListener('popstate', () => refresh());
 window.addEventListener('hashchange', () => refresh());
+
+// URL 兜底不随标题功能停止：未命中、只高亮、停用重命名时也能再次发现路由变化。
+setInterval(() => {
+  if (location.href !== styleUrl) refresh();
+  else if (watchedTitleRule) {
+    ensureTitleObserver();
+    attemptTitle();
+  }
+}, 1500);
 
 mark('loaded');
 refresh();
