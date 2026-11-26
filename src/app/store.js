@@ -1,3 +1,4 @@
+import { TOOLBAR_ACTIONS } from '../core/toolbar-actions.js';
 import browser from '../platform/browser.js';
 import { migrateConfig } from '../core/config-migration.js';
 import { normalizeTabGroup } from '../core/tab-group.js';
@@ -44,9 +45,11 @@ const DEFAULT_MIN_TABS = 1;
  *   syncRuleCollapse      同步后按规则里的「自动折叠」折叠分组
  *   syncCollapseInactive  同步后折叠不含活动标签的分组
  *   syncCollapseAll       同步后折叠所有分组
+ *   renameTab             打开活动标签页的快捷重命名表单
+ *   actionMenu            打开动作菜单，选择其余行为
  * 折叠只影响点击时所在的窗口。
  */
-const CLICK_ACTIONS = ['sync', 'syncRuleCollapse', 'syncCollapseInactive', 'syncCollapseAll'];
+const CLICK_ACTIONS = TOOLBAR_ACTIONS.map(([value]) => value);
 const DEFAULT_CLICK_ACTION = 'sync';
 
 /** 配置页语言：auto 跟随浏览器，zh 中文，en English。 */
@@ -120,6 +123,58 @@ function checkInteger(value, min, max, path, report) {
   }
 }
 
+/** 组内和全局共用的双来源重命名校验。 */
+function validateTitleRule(titleRule, at, groupLabel, report) {
+  if (!isPlainObject(titleRule)) {
+    report(`${at} 必须是对象`);
+    return;
+  }
+  if (titleRule.enabled !== undefined && typeof titleRule.enabled !== 'boolean') {
+    report(`${at}.enabled 必须是布尔值`);
+  }
+  if ('testText' in titleRule) report(`${at}.testText 已改为 testCases`);
+  if (titleRule.testCases !== undefined) {
+    if (!Array.isArray(titleRule.testCases)) report(`${at}.testCases 必须是数组`);
+    else titleRule.testCases.forEach((row, index) => {
+      if (!isPlainObject(row) || typeof row.title !== 'string' || typeof row.url !== 'string') {
+        report(`${at}.testCases[${index}] 必须包含 title 和 url 字符串`);
+      }
+    });
+  }
+  if (titleRule.rules !== undefined) {
+    if (!Array.isArray(titleRule.rules)) {
+      report(`${at}.rules 必须是数组`);
+    } else {
+      titleRule.rules.forEach((entry, entryIndex) => {
+        const entryAt = `${at}.rules[${entryIndex}]`;
+        const label = `${groupLabel}的第 ${entryIndex + 1} 条命名规则`;
+        const entryError = (reason, field) => report(`${label}：${reason}`, {
+          entryIndex, path: field ? `${entryAt}.${field}` : entryAt
+        });
+        if (!isPlainObject(entry)) {
+          entryError('命名规则必须是对象');
+          return;
+        }
+        if ('pattern' in entry) entryError('pattern 已改为 titlePattern/urlPattern', 'pattern');
+        const names = { titlePattern: '标题条件', urlPattern: 'URL 条件' };
+        for (const field of ['titlePattern', 'urlPattern']) {
+          if (entry[field] !== undefined && typeof entry[field] !== 'string') entryError(`${names[field]}必须是字符串`, field);
+          else if (typeof entry[field] === 'string' && entry[field].trim()) {
+            try { compilePattern(entry[field]); }
+            catch (err) { entryError(`${names[field]}不是合法的正则：${err.message || err}`, field); }
+          }
+        }
+        if (!(typeof entry.titlePattern === 'string' && entry.titlePattern.trim()) &&
+            !(typeof entry.urlPattern === 'string' && entry.urlPattern.trim())) {
+          entryError('标题条件和 URL 条件至少填写一个正则');
+        }
+        if (entry.replacement !== undefined && typeof entry.replacement !== 'string') entryError('目标文本必须是字符串', 'replacement');
+        if (entry.description !== undefined && typeof entry.description !== 'string') entryError('描述必须是字符串', 'description');
+      });
+    }
+  }
+}
+
 /**
  * 校验配置对象。返回 { ok: true, config } 或 { ok: false, errors: string[], errorDetails: object[] }。
  * 错误提供展示文案和结构化位置；命名规则文案显示规则组名和从 1 开始的条目序号。
@@ -167,6 +222,11 @@ function validateConfig(raw, options) {
   if (!Array.isArray(raw.rules)) {
     report('rules 必须是数组');
     return { ok: false, errors, errorDetails };
+  }
+
+  if (raw.globalTitleRule !== undefined) {
+    validateTitleRule(raw.globalTitleRule, 'globalTitleRule', '全局重命名规则',
+      (message, details = {}) => report(message, { path: 'globalTitleRule', ...details }));
   }
 
   const seenIds = new Set();
@@ -224,58 +284,9 @@ function validateConfig(raw, options) {
       report(`${where}.note 必须是字符串`);
     }
     if (rule.titleRule !== undefined) {
-      const at = `${where}.titleRule`;
-      if (!isPlainObject(rule.titleRule)) {
-        report(`${at} 必须是对象`);
-      } else {
-        const titleRule = rule.titleRule;
-        if (titleRule.enabled !== undefined && typeof titleRule.enabled !== 'boolean') {
-          report(`${at}.enabled 必须是布尔值`);
-        }
-        if ('testText' in titleRule) report(`${at}.testText 已改为 testCases`);
-        if (titleRule.testCases !== undefined) {
-          if (!Array.isArray(titleRule.testCases)) report(`${at}.testCases 必须是数组`);
-          else titleRule.testCases.forEach((row, index) => {
-            if (!isPlainObject(row) || typeof row.title !== 'string' || typeof row.url !== 'string') {
-              report(`${at}.testCases[${index}] 必须包含 title 和 url 字符串`);
-            }
-          });
-        }
-        if (titleRule.rules !== undefined) {
-          if (!Array.isArray(titleRule.rules)) {
-            report(`${at}.rules 必须是数组`);
-          } else {
-            titleRule.rules.forEach((entry, entryIndex) => {
-              const entryAt = `${at}.rules[${entryIndex}]`;
-              const groupLabel = typeof rule.name === 'string' && rule.name.trim()
-                ? `规则组“${rule.name}”` : `第 ${ruleIndex + 1} 个规则组`;
-              const label = `${groupLabel}的第 ${entryIndex + 1} 条命名规则`;
-              const entryError = (reason, field) => report(`${label}：${reason}`, {
-                entryIndex, path: field ? `${entryAt}.${field}` : entryAt
-              });
-              if (!isPlainObject(entry)) {
-                entryError('命名规则必须是对象');
-                return;
-              }
-              if ('pattern' in entry) entryError('pattern 已改为 titlePattern/urlPattern', 'pattern');
-              const names = { titlePattern: '标题条件', urlPattern: 'URL 条件' };
-              for (const field of ['titlePattern', 'urlPattern']) {
-                if (entry[field] !== undefined && typeof entry[field] !== 'string') entryError(`${names[field]}必须是字符串`, field);
-                else if (typeof entry[field] === 'string' && entry[field].trim()) {
-                  try { compilePattern(entry[field]); }
-                  catch (err) { entryError(`${names[field]}不是合法的正则：${err.message || err}`, field); }
-                }
-              }
-              if (!(typeof entry.titlePattern === 'string' && entry.titlePattern.trim()) &&
-                  !(typeof entry.urlPattern === 'string' && entry.urlPattern.trim())) {
-                entryError('标题条件和 URL 条件至少填写一个正则');
-              }
-              if (entry.replacement !== undefined && typeof entry.replacement !== 'string') entryError('目标文本必须是字符串', 'replacement');
-              if (entry.description !== undefined && typeof entry.description !== 'string') entryError('描述必须是字符串', 'description');
-            });
-          }
-        }
-      }
+      const label = typeof rule.name === 'string' && rule.name.trim()
+        ? `规则组“${rule.name}”` : `第 ${ruleIndex + 1} 个规则组`;
+      validateTitleRule(rule.titleRule, `${where}.titleRule`, label, report);
     }
 
     if (rule.highlight !== undefined) {
@@ -423,6 +434,7 @@ function buildConfigFromRules(rules, clickAction, language, groupsFirst = false,
     groupsFirst: groupsFirst === true,
     autoUpdateGroupRules: preferences.autoUpdateGroupRules !== false,
     showActionResult: preferences.showActionResult !== false,
+    ...(preferences.globalTitleRule === undefined ? {} : { globalTitleRule: preferences.globalTitleRule }),
     rules: list.map((rule) => {
       const normalized = {
         id: String(rule && rule.id != null ? rule.id : ''),

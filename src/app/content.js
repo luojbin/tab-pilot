@@ -16,6 +16,26 @@ const Z_INDEX = '2147483647';
 
 let root = null;
 let signature = '';
+let lastHighlightStyle = null;
+let highlightObserver = null;
+
+function observeHighlight() {
+  if (!highlightObserver) {
+    highlightObserver = new MutationObserver(() => {
+      if (!root || root.isConnected !== false || !lastHighlightStyle) return;
+      // 导航后先查询新归属，不把旧页面的样式恢复到新 URL。
+      if (location.href !== styleUrl) {
+        refresh();
+        return;
+      }
+      render(lastHighlightStyle);
+    });
+  }
+  highlightObserver.disconnect();
+  // 同时监听 body 被替换和标识被直接删除，不观察整个页面子树。
+  highlightObserver.observe(document.documentElement, { childList: true });
+  if (document.body) highlightObserver.observe(document.body, { childList: true });
+}
 
 /**
  * 在 <html> 上留一个可检查的标记，便于排查「为什么页面上没有标识」：
@@ -33,6 +53,8 @@ function mark(state) {
 }
 
 function removeRoot() {
+  if (highlightObserver) highlightObserver.disconnect();
+  lastHighlightStyle = null;
   if (root && root.parentNode) root.parentNode.removeChild(root);
   root = null;
   signature = '';
@@ -95,9 +117,7 @@ function render(style) {
     spec
   });
 
-  if (root && signature === nextSignature) return;
-  signature = nextSignature;
-
+  if (root && root.isConnected !== false && signature === nextSignature) return;
   const container = createRoot();
   const width = spec.border.width;
 
@@ -116,6 +136,9 @@ function render(style) {
     banner.style.opacity = String(spec.banner.opacity / 100);
     container.appendChild(banner);
   }
+  signature = nextSignature;
+  lastHighlightStyle = style;
+  observeHighlight();
 }
 
 const titleState = { input: null, applied: null };
@@ -305,17 +328,28 @@ async function refresh(force = false) {
   mark(titleWatched ? 'title' : 'off');
 }
 
-browser.runtime.onMessage.addListener((message) => {
+browser.runtime.onMessage.addListener((message, sender, respond) => {
+  if (message?.type === 'tabpilot:title-context') {
+    respond({ url: location.href, title: titleState.applied !== null && document.title === titleState.applied
+      ? titleState.input : document.title });
+    return;
+  }
   if (message && message.type === MESSAGE_REFRESH) refresh(message.reason !== 'navigation');
 });
 
 // 单页应用切换路由时重新判断
 window.addEventListener('popstate', () => refresh());
 window.addEventListener('hashchange', () => refresh());
+// 从往返缓存恢复时重新查询，补齐冻结期间错过的配置更新。
+window.addEventListener('pageshow', (event) => {
+  if (event.persisted) refresh(true);
+});
 
 // URL 兜底不随标题功能停止：未命中、只高亮、停用重命名时也能再次发现路由变化。
 setInterval(() => {
   if (location.href !== styleUrl) refresh();
+  // 页面重建 body 或清空节点后，同一 URL 也需要恢复被移除的标识。
+  else if (root && root.isConnected === false && !pendingRefresh) refresh(true);
   else if (watchedTitleRule) {
     ensureTitleObserver();
     attemptTitle();

@@ -10,5 +10,8 @@
   },
   "optionsMenu": {
     "message": "Options"
+  },
+  "quickRenameMenu": {
+    "message": "Rename tab…"
   }
 }

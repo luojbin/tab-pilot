@@ -175,7 +175,7 @@ for (const [namespace, target] of [['browser', 'firefox140'], ['chrome', 'chrome
       enabled: true, border: { sides: ['top'], width: 4, opacity: 100 }, banner: { positions: [] }
     };
     const queries = [], events = {}, intervals = [];
-    let message, observer;
+    let message, observer, highlightMutation;
     const lookup = ({ url }) => styles[new URL(url).pathname.slice(1)] || null;
     let responder = lookup;
     const context = vm.createContext({
@@ -183,7 +183,14 @@ for (const [namespace, target] of [['browser', 'firefox140'], ['chrome', 'chrome
         async sendMessage(value) { queries.push(value); return responder(value); } } },
       document, location, URL, console: { info() {}, warn() {} },
       window: { addEventListener(type, fn) { events[type] = fn; } },
-      MutationObserver: class { constructor(fn) { observer = fn; } observe() {} disconnect() {} },
+      MutationObserver: class {
+        constructor(fn) { this.callback = fn; }
+        observe(target) {
+          if (target === document.head) observer = this.callback;
+          else highlightMutation = this.callback;
+        }
+        disconnect() {}
+      },
       setInterval(fn) { intervals.push(fn); return intervals.length; }, clearInterval() {}
     });
     const tick = () => new Promise(resolve => setImmediate(resolve));
@@ -197,18 +204,51 @@ for (const [namespace, target] of [['browser', 'firefox140'], ['chrome', 'chrome
     intervals[0]();
     await tick();
     assert.equal(color(), 'red', '从未命中进入只开高亮的规则');
+    const originalRoot = document.body.children[0];
+    message({ type: 'tabpilot:refresh' }); await tick();
+    assert.equal(document.body.children[0], originalRoot, '相同样式强制刷新不重建标识');
+    const beforeRemoval = queries.length;
+    document.body.removeChild(originalRoot);
+    originalRoot.isConnected = false;
+    highlightMutation();
+    assert.equal(color(), 'red', 'DOM 监听即时恢复被移除的标识');
+    assert.equal(queries.length, beforeRemoval, '同 URL 恢复复用样式，不请求后台');
+    const oldBodyRoot = document.body.children[0];
+    oldBodyRoot.isConnected = false;
+    document.body = element();
+    highlightMutation();
+    assert.equal(color(), 'red', '替换整个 body 后恢复标识');
+    const restoredRoot = document.body.children[0];
+    highlightMutation();
+    assert.equal(document.body.children[0], restoredRoot, '自身 DOM 变更不会导致循环重建');
+    const removedRoot = document.body.children[0];
+    document.body.removeChild(removedRoot);
+    removedRoot.isConnected = false;
+    intervals[0](); await tick();
+    assert.equal(color(), 'red', '页面移除标识后，同 URL 也能重建');
+    styles.a.colorHex = 'orange';
+    events.pageshow({ persisted: true }); await tick();
+    assert.equal(color(), 'orange', '往返缓存恢复时重新读取配置');
+    assert.notEqual(document.body.children[0], restoredRoot, '颜色变化仍会重建标识');
     location.href = 'https://host/b';
     const before = queries.length;
     notify();
     assert.equal(queries.length, before + 1, '主动通知不等待轮询');
     await tick();
     assert.equal(document.title, 'b');
+    let titleContext;
+    message({ type: 'tabpilot:title-context' }, {}, value => { titleContext = value; });
+    assert.equal(titleContext.title, 'App', '快捷入口可读取改写前的原标题');
+    assert.equal(titleContext.url, location.href);
+    assert.equal(document.title, 'b', '读取原标题不会改变页面标题');
     assert.equal(color(), 'blue');
     location.href = 'https://host/c'; notify(); await tick();
     assert.equal(document.title, 'App');
     assert.equal(color(), 'green');
     location.href = 'https://host/off'; intervals[0](); await tick();
     assert.equal(document.body.children.length, 0);
+    highlightMutation();
+    assert.equal(document.body.children.length, 0, '退出规则后不恢复旧标识');
     location.href = 'https://host/b';
     const initial = queries.length;
     events.popstate(); events.hashchange(); notify(); intervals[0]();

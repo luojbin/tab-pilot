@@ -10,5 +10,8 @@
   },
   "optionsMenu": {
     "message": "选项"
+  },
+  "quickRenameMenu": {
+    "message": "重命名标签页…"
   }
 }

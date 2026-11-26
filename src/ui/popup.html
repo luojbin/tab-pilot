@@ -16,24 +16,50 @@
     [hidden] { display: none !important; }
     #ruleForm { margin-top: 16px; }
     #question { margin: 0 0 10px; overflow-wrap: anywhere; }
-    #pattern { box-sizing: border-box; width: 100%; font: inherit; padding: 6px 8px; margin: 4px 0 10px; }
+    #pattern, #renameTitle { box-sizing: border-box; width: 100%; font: inherit; padding: 6px 8px; margin: 4px 0 10px; }
+    #actionMenu { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+    #actionMenu button { width: 100%; padding: 8px 10px; text-align: left; }
+    #renameForm { margin-top: 0; }
+    #renameForm .checkbox { display: flex; align-items: center; gap: 6px; margin: 0 0 14px; }
     .buttons { display: flex; gap: 8px; }
+    #renameForm .buttons { gap: 12px; }
+    #renameForm .buttons button { flex: 1; min-width: 0; font-weight: 600; }
+    #confirmRename { background: #2563eb; border-color: #2563eb; color: #fff; }
+    #confirmRename:hover:not(:disabled) { filter: brightness(1.06); }
+    #resetRename { background: #fff0f0; border-color: #efb4b4; color: #b3261e; }
+    #resetRename:hover:not(:disabled) { background: #ffe0e0; }
+    #renameForm button:disabled { opacity: .5; cursor: default; }
+    #renameOptions { display: block; box-sizing: border-box; width: calc((100% - 24px) / 3); margin: 12px auto 0; padding-inline: 0; font-weight: 600; white-space: nowrap; }
     #status { margin: 16px 0 2px; overflow-wrap: anywhere; }
+    #status.success { color: #1b7f3a; }
     #status.error { color: #b3261e; }
-    @media (prefers-color-scheme: dark) { #status.error { color: #ffb4ab; } }
+    @media (prefers-color-scheme: dark) {
+      #status.error { color: #ffb4ab; }
+      #status.success { color: #81c995; }
+      #confirmRename { background: #7aa2ff; border-color: #7aa2ff; }
+      #resetRename { background: #482a2a; border-color: #a96969; color: #ffb4ab; }
+      #resetRename:hover:not(:disabled) { background: #5b3434; }
+    }
     @media (prefers-reduced-motion: reduce) { main { transition: none; } }
   </style>
 </head>
 <body>
   <main id="panel">
-    <header><strong>TabPilot</strong><button id="settings" type="button">Settings</button></header>
+    <header id="popupHeader"><strong>TabPilot</strong><button id="settings" type="button">Settings</button></header>
+    <div id="actionMenu" hidden></div>
     <form id="ruleForm" hidden>
       <p id="question"></p>
       <label id="patternLabel" for="pattern">Match pattern</label>
       <input id="pattern" type="text" required autocomplete="off" spellcheck="false">
       <div class="buttons"><button id="addPattern" type="submit">Add to rule group</button><button id="cancelPattern" type="button">Cancel</button></div>
     </form>
+    <form id="renameForm" hidden>
+      <input id="renameTitle" type="text" required autocomplete="off" placeholder="New title" aria-label="New title">
+      <label class="checkbox"><input id="ignoreQuery" type="checkbox"><span id="ignoreQueryLabel">Ignore query parameters</span></label>
+      <div class="buttons"><button id="confirmRename" type="submit">Confirm</button><button id="cancelRename" type="button">Cancel</button><button id="resetRename" type="button">Reset</button></div>
+    </form>
     <p id="status" role="status" aria-live="polite">Working…</p>
+    <button id="renameOptions" type="button" hidden>Settings</button>
   </main>
   <script src="popup.js"></script>
 </body>

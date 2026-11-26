@@ -101,6 +101,8 @@ npm run build:chromium  # 仅 Chromium
 
 ### 浏览器适配
 
+标签页右键入口的版本边界见 [Chromium 官方公告](https://groups.google.com/a/chromium.org/g/chromium-extensions/c/RReE8dtY4Ok)。
+
 | 差异 | 实现 |
 |---|---|
 | API 命名空间 | 需要 API 的模块导入 `src/platform/browser.js`，不修改全局命名空间 |
@@ -109,6 +111,7 @@ npm run build:chromium  # 仅 Chromium
 | 消息响应 | 后台使用 `sendResponse` + `return true` 异步回复 |
 | 分组 API | 自动归组使用动作层；分组前置使用 tabGroups.move 整组移动，严格模式使用 tabs.ungroup；需实测成员、顺序、折叠和窗口隔离 |
 | 图标右键选项 | Firefox 使用 menus 权限创建 action 上下文菜单；Chromium 使用 options_ui 提供的默认入口 |
+| 标签页快捷重命名 | Firefox 复用 menus，Chromium 声明 contextMenus；tab 上下文 Chrome 150 起支持，旧版注册失败安全降级，Edge 待实测；复用普通工具栏 popup；右键目标按窗口暂存，popup 读取后消费，不触发工具栏动作或自动关闭计时 |
 | 自动打开 popup | 后台打开要求 Firefox 149+ / Chromium 127+；旧版或失败时显示角标，引导点击图标，不提升最低版本 |
 
 后台打开 popup 的版本边界见 [Firefox 官方说明](https://blog.mozilla.org/addons/2026/04/23/webextensions-api-changes-firefox-149-152/) 和 [Chromium action.openPopup](https://developer.chrome.com/docs/extensions/reference/api/action#method-openPopup)。这不影响用户直接点击图标打开 popup。

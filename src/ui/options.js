@@ -1,4 +1,6 @@
+import { TOOLBAR_ACTIONS } from '../core/toolbar-actions.js';
 import { invalidRuleIndexes } from '../core/validation-errors.js';
+import { previewTitleRules } from '../core/quick-rename.js';
 import { normalizeTabGroup } from '../core/tab-group.js';
 import browser from '../platform/browser.js';
 import { createIcon } from './icons.js';
@@ -82,11 +84,13 @@ const COLOR_LABEL = {
 
 const SELECTED_KEY = 'tabpilot:selected-rule-id';
 const GLOBAL_ID = '__global__';
+const GLOBAL_TITLE_ID = '__global-title__';
 /** 有未保存修改时禁止导出，提示文案在按钮提示与状态栏共用。 */
 const UNSAVED_EXPORT_HINT = '有未保存的修改，请先「保存并同步」或「放弃修改」再导出。';
 
 let state = { clickAction: 'sync', language: 'auto', groupsFirst: false, autoUpdateGroupRules: true, showActionResult: true, rules: [], selectedId: null };
 let savedSnapshot = '';
+let externalConfigChanged = false;
 let busy = false;
 let previewRefresh = null;
 const openMenus = new Set();
@@ -113,6 +117,7 @@ function snapshot() {
     groupsFirst: state.groupsFirst,
     autoUpdateGroupRules: state.autoUpdateGroupRules,
     showActionResult: state.showActionResult,
+    globalTitleRule: state.globalTitle?.titleRule,
     rules: state.rules
   });
 }
@@ -178,27 +183,27 @@ function menuButton(label, onClick, disabled, extraClass, icon) {
   return element;
 }
 
-function createGlobalListItem() {
+function createGlobalListItem(id = GLOBAL_ID, title = '全局配置') {
   const item = document.createElement('li');
   item.className = 'group-item global-item';
-  if (state.selectedId === GLOBAL_ID) item.classList.add('selected');
+  if (state.selectedId === id) item.classList.add('selected');
 
   const row = document.createElement('div');
   row.className = 'group-row';
 
   const name = document.createElement('span');
   name.className = 'group-name';
-  name.textContent = t('全局配置');
+  name.textContent = t(title);
 
   row.append(name);
   item.append(row);
-  item.addEventListener('click', selectGlobal);
+  item.addEventListener('click', () => selectGlobal(id));
   return item;
 }
 
-function selectGlobal() {
-  if (state.selectedId === GLOBAL_ID) return;
-  state.selectedId = GLOBAL_ID;
+function selectGlobal(id = GLOBAL_ID) {
+  if (state.selectedId === id) return;
+  state.selectedId = id;
   persistSelected();
   closeMenus();
   renderList();
@@ -207,7 +212,7 @@ function selectGlobal() {
 
 function renderList() {
   els.globalList.textContent = '';
-  els.globalList.appendChild(createGlobalListItem());
+  els.globalList.append(createGlobalListItem(), createGlobalListItem(GLOBAL_TITLE_ID, '标签页名规则'));
   applyI18n(els.globalList);
 
   els.list.textContent = '';
@@ -593,14 +598,14 @@ function createSection(id, title, body, options) {
 
 // ---------------- 标签页名规则 ----------------
 
-// 仅保存设置页的展示状态，不写入规则组。
-const foldedTitleRules = new WeakSet();
+// 默认折叠，仅记录主动展开的卡片，不写入规则组。
+const expandedTitleRules = new WeakSet();
 
 function ensureTitleRule(rule) {
   const previous = rule.titleRule?.rules;
   const normalized = TitleRule.normalizeTitleRule(rule);
   normalized.rules.forEach((entry, index) => {
-    if (previous?.[index] && foldedTitleRules.has(previous[index])) foldedTitleRules.add(entry);
+    if (previous?.[index] && expandedTitleRules.has(previous[index])) expandedTitleRules.add(entry);
   });
   rule.titleRule = normalized;
   return rule.titleRule;
@@ -754,7 +759,7 @@ function createTitleRuleCard(rule, spec, entry, index, foldControls) {
     }, true, '$');
   const fields = [patternField, urlField, replacementField];
   const syncFoldState = () => {
-    const folded = foldedTitleRules.has(entry);
+    const folded = !expandedTitleRules.has(entry);
     fields.forEach(field => { field.hidden = folded; });
     description.hidden = folded;
     summary.hidden = !folded;
@@ -767,8 +772,8 @@ function createTitleRuleCard(rule, spec, entry, index, foldControls) {
     fold.setAttribute('aria-expanded', String(!folded));
   };
   const toggleFold = () => {
-    if (foldedTitleRules.has(entry)) foldedTitleRules.delete(entry);
-    else foldedTitleRules.add(entry);
+    if (expandedTitleRules.has(entry)) expandedTitleRules.delete(entry);
+    else expandedTitleRules.add(entry);
     syncFoldState();
   };
   fold.addEventListener('click', toggleFold);
@@ -830,8 +835,8 @@ function createTitleRuleSection(rule) {
     button.append(createIcon(icon));
     button.addEventListener('click', () => {
       spec.rules.forEach(entry => {
-        if (folded) foldedTitleRules.add(entry);
-        else foldedTitleRules.delete(entry);
+        if (folded) expandedTitleRules.delete(entry);
+        else expandedTitleRules.add(entry);
       });
       foldControls.forEach(sync => sync());
     });
@@ -912,7 +917,13 @@ function createTitleRuleSection(rule) {
 
   testButton.addEventListener('click', () => {
     const candidate = { enabled: true, rules: spec.rules, testCases: spec.testCases };
-    const rows = TitleRule.applyTitleBatch({ titleRule: candidate }, spec.testCases);
+    const isGlobal = rule === state.globalTitle;
+    const rows = previewTitleRules(
+      isGlobal ? candidate : state.globalTitle?.titleRule,
+      isGlobal ? undefined : candidate,
+      spec.testCases,
+      isGlobal ? undefined : rule
+    );
 
     testOutput.textContent = '';
     if (rows.length === 0) {
@@ -936,16 +947,20 @@ function createTitleRuleSection(rule) {
       const arrow = document.createElement('span');
       arrow.className = 'title-test-arrow';
       arrow.setAttribute('data-i18n-skip', '');
-      const status = row.matched
-        ? t('规则{index}').replace('{index}', String(row.ruleIndex + 1))
+      let status = row.matched
+        ? t(row.ruleScope === 'global' ? '全局规则{index}' : '规则{index}').replace('{index}', String(row.ruleIndex + 1))
         : t(row.reason === 'invalid-regex' ? '正则有误' : '未匹配');
+      if (row.groupMatched === false) {
+        const warning = t('未匹配当前组');
+        status = row.matched ? `${status}；${warning}` : warning;
+      }
       arrow.textContent = ' -> ';
 
       const target = document.createElement('span');
       target.className = 'title-test-dst';
       target.setAttribute('data-i18n-skip', '');
       target.textContent = `${row.result}(${status})`;
-      if (!row.matched) target.classList.add('warn');
+      if (!row.matched || row.groupMatched === false) target.classList.add('warn');
 
       line.append(source, arrow, target);
       testOutput.append(line);
@@ -973,6 +988,12 @@ function createTitleRuleSection(rule) {
   });
 
   const parts = [toggleLabel];
+  if (rule === state.globalTitle) {
+    const globalHint = document.createElement('p');
+    globalHint.className = 'hint';
+    globalHint.textContent = '此处是全局的标签页名规则，优先于规则组内重命名，不影响页面归属。';
+    parts.push(globalHint);
+  }
   if (warning) parts.push(warning);
   parts.push(hint, listToolbar, list, addButton, testBox);
   section.append(...parts);
@@ -1343,6 +1364,7 @@ function createColorPicker(rule) {
       }
       updateListItem(rule);
       close();
+      syncDirtyState();
     });
 
     menu.appendChild(option);
@@ -1370,6 +1392,14 @@ function renderDetail() {
   const rule = selectedRule();
 
   if (!rule) {
+    if (state.selectedId === GLOBAL_TITLE_ID) {
+      const heading = document.createElement('h2');
+      heading.textContent = '标签页名规则';
+      els.detail.append(heading, createTitleRuleSection(state.globalTitle));
+      applyI18n(els.detail);
+      syncDirtyState();
+      return;
+    }
     if (state.selectedId === GLOBAL_ID) {
       renderGlobalDetail();
       return;
@@ -1765,12 +1795,7 @@ function renderGlobalDetail() {
   actionField.append(document.createTextNode('点击插件图标'));
   const actionSelect = document.createElement('select');
   actionSelect.className = 'click-action-select';
-  for (const [value, label] of [
-    ['sync', '仅同步（检查未归组的标签）'],
-    ['syncRuleCollapse', '同步并按规则折叠标签页群组'],
-    ['syncCollapseInactive', '同步并折叠非活动标签页群组'],
-    ['syncCollapseAll', '同步并折叠所有标签页群组']
-  ]) {
+  for (const [value, label] of TOOLBAR_ACTIONS) {
     const option = document.createElement('option');
     option.value = value;
     option.textContent = label;
@@ -1785,7 +1810,7 @@ function renderGlobalDetail() {
 
   const actionHint = document.createElement('p');
   actionHint.className = 'hint small';
-  actionHint.textContent = '点图标时先同步，再按所选方式折叠标签页群组；折叠只影响点击时所在的窗口。';
+  actionHint.textContent = '选择直接执行同步 / 折叠、重命名当前标签页，或打开动作菜单；折叠只影响当前窗口。';
   const orderField = createGlobalSwitch('标签页群组前置', state.groupsFirst, (checked) => {
     state.groupsFirst = checked;
     syncDirtyState();
@@ -1798,7 +1823,7 @@ function renderGlobalDetail() {
   });
   const resultHint = document.createElement('p');
   resultHint.className = 'hint small';
-  resultHint.textContent = '使用插件图标快捷功能后显示操作结果；关闭时执行完成后直接关闭弹出面板。';
+  resultHint.textContent = '使用插件图标快捷功能或保存、删除快捷重命名规则后显示操作结果；关闭时执行完成后直接关闭弹出面板。';
   const updateField = createGlobalSwitch('自动更新规则组匹配规则', state.autoUpdateGroupRules, checked => {
     state.autoUpdateGroupRules = checked;
   });
@@ -1897,8 +1922,7 @@ function renderGlobalDetail() {
 
   body.append(configBlock);
 
-  const section = createSection('global', '全局选项', body, { defaultOpen: true });
-  els.detail.append(head, section);
+  els.detail.append(head, body);
   applyI18n(els.detail);
   syncDirtyState();
 }
@@ -1954,7 +1978,7 @@ function buildConfig() {
     state.clickAction,
     state.language,
     state.groupsFirst,
-    { autoUpdateGroupRules: state.autoUpdateGroupRules, showActionResult: state.showActionResult }
+    { autoUpdateGroupRules: state.autoUpdateGroupRules, showActionResult: state.showActionResult, globalTitleRule: state.globalTitle?.titleRule }
   );
 }
 
@@ -1966,6 +1990,9 @@ function markInvalid(errors) {
   }
   if (!Array.isArray(errors)) return;
 
+  if (errors.some(error => typeof error === 'object' && error?.path?.startsWith('globalTitleRule'))) {
+    selectGlobal(GLOBAL_TITLE_ID);
+  }
   const indexes = invalidRuleIndexes(errors);
   if (indexes.length === 0) return;
 
@@ -1995,6 +2022,10 @@ async function sendSync() {
 }
 
 async function persist(label) {
+  if (externalConfigChanged) {
+    setStatus('warn', '配置已在其他窗口更新，请先放弃修改并重新读取，再进行保存。');
+    return false;
+  }
   // 写入前统一展开简写，保证落盘内容与页面显示一致
   normalizeAllPatterns();
 
@@ -2106,7 +2137,19 @@ function exportToFile() {
   setStatus('ok', `已导出 ${config.rules.length} 个规则组到 ${name}`);
 }
 
+// 在建立快照前补齐编辑器默认值，避免渲染本身产生“未保存修改”。
+function editableRule(rule) {
+  return {
+    ...rule,
+    patterns: Array.isArray(rule.patterns) ? rule.patterns.slice() : [''],
+    tabGroup: normalizeTabGroup(rule),
+    highlight: Highlight.normalizeHighlight(rule),
+    titleRule: TitleRule.normalizeTitleRule(rule)
+  };
+}
+
 function applyConfig(config) {
+  externalConfigChanged = false;
   state.groupsFirst = config.groupsFirst === true;
   state.autoUpdateGroupRules = config.autoUpdateGroupRules !== false;
   state.showActionResult = config.showActionResult !== false;
@@ -2114,10 +2157,8 @@ function applyConfig(config) {
   state.language = Store.normalizeLanguage(config.language);
   setLanguage(resolveLanguage(state.language));
   applyI18n(document);
-  state.rules = config.rules.map((rule) => ({
-    ...rule,
-    patterns: Array.isArray(rule.patterns) ? rule.patterns.slice() : ['']
-  }));
+  state.globalTitle = { titleRule: TitleRule.normalizeTitleRule({ titleRule: config.globalTitleRule }) };
+  state.rules = config.rules.map(editableRule);
   state.selectedId = state.rules[0] ? state.rules[0].id : GLOBAL_ID;
   persistSelected();
   closeMenus();
@@ -2127,6 +2168,10 @@ function applyConfig(config) {
 
 async function appendFromText(text, label) {
   if (busy) return;
+  if (externalConfigChanged) {
+    setStatus('warn', '配置已在其他窗口更新，请先放弃修改并重新读取，再进行保存。');
+    return;
+  }
   const parsed = Store.parseConfigText(text, { rulesOnly: true });
   if (!parsed.ok) {
     setStatus('error', t('追加导入失败，文件中的规则组不合法。'), parsed.errors);
@@ -2214,20 +2259,19 @@ function changeLanguage(preference) {
 
 async function load() {
   const { config, source, errors } = await Store.loadConfig();
+  externalConfigChanged = false;
 
   state = {
     groupsFirst: config.groupsFirst === true,
     autoUpdateGroupRules: config.autoUpdateGroupRules !== false,
     showActionResult: config.showActionResult !== false,
     clickAction: Store.normalizeClickAction(config.clickAction),
-    rules: config.rules.map((rule) => ({
-      ...rule,
-      patterns: Array.isArray(rule.patterns) ? rule.patterns.slice() : ['']
-    })),
+    globalTitle: { titleRule: TitleRule.normalizeTitleRule({ titleRule: config.globalTitleRule }) },
+    rules: config.rules.map(editableRule),
     selectedId: null
   };
   const remembered = loadSelected();
-  state.selectedId = remembered === GLOBAL_ID || state.rules.some((rule) => rule.id === remembered)
+  state.selectedId = remembered === GLOBAL_ID || remembered === GLOBAL_TITLE_ID || state.rules.some((rule) => rule.id === remembered)
     ? remembered
     : (state.rules[0] ? state.rules[0].id : GLOBAL_ID);
   persistSelected();
@@ -2360,8 +2404,18 @@ if (browser.permissions) {
   if (browser.permissions.onRemoved) browser.permissions.onRemoved.addListener(syncPermissionState);
 }
 
-// 任意输入 / 选择变化后重新计算按钮可用状态；元素自身的处理器会先更新 state，
-// 这里用冒泡阶段监听即可拿到最新状态。
+// 快捷重命名可能在设置页之外写入配置，避免旧编辑状态覆盖新规则。
+browser.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local' || !changes[Store.CONFIG_KEY] || busy) return;
+  if (snapshot() === savedSnapshot) {
+    load().catch(err => setStatus('error', `读取失败：${String(err)}`));
+  } else {
+    externalConfigChanged = true;
+    setStatus('warn', '配置已在其他窗口更新，请先放弃修改并重新读取，再进行保存。');
+  }
+});
+
+// 任意输入变化后由冒泡阶段统一更新按钮状态。
 document.addEventListener('input', syncDirtyState);
 document.addEventListener('change', syncDirtyState);
 

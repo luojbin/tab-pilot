@@ -346,8 +346,8 @@ test('colorForIndex：按序号循环取色，9 个颜色一轮', () => {
   assert.equal(colorForIndex('x'), GROUP_COLORS[0]);
 });
 
-test('clickAction：四个取值均可通过校验，未知值被拒绝', () => {
-  for (const action of ['sync', 'syncRuleCollapse', 'syncCollapseInactive', 'syncCollapseAll']) {
+test('clickAction：同步、重命名及动作菜单取值均可通过校验，未知值被拒绝', () => {
+  for (const action of ['sync', 'syncRuleCollapse', 'syncCollapseInactive', 'syncCollapseAll', 'renameTab', 'actionMenu']) {
     const config = validConfig();
     config.clickAction = action;
     assert.equal(validateConfig(config).ok, true, `${action} 应被接受`);

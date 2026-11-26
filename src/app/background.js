@@ -1,3 +1,6 @@
+import { SYNC_ACTIONS } from '../core/toolbar-actions.js';
+import { registerQuickRename } from './quick-rename.js';
+import { effectiveTitleRule } from '../core/quick-rename.js';
 import { normalizeTabGroup, tabGroupEnabled } from '../core/tab-group.js';
 import browser from '../platform/browser.js';
 import { enforceStrictGroup } from './strict-mode.js';
@@ -10,7 +13,6 @@ import * as Store from './store.js';
 import * as Actions from './actions.js';
 import * as Logger from '../core/logger.js';
 import * as Highlight from '../core/highlight.js';
-import * as TitleRule from '../core/title-rule.js';
 
 /**
  * TabPilot 后台调度
@@ -21,6 +23,8 @@ import * as TitleRule from '../core/title-rule.js';
 const manualGroup = createManualGroupController(browser, Store, () => syncAll());
 
 registerToolbarMenu(browser, error => Logger.warn('图标选项菜单操作失败', error));
+
+const quickRename = registerQuickRename(browser, Store, error => Logger.warn('快捷重命名操作失败', error));
 
 const DEBOUNCE_MS = 50;
 const IGNORED_PREFIXES = ['about:', 'moz-extension:', 'chrome:', 'resource:', 'view-source:'];
@@ -323,12 +327,12 @@ async function collapseGroups(mode, config, windowId) {
  * 点击工具栏图标的入口：先同步，再按全局配置里的 clickAction 决定是否折叠。
  * 同步和以前一样覆盖所有窗口；折叠只影响点击时所在的窗口。
  */
-async function handleToolbarClick(tab) {
-  const stats = await syncAll();
-
+async function handleToolbarClick(tab, requestedAction) {
   const { config } = await Store.loadConfig();
-
-  const action = Store.normalizeClickAction(config.clickAction);
+  const action = requestedAction ?? Store.normalizeClickAction(config.clickAction);
+  // 重命名和动作菜单由 popup 展示，不能误走同步 / 折叠分支。
+  if (!SYNC_ACTIONS.includes(action)) throw new Error('Unsupported sync action');
+  const stats = await syncAll();
   if (action === 'sync') return stats;
 
   const windowId = tab && typeof tab.windowId === 'number' ? tab.windowId : undefined;
@@ -341,11 +345,11 @@ async function handleToolbarClick(tab) {
 }
 
 /** popup 请求在后台执行，面板关闭也不影响已经开始的动作。 */
-async function executeToolbarClick(tab) {
+async function executeToolbarClick(tab, action) {
   let result;
   let failed = false;
   try {
-    result = await handleToolbarClick(tab);
+    result = await handleToolbarClick(tab, action);
   } catch (err) {
     failed = true;
     result = {};
@@ -405,13 +409,8 @@ async function resolvePageStyle(tab, url) {
   const pseudoTab = { id: -1, windowId, url: targetUrl, groupId: -1 };
 
   const { matched } = Rules.explain(pseudoTab, config.rules, { windowId });
-  if (!matched) {
-    Logger.info('页面标识查询：未命中分组', { url: targetUrl });
-    return null;
-  }
-
-  const highlight = Highlight.normalizeHighlight(matched.rule);
-  const titleRule = TitleRule.normalizeTitleRule(matched.rule);
+  const highlight = Highlight.normalizeHighlight(matched?.rule);
+  const titleRule = effectiveTitleRule(config.globalTitleRule, matched?.rule?.titleRule, targetUrl);
   const needsHighlight =
     highlight.enabled && (highlight.border.sides.length > 0 || highlight.banner.positions.length > 0);
   const needsTitle = titleRule.enabled && titleRule.rules.some((entry) => entry.titlePattern.trim() !== '' || entry.urlPattern.trim() !== '');
@@ -419,22 +418,22 @@ async function resolvePageStyle(tab, url) {
   if (!needsHighlight && !needsTitle) {
     Logger.info('页面标识查询：分组未启用页面内标识或标题规则', {
       url: targetUrl,
-      ruleId: matched.ruleId
+      ruleId: matched?.ruleId
     });
     return null;
   }
 
   Logger.info('页面标识查询：返回配置', {
     url: targetUrl,
-    ruleId: matched.ruleId,
+    ruleId: matched?.ruleId || '__global-title__',
     highlight: needsHighlight,
     title: needsTitle
   });
 
   return {
-    ruleId: matched.ruleId,
-    name: matched.rule.name || '未命名分组',
-    colorHex: Store.colorHexOf(matched.rule),
+    ruleId: matched?.ruleId || '__global-title__',
+    name: matched?.rule?.name || '',
+    colorHex: Store.colorHexOf(matched?.rule),
     highlight,
     titleRule
   };
@@ -459,6 +458,9 @@ async function refreshPages() {
 // 避免依赖「监听器返回 Promise」这种只在 Firefox 生效的行为。
 browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message !== 'object') return undefined;
+  if (['quick-rename-pending', 'quick-rename-active', 'quick-rename-save', 'quick-rename-reset'].includes(message.type)) {
+    return quickRename.handleMessage(message, sender, sendResponse);
+  }
 
   if (['manual-group-pending', 'manual-group-add', 'manual-group-cancel'].includes(message.type)) {
     if (sender.tab || sender.url !== browser.runtime.getURL('src/ui/popup.html') ||
@@ -478,7 +480,8 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'toolbar-execute') {
     if (sender.tab || sender.url !== browser.runtime.getURL('src/ui/popup.html') ||
         !Number.isInteger(message.windowId) || message.windowId < 0) return undefined;
-    executeToolbarClick({ windowId: message.windowId })
+    if (message.action !== undefined && !SYNC_ACTIONS.includes(message.action)) return undefined;
+    executeToolbarClick({ windowId: message.windowId }, message.action)
       .then(sendResponse)
       .catch((err) => {
         Logger.error('popup 动作失败', String(err));

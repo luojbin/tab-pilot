@@ -6,6 +6,36 @@
  */
 
 const EN = {
+  '标签页重命名': 'Rename tab',
+  '弹出动作菜单': 'Show action menu',
+  '选择直接执行同步 / 折叠、重命名当前标签页，或打开动作菜单；折叠只影响当前窗口。': 'Sync or collapse groups, rename the active tab, or open an action menu. Collapsing only affects the current window.',
+
+  '规则已删除；页面暂时无法更新，请确认网站访问权限并刷新页面。': 'Rule deleted, but the page could not be updated. Check website access permissions and reload the page.',
+  '前往配置页': 'Settings',
+  '已保存重命名规则“{title}”。': 'Saved title rule “{title}”.',
+  '已删除重命名规则“{title}”。': 'Deleted title rule “{title}”.',
+  '已删除重命名规则“{title}”，当前标签页名由全局通配规则控制，如需修改请前往配置页。': 'Deleted title rule “{title}”. The tab title is now controlled by a general global rule. To change it, open settings.',
+  '已删除重命名规则“{title}”，当前标签页名由组内规则控制，如需修改请前往配置页。': 'Deleted title rule “{title}”. The tab title is now controlled by a rule group rule. To change it, open settings.',
+  '当前标题由全局通配规则生成，请前往插件配置页维护。': 'This title comes from a general global rule. Manage it in extension settings.',
+  '当前标题由组内重命名规则生成，请前往插件配置页维护。': 'This title comes from a rule group title rule. Manage it in extension settings.',
+  '确认': 'Confirm',
+  '重置': 'Reset',
+  '无法读取目标页面，请关闭面板后重新操作。': 'Could not read the target page. Close this popup and try again.',
+  '页面或规则已变化，请关闭面板后重新操作。': 'The page or rule has changed. Close this popup and try again.',
+  '配置已在其他窗口更新，请先放弃修改并重新读取，再进行保存。': 'Config changed in another window. Discard your edits and reload before saving.',
+  '全局重命名规则': 'Global title rules',
+  '全局标题': 'Global title',
+  '此处是全局的标签页名规则，优先于规则组内重命名，不影响页面归属。': 'These are global tab title rules. They take priority over rule group title rules without changing page ownership.',
+  '快捷重命名': 'Quick rename',
+  '目标标题': 'New title',
+  '忽略查询参数': 'Ignore query parameters',
+  '保留路径和 hash，仅允许查询参数变化。': 'Keep the path and hash; allow query parameters to vary.',
+  '确认重命名': 'Rename',
+  '请输入目标标题。': 'Enter a new title.',
+  '页面地址已变化，请关闭窗口后重新操作。': 'The page address has changed. Close this window and try again.',
+  '规则已保存；页面暂时无法应用，请确认网站访问权限并刷新页面。': 'Rule saved, but it could not be applied. Check website access permissions and reload the page.',
+  '无法读取目标页面，请关闭窗口后重新操作。': 'Could not read the target page. Close this window and try again.',
+
   '新建标签页群组或有标签从组外移入时自动折叠；组内跳转或刷新保持当前状态。': 'Collapse when a group is created or tabs enter from outside. Keep its current state during navigation or reloads within the group.',
   '仅在新建标签页群组或有标签从组外移入时自动折叠，组内跳转不改变折叠状态。': 'Only auto-collapse when creating a group or moving tabs into it. Navigation within the group does not change its collapse state.',
   '新建空白规则': 'New blank rule',
@@ -35,8 +65,8 @@ const EN = {
 
   '自动更新规则组匹配规则': 'Prompt to update rule group patterns',
   '操作结果提示': 'Show action results',
-  '使用插件图标快捷功能后显示操作结果；关闭时执行完成后直接关闭弹出面板。':
-    'Show results after using the toolbar shortcut. When off, the popup closes as soon as the action completes.',
+  '使用插件图标快捷功能或保存、删除快捷重命名规则后显示操作结果；关闭时执行完成后直接关闭弹出面板。':
+    'Show results after toolbar actions or saving and deleting quick title rules. When off, the popup closes as soon as the action completes.',
   '手动将标签页拖入已有规则组的标签页群组时，提示是否添加该网站的匹配规则。':
     'When a tab is manually moved into a group with an existing rule, ask whether to add a match pattern for the website.',
 
@@ -221,6 +251,8 @@ const EN = {
   '留空表示不限制；如需匹配后续路径、参数等变体，请加 .*': 'Leave empty for no restriction; add .* to match trailing paths, parameters, or other variants',
   '支持 ${title.1}、${url.1} 等捕获组': 'Supports captures such as ${title.1} and ${url.1}',
   '规则{index}': 'Rule {index}',
+  '全局规则{index}': 'Global rule {index}',
+  '未匹配当前组': 'Does not match this rule group',
   '未匹配': 'No match',
   '正则有误': 'Invalid regex',
   "标题条件（正则，可留空）": "Title condition (regex, optional)",
@@ -284,6 +316,9 @@ const EN = {
 };
 
 const PATTERNS = [
+  [/^全局重命名规则的第 (\d+) 条命名规则：([\s\S]+)$/,
+    (match, entry, reason) => `Global title rule ${entry}: ${translateText(reason)}`],
+
   [/^规则组“([\s\S]*)”的第 (\d+) 条命名规则：([\s\S]+)$/,
     (match, name, entry, reason) => `Rule group “${name}”, title rule ${entry}: ${translateText(reason)}`],
   [/^第 (\d+) 个规则组的第 (\d+) 条命名规则：(.+)$/,

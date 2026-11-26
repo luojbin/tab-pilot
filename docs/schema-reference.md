@@ -79,13 +79,31 @@ schema 2 在对外发布前统一定为本文的当前格式；开发期曾使�
 |---|---|---|---|
 | `schemaVersion` | integer | 是 | 固定为 `2` |
 | `rules` | object[] | 是 | 公共分组结构，标题规则使用 schema 2 写法 |
-| `clickAction` | string | 否 | `sync`，枚举与 schema 1 相同 |
+| `clickAction` | string | 否 | `sync`；支持 schema 1 的同步 / 折叠枚举，另增加 `renameTab` 和 `actionMenu` |
 | `language` | string | 否 | `auto`；`auto` / `zh` / `en` |
 | `groupsFirst` | boolean | 否 | `false`，分组前置 |
 | `autoUpdateGroupRules` | boolean | 否 | `true`，手动将标签页拖入已有规则的组后，是否提示添加匹配路径 |
-| `showActionResult` | boolean | 否 | `true`，是否显示图标快捷操作的结果提示 |
+| `showActionResult` | boolean | 否 | `true`，是否显示图标快捷操作及快捷重命名保存 / 删除的结果提示 |
+| `globalTitleRule` | object | 否 | 全局重命名，缺省关闭；结构与下文 schema 2 的 `titleRule` 相同 |
 
 `globalEnabled` 已移除：读取和导入时忽略并删除，即使值为 `false` 也不会暂停插件。规则自身的 `enabled` 保留。
+
+schema 2 新增的图标行为：
+
+| 值 | 操作 |
+|---|---|
+| `renameTab` | 打开当前窗口活动标签页的快捷重命名表单，不执行同步 |
+| `actionMenu` | 显示其余同步 / 折叠及重命名行为，选择后执行，不修改已保存的默认行为 |
+
+待处理的右键重命名或手动补规则请求优先于默认图标行为；动作菜单和编辑表单不受结果提示开关影响，不自动关闭。实际动作完成后的提示仍由 `showActionResult` 控制。
+
+### 全局重命名 `globalTitleRule`
+
+可选字段，仍属于尚未发布的 schema 2，无需迁移已有 schema 2 配置。复用 `titleRule` 的 `enabled`、`rules`、`testCases` 及双来源捕获模板。全局规则按顺序先匹配，未命中时回退至当前规则组内重命名；没有规则组归属的页面也可使用全局规则，不影响高亮或浏览器群组行为。
+
+快捷入口生成 `titlePattern: ''`，将当前完整 URL 转义为精确匹配的 `urlPattern`，目标标题中的 `$` 转义为 `$$`。选择忽略查询参数时，URL 条件使用 `(?:\?[^#]*)?`，保留路径及 hash，不保存额外的忽略参数字段。新规则置于最前；快捷入口识别当前页面的精确 URL 或允许查询参数变化的规则，确认后更新原项，切换参数选项不会留下旧项。重置仅删除对应快捷规则，不修改通用手写全局正则。描述自动使用“全局标题 | <目标标题>”（英文为“Global title | <目标标题>”），不记录是否忽略查询参数；生成后不随语言切换改写。后续允许在设置页修改为任意双源规则。
+
+全局规则随保存、导出和替换导入保留；追加导入仍只取规则组，保留现有全局规则。
 
 ### 标签页群组 `rules[].tabGroup`
 
@@ -158,6 +176,20 @@ schema 2 在对外发布前统一定为本文的当前格式；开发期曾使�
   "groupsFirst": false,
   "autoUpdateGroupRules": true,
   "showActionResult": true,
+  "globalTitleRule": {
+    "enabled": true,
+    "rules": [
+      {
+        "titlePattern": "",
+        "urlPattern": "https://example\\.com/dashboard(?:\\?[^#]*)?",
+        "replacement": "生产环境看板",
+        "description": "全局标题 | 生产环境看板"
+      }
+    ],
+    "testCases": [
+      { "title": "App", "url": "https://example.com/dashboard?view=summary" }
+    ]
+  },
   "rules": [
     {
       "id": "work-app",
@@ -191,7 +223,7 @@ schema 2 在对外发布前统一定为本文的当前格式；开发期曾使�
 }
 ```
 
-该用例输出：`App · 工单 123`。
+全局测试用例输出：`生产环境看板`。规则组内的工单用例未命中全局规则，回退至组内规则，输出：`App · 工单 123`。
 
 ## schemaVersion 1：历史正式格式
 

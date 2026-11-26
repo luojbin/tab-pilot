@@ -1118,3 +1118,43 @@ test('标题和群组成员变化不触发导航刷新，避免重命名和归�
   await Background.flush();
   assert.equal(state.pageMessages.length, 0);
 });
+
+test('page-style：全局重命名不依赖规则组，且优先于组内规则、不影响高亮归属', async () => {
+  const { applyTitleRules } = await import('../src/core/title-rule.js');
+  reset();
+  const globalTitleRule = { enabled: true, rules: [{ titlePattern: '', urlPattern: 'https://example\\.com/detail', replacement: 'Global' }] };
+  state.storedConfig = { schemaVersion: 2, rules: [], globalTitleRule };
+  const message = { type: 'page-style', url: 'https://example.com/detail' };
+  const sender = { tab: { id: 1, windowId: 1 } };
+  let style = await sendMessage(message, sender);
+  assert.equal(style.ruleId, '__global-title__');
+  assert.equal(style.highlight.enabled, false);
+  assert.equal(applyTitleRules({ titleRule: style.titleRule }, 'App', message.url).result, 'Global');
+  state.storedConfig.rules = [{ id: 'group', enabled: true, name: 'Work', patterns: ['*://example.com/*'], color: 'red',
+    tabGroup: { enabled: false }, highlight: { enabled: true },
+    titleRule: { enabled: true, rules: [{ titlePattern: '.*', replacement: 'Group' }] } }];
+  style = await sendMessage(message, sender);
+  assert.equal(style.ruleId, 'group');
+  assert.equal(style.highlight.enabled, true);
+  assert.equal(applyTitleRules({ titleRule: style.titleRule }, 'App', message.url).result, 'Global');
+  message.url = 'https://example.com/other';
+  style = await sendMessage(message, sender);
+  assert.equal(applyTitleRules({ titleRule: style.titleRule }, 'App', message.url).result, 'Group');
+  assert.equal(state.groupCalls.length, 0);
+});
+
+test('动作菜单显式选择覆盖默认配置，不把菜单或重命名当作折叠动作', async () => {
+  reset();
+  state.storedConfig = { schemaVersion: 2, clickAction: 'actionMenu', rules: [] };
+  state.existingGroups = [{ id: 1, title: 'Work', collapsed: false, windowId: 1 }];
+  const sender = { url: browser.runtime.getURL('src/ui/popup.html') };
+  const sync = await sendMessage({ type: 'toolbar-execute', windowId: 1, action: 'sync' }, sender);
+  assert.equal(sync.ok, true);
+  assert.equal(state.updateCalls.length, 0);
+  const collapse = await sendMessage({ type: 'toolbar-execute', windowId: 1, action: 'syncCollapseAll' }, sender);
+  assert.equal(collapse.ok, true);
+  assert.equal(state.updateCalls.length, 1);
+  assert.equal(await sendMessage({ type: 'toolbar-execute', windowId: 1, action: 'renameTab' }, sender), undefined);
+  assert.equal(await sendMessage({ type: 'toolbar-execute', windowId: 1, action: 'actionMenu' }, sender), undefined);
+  await assert.rejects(Background.handleToolbarClick({ windowId: 1 }), /Unsupported sync action/);
+});

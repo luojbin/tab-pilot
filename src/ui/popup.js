@@ -1,3 +1,5 @@
+import { TOOLBAR_ACTIONS } from '../core/toolbar-actions.js';
+import { startQuickRename } from './quick-rename.js';
 import browser from '../platform/browser.js';
 import { loadConfig } from '../app/store.js';
 import { resolveLanguage, setLanguage, t } from './i18n.js';
@@ -18,6 +20,20 @@ export async function startPopup(api = browser, doc = document, view = window, r
     view.clearTimeout(fadeTimer);
     view.clearTimeout(closeTimer);
     panel.classList.remove('fading');
+  };
+  const closeAfterResult = () => {
+    if (interacted) return;
+    fadeTimer = view.setTimeout(() => {
+      panel.classList.add('fading');
+      closeTimer = view.setTimeout(() => view.close(), 300);
+    }, 3000);
+  };
+  const showFailure = () => {
+    if (!showActionResult) { view.close(); return; }
+    status.hidden = false;
+    status.textContent = toolbarFeedback({}, language, true);
+    status.className = 'error';
+    closeAfterResult();
   };
   // 用户操作面板时保持打开，为设置入口和后续交互留出时间。
   settings.addEventListener('pointerenter', cancelClose);
@@ -43,6 +59,13 @@ export async function startPopup(api = browser, doc = document, view = window, r
     settings.textContent = t('设置');
     status.textContent = t('正在执行…');
     const current = await api.windows.getCurrent();
+    const rename = await api.runtime.sendMessage({ type: 'quick-rename-pending', windowId: current.id });
+    if (rename?.tabId !== undefined) {
+      cancelClose();
+      await startQuickRename(api, doc, view, rename, config);
+      return;
+    }
+    if (rename?.ok === false) throw new Error('Rename request failed');
     const pending = await api.runtime.sendMessage({ type: 'manual-group-pending', windowId: current.id });
     if (pending?.id) {
       cancelClose();
@@ -102,21 +125,54 @@ export async function startPopup(api = browser, doc = document, view = window, r
       return;
     }
     if (pending?.ok === false) throw new Error('Pending request failed');
-    const response = await api.runtime.sendMessage({ type: 'toolbar-execute', windowId: current.id });
-    if (!showActionResult) { view.close(); return; }
-    if (!response || typeof response.text !== 'string') throw new Error('No result');
-    status.textContent = response.text;
-    status.className = response.ok ? '' : 'error';
+    const execute = async action => {
+      if (action === 'renameTab') {
+        cancelClose();
+        const request = await api.runtime.sendMessage({ type: 'quick-rename-active', windowId: current.id });
+        if (!request?.ok) {
+          // 无法重命名的页面保留错误信息和关闭入口，不误执行同步。
+          await startQuickRename(api, doc, view, { ok: false }, config);
+          return;
+        }
+        await startQuickRename(api, doc, view, request, config);
+        return;
+      }
+      status.hidden = !showActionResult;
+      status.textContent = t('正在执行…');
+      const response = await api.runtime.sendMessage({ type: 'toolbar-execute', windowId: current.id,
+        ...(action === undefined ? {} : { action }) });
+      if (!showActionResult) { view.close(); return; }
+      if (!response || typeof response.text !== 'string') throw new Error('No result');
+      status.textContent = response.text;
+      status.className = response.ok ? '' : 'error';
+      closeAfterResult();
+    };
+    if (config.clickAction === 'actionMenu') {
+      cancelClose();
+      status.hidden = true;
+      const menu = doc.getElementById('actionMenu');
+      menu.hidden = false;
+      let busy = false;
+      for (const [action, label] of TOOLBAR_ACTIONS) {
+        if (action === 'actionMenu') continue;
+        const button = doc.createElement('button');
+        button.type = 'button';
+        button.textContent = t(label);
+        button.addEventListener('click', async () => {
+          if (busy) return;
+          busy = true;
+          menu.hidden = true;
+          interacted = false;
+          try { await execute(action); }
+          catch { showFailure(); }
+        });
+        menu.appendChild(button);
+      }
+      return;
+    }
+    await execute(config.clickAction === 'renameTab' ? 'renameTab' : undefined);
   } catch {
-    if (!showActionResult) { view.close(); return; }
-    status.textContent = toolbarFeedback({}, language, true);
-    status.className = 'error';
-  }
-  if (!interacted) {
-    fadeTimer = view.setTimeout(() => {
-      panel.classList.add('fading');
-      closeTimer = view.setTimeout(() => view.close(), 300);
-    }, 3000);
+    showFailure();
   }
 }
 
