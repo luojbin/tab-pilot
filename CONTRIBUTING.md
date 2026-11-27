@@ -4,7 +4,7 @@
 
 ## 环境与快速开始
 
-历史验证环境为 Windows、Node.js 24.14.0、npm 11.9.0；macOS 验证环境为 Node.js 26.7.0、npm 11.19.0，完整测试和双目标构建已通过。构建使用 Node API，不依赖 PowerShell 专用命令。目标浏览器为 Firefox 140+、Chrome / Edge（Chromium 116+），目标是桌面浏览器。
+历史验证环境为 Windows、Node.js 24.14.0、npm 11.9.0；macOS 验证环境为 Node.js 26.7.0、npm 11.19.0，完整测试和三目标构建已通过。构建使用 Node API，不依赖 PowerShell 专用命令。目标浏览器为 Firefox 140+、Chrome / Edge（Chromium 116+），目标是桌面浏览器。
 
 在仓库根目录或 GitHub 源码 ZIP 的解压目录执行：
 
@@ -56,8 +56,10 @@ _locales/
 manifests/
   base.json            共享 manifest 模板（名称与描述使用 __MSG_ 占位符）
   manifest.firefox.json Firefox 后台与专用声明
-  manifest.chromium.json Chromium service worker 与最低版本
-scripts/build-targets.mjs 构建、manifest 合并、静态资源复制与 ZIP 打包
+  manifest.chrome.json  Chrome service worker、菜单权限与最低版本
+  manifest.edge.json    Edge service worker、菜单权限与最低版本
+scripts/build-config.mjs  TARGETS 差异声明与权限合并规则
+scripts/build-targets.mjs 通用构建流程、静态资源复制与 ZIP 打包
 test/                  单元测试与打包冒烟测试
 icons/                 扩展图标
 docs/PRD.md            产品需求与验收标准
@@ -85,19 +87,21 @@ esbuild 将以下四个入口及其依赖分别打包为普通 IIFE 脚本：
 产物保留相同相对路径，不含运行时模块导入；manifest 的后台、内容脚本、配置页及 popup 各加载自己的单一入口。仅后台的 `globalThis.TabPilotDebug` 作为控制台调试接口保留，内部模块不挂到全局。
 
 ```bash
-npm run build           # 同时构建两个目标
-npm run build:firefox   # 仅 Firefox
-npm run build:chromium  # 仅 Chromium
+npm run build          # 同时构建三个目标
+npm run build:firefox  # 仅 Firefox
+npm run build:chrome   # 仅 Chrome
+npm run build:edge     # 仅 Edge
 ```
 
 | 目标 | 加载目录 | ZIP |
 |---|---|---|
 | Firefox | `dist/firefox/` | `output/tabpilot-<version>-firefox.zip` |
-| Chromium | `dist/chromium/` | `output/tabpilot-<version>-chromium.zip` |
+| Chrome | `dist/chrome/` | `output/tabpilot-<version>-chrome.zip` |
+| Edge | `dist/edge/` | `output/tabpilot-<version>-edge.zip` |
 
 构建前会清理对应目标的 `dist` 目录，再合并 manifest、注入 `package.json` 的版本、打包 JS、复制 HTML / 图标 / LICENSE / `_locales` 并生成 ZIP。只修改源码和模板，不直接编辑 `dist/`。当前不提供 watch 或 sourcemap，修改源码后需重新构建。
 
-两个目标分别使用 `firefox140`、`chrome116` 作为语法兼容目标。当前版本的四个 JS 产物相同，差异在 manifest；以后使用新语法时，两个目标的 JS 输出可能不同。
+目标差异统一声明于 `scripts/build-config.mjs` 的 `TARGETS`：manifest overlay、esbuild 编译目标、默认主题、颜色名称集与 ZIP 名。Firefox 使用 `firefox140`，Chrome / Edge 使用 `chrome116`。构建注入目标及默认主题，三个目标的 JS 产物可能不同。权限字段合并去重，其他 manifest 字段由 overlay 覆盖；不要在通用构建流程中增加浏览器三元判断。
 
 ### 浏览器适配
 
@@ -116,7 +120,7 @@ npm run build:chromium  # 仅 Chromium
 
 后台打开 popup 的版本边界见 [Firefox 官方说明](https://blog.mozilla.org/addons/2026/04/23/webextensions-api-changes-firefox-149-152/) 和 [Chromium action.openPopup](https://developer.chrome.com/docs/extensions/reference/api/action#method-openPopup)。这不影响用户直接点击图标打开 popup。
 
-事件页和 service worker 都可能被回收。内存日志、tab 事件防抖队列和自动归组抑制标记不持久化；手动补规则的待确认项保存在 storage.local 的 `tabpilot:manual-group-requests`，不属于导出配置。不能将进程一直存活作为业务前提。后台通过 tabs.onUpdated 的 URL 变化定向通知内容脚本，页面重新查询规则并同步高亮和标题；该通知独立于归组、阈值和严格模式的执行。内容脚本保留 popstate / hashchange 监听及独立的 1.5 秒 URL 兜底，未命中或关闭重命名时也运行；标题变更另由 MutationObserver 监听。相同 URL 的重复导航请求合并，配置变更仍强制刷新，过期响应被丢弃。
+事件页和 service worker 都可能被回收。内存日志、tab 事件防抖队列和自动归组抑制标记不持久化；手动补规则的待确认项保存在 storage.local 的 `tabpilot:manual-group-requests`，不属于导出配置。手动命名期间的前置等待状态独立保存在 storage.local 的 `tabpilot:group-order-editing`，后台重建后按实际仍存在的群组恢复，不属于导出配置。不能将进程一直存活作为业务前提。后台通过 tabs.onUpdated 的 URL 变化定向通知内容脚本，页面重新查询规则并同步高亮和标题；该通知独立于归组、阈值和严格模式的执行。内容脚本保留 popstate / hashchange 监听及独立的 1.5 秒 URL 兜底，未命中或关闭重命名时也运行；标题变更另由 MutationObserver 监听。相同 URL 的重复导航请求合并，配置变更仍强制刷新，过期响应被丢弃。
 
 ## 配置格式
 
@@ -199,7 +203,7 @@ node --test --test-isolation=none test/append-rules.test.js test/copy-rule.test.
 ### 加载与调试
 
 - Firefox：`about:debugging#/runtime/this-firefox` → 临时载入附加组件 → `dist/firefox/manifest.json`；点击扩展的「检查」打开后台控制台。
-- Chrome / Edge：`chrome://extensions` / `edge://extensions` → 开发者模式 → 加载已解压的扩展程序 → `dist/chromium`；通过扩展的 service worker 检查入口打开后台控制台。
+- Chrome / Edge：`chrome://extensions` / `edge://extensions` → 开发者模式 → 加载已解压的扩展程序 → 分别选择 `dist/chrome` / `dist/edge`；通过扩展的 service worker 检查入口打开后台控制台。
 - 配置页在扩展选项中打开，页面标识与标题逻辑在目标网页的内容脚本上下文中调试。
 
 重新构建后先重载扩展，再刷新目标网页；已有页面不会自动换成新的内容脚本。Firefox 临时扩展在浏览器重启后会被卸载，调试前建议导出配置备份。
@@ -270,11 +274,11 @@ node --test --test-isolation=none test/append-rules.test.js test/copy-rule.test.
 
 本项目以用户可见功能和配置兼容性作为版本判断依据：兼容的维护修复和不改变行为的内部重构使用补丁版本，新增兼容功能使用次版本，不兼容变更使用主版本。当前开发版本从已发布的 `1.2.0` 推进到 `1.3.0`，包含新增功能和全局启停移除；schemaVersion 升级为 2，旧配置读取兼容与回退限制见上文。当前源码通过检查不代表已提交商店。修改版本号时同步更新 `package-lock.json` 的根版本及根包版本。
 
-1. 更新版本号和发布说明，运行测试、双目标构建、Firefox lint，并完成本次改动相关的浏览器验证。提交全部发布代码，创建并推送版本 tag（如 `v1.3.0`）；同一已上传的 Mozilla 版本号不能重复使用。
-2. 从该 tag 的干净源码执行 `npm ci`、`npm run build`，将 Firefox 和 Chromium ZIP 上传到对应 GitHub Release。普通 Release 在等待 Firefox 签名时不设为 Latest，可选择 `None` 并注明「Firefox 签名处理中」。测试版本使用 Pre-release。
+1. 更新版本号和发布说明，运行测试、三目标构建、Firefox lint，并完成本次改动相关的浏览器验证。提交全部发布代码，创建并推送版本 tag（如 `v1.3.0`）；同一已上传的 Mozilla 版本号不能重复使用。
+2. 从该 tag 的干净源码执行 `npm ci`、`npm run build`，将 Firefox、Chrome、Edge ZIP 上传到对应 GitHub Release。普通 Release 在等待 Firefox 签名时不设为 Latest，可选择 `None` 并注明「Firefox 签名处理中」。测试版本使用 Pre-release。
 3. 下载该 Release 自动提供的 **Source code (zip)**。向 Mozilla 提交 Firefox 构建 ZIP，并将该源码 ZIP 上传到源码附件字段；不能只提交源码 ZIP 代替可安装扩展。根据分发需求选择 AMO 上架（listed）或自行分发（unlisted）。
 4. 获取 Mozilla 签名后的 `.xpi`，补传到同一 Release；确认安装可用后标记为 Latest。如果启用了不可变 Release，先创建 tag 并下载该 tag 的源码归档，Release 保持草稿，补齐附件后再正式发布。
-5. Chromium ZIP 可用于 Chrome Web Store / Edge Add-ons 提交；本地开发仍加载 `dist/chromium`。Firefox ZIP 未签名时仅用于临时加载和送审，正式安装使用签名 XPI。
+5. Chrome / Edge ZIP 分别用于 Chrome Web Store / Edge Add-ons 提交；本地开发分别加载 `dist/chrome` / `dist/edge`。Firefox ZIP 未签名时仅用于临时加载和送审，正式安装使用签名 XPI。
 
 不自行构建源码 ZIP。GitHub 自动源码包是对应 tag 的仓库文件快照，包含受版本管理的测试和文档，不含 Git 历史或未提交修改。送审扩展必须由这个 tag 构建；不能将本地未提交改动混入送审产物。
 

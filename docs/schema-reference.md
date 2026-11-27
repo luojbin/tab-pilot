@@ -81,6 +81,8 @@ schema 2 在对外发布前统一定为本文的当前格式；开发期曾使�
 | `rules` | object[] | 是 | 公共分组结构，标题规则使用 schema 2 写法 |
 | `clickAction` | string | 否 | `sync`；支持 schema 1 的同步 / 折叠枚举，另增加 `renameTab` 和 `actionMenu` |
 | `language` | string | 否 | `auto`；`auto` / `zh` / `en` |
+| `colorTheme` | string | 否 | 当前构建默认主题，枚举见下文；只影响页内标识及设置页色块 / 预览 |
+| `customColorThemes` | object[] | 否 | 默认无自定义主题；每项包含 `id`、`name` 和九种 `colors` |
 | `groupsFirst` | boolean | 否 | `false`，分组前置 |
 | `autoUpdateGroupRules` | boolean | 否 | `true`，手动将标签页拖入已有规则的组后，是否提示添加匹配路径 |
 | `showActionResult` | boolean | 否 | `true`，是否显示图标快捷操作及快捷重命名保存 / 删除的结果提示 |
@@ -96,6 +98,31 @@ schema 2 新增的图标行为：
 | `actionMenu` | 显示其余同步 / 折叠及重命名行为，选择后执行，不修改已保存的默认行为 |
 
 待处理的右键重命名或手动补规则请求优先于默认图标行为；动作菜单和编辑表单不受结果提示开关影响，不自动关闭。实际动作完成后的提示仍由 `showActionResult` 控制。
+
+### 色彩主题 `colorTheme`
+
+可选枚举：`firefox-light`、`firefox-dark`、`chrome-light`、`chrome-dark`、`edge-light`、`edge-dark`、`vivid-light`、`vivid-dark`、`classic`。`vivid-*` 为 Edge 增强对比主题，`classic` 保留历史固定色板；所有主题固定明暗，不自动跟随系统。色值以 `src/core/color-themes.js` 为准。
+
+字段缺省时，Firefox / Chrome / Edge 构建分别采用 `firefox-light` / `chrome-light` / `vivid-light`，已有无该字段的配置同样按目标默认值解释；显式选择随保存、导出和替换导入保留。追加导入只追加规则组，保留本机主题。新增可选字段不改变 schemaVersion 2。
+
+`colorTheme` 也可以引用 `customColorThemes` 中的主题 `id`。自定义主题支持多套独立配色，`id` 必须是非空字符串、在数组内唯一且不能与内置主题标识重复；`name` 为非空名称，不随界面语言翻译。`colors` 必须包含 `grey/blue/red/yellow/green/pink/purple/cyan/orange` 九个槽位，每个值为六位十六进制 `#RRGGBB`。缺失颜色、非法色值或不存在的主题引用会被拒绝。
+
+```json
+{
+  "colorTheme": "theme-my-palette",
+  "customColorThemes": [{
+    "id": "theme-my-palette",
+    "name": "我的高对比主题",
+    "colors": {
+      "grey": "#6f6f6f", "blue": "#245bdb", "red": "#c62828",
+      "yellow": "#997500", "green": "#16733b", "pink": "#bb347e",
+      "purple": "#7335b5", "cyan": "#007f87", "orange": "#c65b19"
+    }
+  }]
+}
+```
+
+配置页可复制任一内置或自定义主题，再修改名称和九种颜色，通过“保存并同步”持久化；内置主题只读。删除当前自定义主题后选择回到浏览器默认主题。整套自定义主题随导出和替换导入保留，追加导入忽略导入文件的主题并保留本机主题。
 
 ### 全局重命名 `globalTitleRule`
 
@@ -176,6 +203,7 @@ schema 2 新增的图标行为：
   "groupsFirst": false,
   "autoUpdateGroupRules": true,
   "showActionResult": true,
+  "colorTheme": "vivid-light",
   "globalTitleRule": {
     "enabled": true,
     "rules": [

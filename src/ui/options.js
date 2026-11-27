@@ -1,3 +1,5 @@
+import { COLOR_LABEL_SETS, customTheme } from '../core/color-themes.js';
+import { BUILD_COLOR_LABEL_SET } from '../platform/build-target.js';
 import { TOOLBAR_ACTIONS } from '../core/toolbar-actions.js';
 import { invalidRuleIndexes } from '../core/validation-errors.js';
 import { previewTitleRules } from '../core/quick-rename.js';
@@ -58,29 +60,7 @@ const CAN_MANAGE_HOST_PERMISSION = Boolean(
 /** 权限状态：默认按已授权处理，启动时用 permissions.contains 校正。 */
 let permissionGranted = true;
 
-const COLOR_HEX = {
-  grey: '#9aa0a6',
-  blue: '#1a73e8',
-  red: '#d93025',
-  yellow: '#f9ab00',
-  green: '#1e8e3e',
-  pink: '#d01884',
-  purple: '#9334e6',
-  cyan: '#007b83',
-  orange: '#e8710a'
-};
-
-const COLOR_LABEL = {
-  grey: '灰',
-  blue: '蓝',
-  red: '红',
-  yellow: '黄',
-  green: '绿',
-  pink: '粉',
-  purple: '紫',
-  cyan: '青',
-  orange: '橙'
-};
+const COLOR_LABEL = COLOR_LABEL_SETS[BUILD_COLOR_LABEL_SET] || COLOR_LABEL_SETS.standard;
 
 const SELECTED_KEY = 'tabpilot:selected-rule-id';
 const GLOBAL_ID = '__global__';
@@ -107,7 +87,7 @@ function newRuleId() {
 }
 
 function colorHex(color) {
-  return COLOR_HEX[color] || COLOR_HEX.grey;
+  return Store.colorHexOf({ color }, state.colorTheme, state.customColorThemes);
 }
 
 function snapshot() {
@@ -117,6 +97,8 @@ function snapshot() {
     groupsFirst: state.groupsFirst,
     autoUpdateGroupRules: state.autoUpdateGroupRules,
     showActionResult: state.showActionResult,
+    colorTheme: state.colorTheme,
+    customColorThemes: state.customColorThemes,
     globalTitleRule: state.globalTitle?.titleRule,
     rules: state.rules
   });
@@ -1096,7 +1078,7 @@ function createHighlightPreview(rule) {
 
   function refresh() {
     const spec = Highlight.normalizeHighlight(rule);
-    const color = Store.colorHexOf(rule);
+    const color = Store.colorHexOf(rule, state.colorTheme, state.customColorThemes);
 
     layer.textContent = '';
     box.classList.toggle('off', !spec.enabled);
@@ -1325,7 +1307,7 @@ function createColorPicker(rule) {
   swatch.style.background = colorHex(rule.color);
   const label = document.createElement('span');
   label.className = 'color-name';
-  label.textContent = COLOR_LABEL[rule.color] || COLOR_LABEL.grey;
+  label.textContent = t(COLOR_LABEL[rule.color] || COLOR_LABEL.grey);
   const caret = createIcon('chevron-down', 'caret');
   button.append(swatch, label, caret);
 
@@ -1351,14 +1333,14 @@ function createColorPicker(rule) {
     dot.className = 'swatch';
     dot.style.background = colorHex(value);
     const text = document.createElement('span');
-    text.textContent = COLOR_LABEL[value] || value;
+    text.textContent = t(COLOR_LABEL[value] || value);
     option.append(dot, text);
 
     option.addEventListener('click', (event) => {
       event.stopPropagation();
       rule.color = value;
       swatch.style.background = colorHex(value);
-      label.textContent = COLOR_LABEL[value] || value;
+      label.textContent = t(COLOR_LABEL[value] || value);
       for (const item of menu.querySelectorAll('.color-option')) {
         item.setAttribute('aria-selected', String(item === option));
       }
@@ -1718,6 +1700,158 @@ function createGlobalSwitch(text, checked, onChange) {
   return field;
 }
 
+function createColorThemeBlock() {
+  const block = document.createElement('div');
+  block.className = 'fieldset color-theme-config';
+  const heading = document.createElement('h3');
+  heading.textContent = '色彩主题';
+  const label = document.createElement('label');
+  label.className = 'field';
+  label.append(document.createTextNode('页内标识主题'));
+  const select = document.createElement('select');
+  select.className = 'color-theme-select';
+  select.setAttribute('aria-describedby', 'color-theme-description');
+  for (const [value, theme] of Object.entries(Store.COLOR_THEMES)) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = t(theme.label);
+    select.append(option);
+  }
+  for (const theme of state.customColorThemes || []) {
+    const option = document.createElement('option');
+    option.value = theme.id;
+    option.textContent = `${t('[自定义]')} ${theme.name}`;
+    option.setAttribute('data-i18n-skip', '');
+    select.append(option);
+  }
+  select.value = Store.normalizeColorTheme(state.colorTheme, state.customColorThemes);
+  label.append(select);
+  const hint = document.createElement('p');
+  hint.id = 'color-theme-description';
+  hint.className = 'hint small';
+  hint.textContent = '仅影响页内边框、标识和配置页预览，不改变浏览器标签页群组的颜色。主题明暗由此处固定选择，不随网页或系统主题自动切换。';
+  const note = document.createElement('p');
+  note.className = 'hint small';
+  note.textContent = '增强对比主题以 Edge 色相为基础，其中粉色槽位调整为警示红；经典保留原有配色。原生色板是采样参考，无法保证与所有浏览器主题精确一致。';
+  const swatches = document.createElement('div');
+  swatches.className = 'theme-swatches';
+  const activeCustom = customTheme(state.colorTheme, state.customColorThemes);
+  const controls = document.createElement('div');
+  controls.className = 'theme-actions';
+  const copy = document.createElement('button');
+  copy.type = 'button';
+  copy.textContent = t('复制为自定义主题');
+  copy.addEventListener('click', () => {
+    const source = customTheme(state.colorTheme, state.customColorThemes) || Store.COLOR_THEMES[state.colorTheme];
+    const name = source.name || t(source.label);
+    const theme = { id: `theme-${newRuleId()}`, name: `${name} (${t('副本')})`,
+      colors: Object.fromEntries(Store.GROUP_COLORS.map(color => [color, colorHex(color)])) };
+    state.customColorThemes = [...(state.customColorThemes || []), theme];
+    state.colorTheme = theme.id;
+    renderList();
+    renderGlobalDetail();
+  });
+  const selectorRow = document.createElement('div');
+  selectorRow.className = 'theme-selector-row';
+  selectorRow.append(label, copy);
+  if (activeCustom) {
+    const nameLabel = document.createElement('label');
+    nameLabel.className = 'field';
+    nameLabel.append(document.createTextNode(t('自定义主题名')));
+    const name = document.createElement('input');
+    name.type = 'text';
+    name.value = activeCustom.name;
+    name.required = true;
+    name.addEventListener('input', () => {
+      activeCustom.name = name.value;
+      select.options[select.selectedIndex].textContent = `${t('[自定义]')} ${name.value}`;
+      syncDirtyState();
+    });
+    nameLabel.append(name);
+    controls.append(nameLabel);
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'danger';
+    remove.textContent = t('删除自定义主题');
+    remove.addEventListener('click', () => {
+      if (!window.confirm(t('删除当前自定义主题？将恢复浏览器默认主题。'))) return;
+      state.customColorThemes = state.customColorThemes.filter(theme => theme.id !== activeCustom.id);
+      state.colorTheme = Store.DEFAULT_COLOR_THEME;
+      renderList();
+      renderGlobalDetail();
+    });
+    controls.append(remove);
+  }
+  const refreshSwatches = () => {
+    swatches.replaceChildren();
+    for (const color of Store.GROUP_COLORS) {
+      const item = document.createElement('div');
+      item.className = 'theme-swatch';
+      const dot = document.createElement(activeCustom ? 'input' : 'span');
+      dot.className = 'swatch';
+      dot.style.background = colorHex(color);
+      const text = document.createElement('span');
+      if (activeCustom) {
+        item.className += ' theme-swatch-editable';
+        text.className = 'theme-color-label';
+        text.textContent = t(COLOR_LABEL[color]);
+        dot.type = 'color';
+        dot.value = colorHex(color);
+        dot.setAttribute('aria-label', t(COLOR_LABEL[color]));
+        dot.title = t('点击编辑颜色');
+        const hex = document.createElement('input');
+        hex.type = 'text';
+        hex.className = 'theme-hex';
+        hex.value = dot.value.slice(1);
+        hex.placeholder = 'RRGGBB';
+        hex.maxLength = 7;
+        hex.spellcheck = false;
+        hex.setAttribute('aria-label', `${t(COLOR_LABEL[color])} HEX`);
+        hex.setAttribute('aria-invalid', 'false');
+        const updateColor = value => {
+          activeCustom.colors[color] = value;
+          dot.value = value;
+          dot.style.background = value;
+          hex.setAttribute('aria-invalid', 'false');
+          renderList();
+          syncDirtyState();
+        };
+        dot.addEventListener('input', () => {
+          updateColor(dot.value);
+          hex.value = dot.value.slice(1);
+        });
+        hex.addEventListener('input', () => {
+          const value = hex.value.trim();
+          if (/^#?[0-9a-f]{6}$/i.test(value)) updateColor(`#${value.replace(/^#/, '').toLowerCase()}`);
+          else hex.setAttribute('aria-invalid', 'true');
+        });
+        hex.addEventListener('blur', () => {
+          hex.value = activeCustom.colors[color].slice(1);
+          hex.setAttribute('aria-invalid', 'false');
+        });
+        item.append(dot, text, hex);
+      } else {
+        dot.setAttribute('aria-hidden', 'true');
+        text.textContent = `${t(COLOR_LABEL[color])} ${colorHex(color)}`;
+        item.append(dot, text);
+      }
+      item.title = color;
+      swatches.append(item);
+    }
+  };
+  select.addEventListener('change', () => {
+    state.colorTheme = select.value;
+    renderList();
+    renderGlobalDetail();
+  });
+  refreshSwatches();
+  block.append(heading, selectorRow);
+  if (activeCustom) block.append(controls);
+  block.append(hint, note);
+  block.append(swatches);
+  return block;
+}
+
 function renderGlobalDetail() {
   els.detail.textContent = '';
 
@@ -1817,7 +1951,7 @@ function renderGlobalDetail() {
   });
   const orderHint = document.createElement('p');
   orderHint.className = 'hint small';
-  orderHint.textContent = '将标签页群组移到前面、游离标签移到后面，保留各自顺序；同步、自动归组或标签页群组成员变化后更新。';
+  orderHint.textContent = '将标签页群组移到前面，保留各自顺序；手动新建或改名后，点击页面或切换标签时再整理。';
   const resultField = createGlobalSwitch('操作结果提示', state.showActionResult, checked => {
     state.showActionResult = checked;
   });
@@ -1849,7 +1983,7 @@ function renderGlobalDetail() {
     card.append(field, hint);
     switchCards.append(card);
   }
-  body.append(switchCards);
+  body.append(switchCards, createColorThemeBlock());
   if (permissionBlock) body.append(permissionBlock);
 
   // 配置管理
@@ -1978,7 +2112,7 @@ function buildConfig() {
     state.clickAction,
     state.language,
     state.groupsFirst,
-    { autoUpdateGroupRules: state.autoUpdateGroupRules, showActionResult: state.showActionResult, globalTitleRule: state.globalTitle?.titleRule }
+    { autoUpdateGroupRules: state.autoUpdateGroupRules, showActionResult: state.showActionResult, colorTheme: state.colorTheme, customColorThemes: state.customColorThemes, globalTitleRule: state.globalTitle?.titleRule }
   );
 }
 
@@ -2153,6 +2287,8 @@ function applyConfig(config) {
   state.groupsFirst = config.groupsFirst === true;
   state.autoUpdateGroupRules = config.autoUpdateGroupRules !== false;
   state.showActionResult = config.showActionResult !== false;
+  state.customColorThemes = Store.clone(config.customColorThemes || []);
+  state.colorTheme = Store.normalizeColorTheme(config.colorTheme, state.customColorThemes);
   state.clickAction = Store.normalizeClickAction(config.clickAction);
   state.language = Store.normalizeLanguage(config.language);
   setLanguage(resolveLanguage(state.language));
@@ -2265,6 +2401,8 @@ async function load() {
     groupsFirst: config.groupsFirst === true,
     autoUpdateGroupRules: config.autoUpdateGroupRules !== false,
     showActionResult: config.showActionResult !== false,
+    customColorThemes: Store.clone(config.customColorThemes || []),
+    colorTheme: Store.normalizeColorTheme(config.colorTheme, config.customColorThemes),
     clickAction: Store.normalizeClickAction(config.clickAction),
     globalTitle: { titleRule: TitleRule.normalizeTitleRule({ titleRule: config.globalTitleRule }) },
     rules: config.rules.map(editableRule),

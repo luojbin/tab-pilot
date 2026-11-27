@@ -1,4 +1,5 @@
 import { websitePattern } from './manual-group-rule.js';
+import { colorOf } from './group-colors.js';
 
 /** 从指定窗口的原生分组生成草稿；已有同名规则（含停用规则）保持不变。 */
 export function rulesFromGroups(existing, groups, tabs, windowId, createId) {
@@ -30,7 +31,7 @@ export function rulesFromGroups(existing, groups, tabs, windowId, createId) {
       id = createId();
     } while (typeof id !== 'string' || !id.trim() || ids.has(id));
     ids.add(id);
-    drafts.set(name, { id, name, enabled: true, color: group.color || 'grey',
+    drafts.set(name, { id, name, enabled: true, color: colorOf(group),
       tabGroup: { enabled: true, collapsed: group.collapsed === true, strictMode: false, minTabs: 1 }, note: '', patterns });
   }
   return [...drafts.values()];

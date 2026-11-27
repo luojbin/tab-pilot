@@ -5,7 +5,25 @@ import { ruleMatchesUrl } from '../core/rules.js';
 const PENDING_KEY = 'tabpilot:manual-group-requests';
 
 /** 持久化待确认项，后台休眠或 popup 意外关闭后仍可再次处理。 */
-export function createManualGroupController(api, store, onSaved = async () => {}) {
+export function createManualGroupController(api, store, onSaved = async () => {}, options = {}) {
+  const { setTimer = setTimeout, clearTimer = clearTimeout, popupDelay = 250, onPopupError = () => {} } = options;
+  const openingWindows = new Set();
+  const popupTimers = new Map();
+  const cancelPopup = windowId => {
+    if (!popupTimers.has(windowId)) return;
+    clearTimer(popupTimers.get(windowId));
+    popupTimers.delete(windowId);
+  };
+  const openConfirmation = windowId => {
+    if (openingWindows.has(windowId)) return;
+    openingWindows.add(windowId);
+    try {
+      // 打开 API 可能等待 popup 加载；不能占住 popup 查询请求所需的串行队列。
+      Promise.resolve(api.action?.openPopup?.({ windowId }))
+        .catch(err => onPopupError(err, windowId))
+        .finally(() => openingWindows.delete(windowId));
+    } catch (err) { openingWindows.delete(windowId); onPopupError(err, windowId); }
+  };
   let chain = Promise.resolve();
   const serial = fn => {
     const task = chain.then(fn);
@@ -48,7 +66,20 @@ export function createManualGroupController(api, store, onSaved = async () => {}
     const group = await api.tabGroups.get(item.groupId);
     return { ...item, name: group.title };
   }
+  const schedulePopup = windowId => {
+    cancelPopup(windowId);
+    popupTimers.set(windowId, setTimer(() => {
+      popupTimers.delete(windowId);
+      // 拖拽和群组前置可能改变焦点；在最后一次移动后再打开，并重新校验请求。
+      return serial(() => pending(windowId)).then(item => {
+        if (item) openConfirmation(windowId);
+      }).catch(err => onPopupError(err, windowId));
+    }, popupDelay));
+  };
   return {
+    deferPopup(windowId) {
+      if (popupTimers.has(windowId)) schedulePopup(windowId);
+    },
     capture(tabId, change, tab) {
       if (!Number.isInteger(change.groupId) || change.groupId < 0 || tab?.pinned ||
           consumeAutomaticGrouping(tabId, change.groupId)) return Promise.resolve();
@@ -62,20 +93,35 @@ export function createManualGroupController(api, store, onSaved = async () => {}
         const rules = config.rules.filter(rule => rule.name.trim() === group.title.trim());
         if (rules.length !== 1 || !tabGroupEnabled(rules[0]) || rules.some(rule => ruleMatchesUrl(rule, tab.url))) return;
         // 仅现有 TabPilot 规则对应的分组参与提示。
-        const item = { id: `${tabId}-${change.groupId}-${Date.now()}`, tabId,
+        const items = await read();
+        const existing = items.find(item => item.tabId === tabId && item.groupId === change.groupId &&
+          item.windowId === tab.windowId && item.ruleId === rules[0].id && item.pattern === pattern);
+        const now = Date.now();
+        // 同一次拖拽可能收到重复事件，保持原请求编号，避免表单打开后立即变成过期请求。
+        if (existing && now - (existing.capturedAt || 0) < 500) return;
+        const item = { id: existing?.id || `${tabId}-${change.groupId}-${now}`, tabId,
           groupId: change.groupId, windowId: tab.windowId, pattern, name: group.title,
-          ruleId: rules[0].id };
-        const previous = (await read()).filter(old => old.tabId !== tabId);
+          ruleId: rules[0].id, capturedAt: now };
+        const previous = items.filter(old => old.tabId !== tabId);
         previous.push(item);
         await write(previous.slice(-50));
-        try { await api.action?.openPopup?.({ windowId: tab.windowId }); } catch { /* 旧版浏览器由角标引导点击。 */ }
+        return tab.windowId;
+      }).then(windowId => {
+        if (windowId !== undefined) schedulePopup(windowId);
       });
     },
     settingsChanged: () => serial(async () => {
       const { config } = await store.loadConfig();
-      if (config.autoUpdateGroupRules === false) await write([]);
+      if (config.autoUpdateGroupRules === false) {
+        for (const windowId of popupTimers.keys()) cancelPopup(windowId);
+        await write([]);
+      }
     }),
-    pending: windowId => serial(() => pending(windowId)),
+    pending: windowId => {
+      // 手动打开已开始读取表单时，不再由迟到的自动打开打断它。
+      cancelPopup(windowId);
+      return serial(() => pending(windowId));
+    },
     cancel: (windowId, id) => serial(async () => {
       await write((await read()).filter(item => item.windowId !== windowId || item.id !== id));
       return { ok: true };

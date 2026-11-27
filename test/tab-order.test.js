@@ -75,3 +75,12 @@ test('分组前置：可只整理指定窗口，其他窗口顺序不变',async(
   assert.deepEqual(calls,[{groupId:4,windowId:1,index:0}]);
   assert.equal(tabs.find(tab=>tab.id===4).index,1);
 });
+
+
+test('命名保护跳过整个窗口，其他窗口仍可前置', async () => {
+  tabs = [tab(1,0), tab(2,1,4), tab(3,0,-1,false,2), tab(4,1,5,false,2)];
+  calls = []; failWindow = undefined;
+  assert.deepEqual(await groupsFirst({ shouldDeferWindow: id => id === 1 }), { moved: 1, failed: 0 });
+  assert.deepEqual(calls, [{ groupId: 5, windowId: 2, index: 0 }]);
+  assert.equal(tabs.find(tab => tab.id === 2).index, 1);
+});

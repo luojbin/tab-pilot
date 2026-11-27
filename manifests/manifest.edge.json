@@ -1,0 +1,9 @@
+{
+  "minimum_chrome_version": "116",
+  "background": {
+    "service_worker": "src/app/background.js"
+  },
+  "permissions": [
+    "contextMenus"
+  ]
+}

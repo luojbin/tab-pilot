@@ -1,3 +1,4 @@
+import { createGroupOrderGuard } from './group-order-guard.js';
 import { SYNC_ACTIONS } from '../core/toolbar-actions.js';
 import { registerQuickRename } from './quick-rename.js';
 import { effectiveTitleRule } from '../core/quick-rename.js';
@@ -20,11 +21,96 @@ import * as Highlight from '../core/highlight.js';
  * 职责：监听 tab 事件 → 防抖合并 → 读配置 → 纯函数匹配 → 执行动作 → 记日志。
  * 判定逻辑全部在 rules.js，这里只做编排，方便单测其余部分。
  */
-const manualGroup = createManualGroupController(browser, Store, () => syncAll());
+const manualGroup = createManualGroupController(browser, Store, () => syncAll(), {
+  onPopupError: (err, windowId) => Logger.warn('自动打开分组确认面板失败，待确认项已保留', { windowId, error: String(err) })
+});
 
 registerToolbarMenu(browser, error => Logger.warn('图标选项菜单操作失败', error));
 
 const quickRename = registerQuickRename(browser, Store, error => Logger.warn('快捷重命名操作失败', error));
+
+const orderWindows = new Set();
+let orderTimer = null;
+const orderingWindows = new Set();
+const watchingGroupWindows = new Set();
+const groupOrderGuard = createGroupOrderGuard(windowId => requestWindowOrder(windowId));
+const GROUP_ORDER_EDITING_KEY = 'tabpilot:group-order-editing';
+let savedGroupOrderState = '[]';
+let groupOrderWrites = Promise.resolve();
+const groupOrderReady = Promise.all([
+  browser.storage.local.get(GROUP_ORDER_EDITING_KEY), browser.tabGroups.query({})
+]).then(([data, groups]) => {
+  groupOrderGuard.prime(groups);
+  groupOrderGuard.restore(data[GROUP_ORDER_EDITING_KEY], groups);
+  savedGroupOrderState = JSON.stringify(groupOrderGuard.snapshot());
+  for (const windowId of new Set(groupOrderGuard.snapshot().map(group => group.windowId))) syncGroupInteractionWatch(windowId);
+}).catch(err => Logger.warn('读取待命名群组状态失败', String(err)));
+
+function persistGroupOrderState() {
+  const state = groupOrderGuard.snapshot();
+  const signature = JSON.stringify(state);
+  if (signature === savedGroupOrderState) return;
+  savedGroupOrderState = signature;
+  groupOrderWrites = groupOrderWrites.catch(() => {}).then(() =>
+    browser.storage.local.set({ [GROUP_ORDER_EDITING_KEY]: state })
+  ).catch(err => Logger.warn('保存待命名群组状态失败', String(err)));
+}
+
+function requestWindowOrder(windowId) {
+  if (!Number.isInteger(windowId)) return;
+  orderWindows.add(windowId);
+  manualGroup.deferPopup(windowId);
+  if (orderTimer !== null) clearTimeout(orderTimer);
+  orderTimer = setTimeout(() => {
+    orderTimer = null;
+    flushWindowOrder().catch(err => Logger.warn('分组前置失败', String(err)));
+  }, 150);
+}
+
+async function flushWindowOrder() {
+  if (orderTimer !== null) { clearTimeout(orderTimer); orderTimer = null; }
+  const windows = [...orderWindows];
+  orderWindows.clear();
+  if (!windows.length) return;
+  const { config } = await Store.loadConfig();
+  if (!config.groupsFirst) return;
+  for (const windowId of windows) await orderGroups({ windowId });
+}
+
+async function orderGroups(options = {}) {
+  await groupOrderReady;
+  if (Number.isInteger(options.windowId)) orderingWindows.add(options.windowId);
+  try {
+    return await groupsFirst({ ...options, shouldDeferWindow: windowId => groupOrderGuard.shouldDefer(windowId) });
+  } finally {
+    if (Number.isInteger(options.windowId)) orderingWindows.delete(options.windowId);
+  }
+}
+
+async function syncGroupInteractionWatch(windowId) {
+  const editing = groupOrderGuard.isEditing(windowId);
+  if (editing === watchingGroupWindows.has(windowId)) return;
+  try {
+    const [tab] = await browser.tabs.query({ windowId, active: true });
+    if (!tab) return;
+    const enabled = groupOrderGuard.isEditing(windowId);
+    await browser.tabs.sendMessage(tab.id, {
+      type: 'tabpilot:group-order-watch', enabled
+    });
+    if (enabled) watchingGroupWindows.add(windowId);
+    else watchingGroupWindows.delete(windowId);
+  } catch { /* 受限页面通过切换标签或主动点击插件继续整理。 */ }
+}
+
+function automaticGroupsNamed(results, windowId, title) {
+  for (const result of results) {
+    if (result.ok && Number.isInteger(result.groupId)) {
+      groupOrderGuard.automatic(result.groupId, windowId, title);
+      persistGroupOrderState();
+      syncGroupInteractionWatch(windowId);
+    }
+  }
+}
 
 const DEBOUNCE_MS = 50;
 const IGNORED_PREFIXES = ['about:', 'moz-extension:', 'chrome:', 'resource:', 'view-source:'];
@@ -112,6 +198,7 @@ async function processTab(tab, rules, allTabs) {
   // 否则“攒够 3 个再归组”会退化成“只归组第 3 个”。
   const tabIds = matched.minTabs > 1 ? matched.tabIds : [tab.id];
   const results = await Actions.apply(matched.rule, tab, { tabs: allTabs, tabIds });
+  automaticGroupsNamed(results, tab.windowId, matched.rule.name);
   const failed = results.filter((r) => r.ok === false);
 
   if (failed.length > 0) {
@@ -129,6 +216,7 @@ async function processTab(tab, rules, allTabs) {
 }
 
 async function flush() {
+  await groupOrderReady;
   const batch = Array.from(pending.values());
   pending.clear();
   if (batch.length === 0) return;
@@ -175,7 +263,7 @@ async function flush() {
     }
     if (config.groupsFirst === true && orderNeeded) {
       try {
-        const order = await groupsFirst({ windowId });
+        const order = await orderGroups({ windowId });
         Logger.info('自动处理后分组前置完成', { windowId, ...order });
       } catch (err) {
         Logger.warn('自动处理后分组前置失败', { windowId, error: String(err) });
@@ -194,6 +282,7 @@ async function flush() {
  * 需要强制全部重排时传 { includeGrouped: true }。
  */
 async function syncAll(options) {
+  await groupOrderReady;
   const opts = options || {};
   const includeGrouped = opts.includeGrouped === true;
 
@@ -235,6 +324,7 @@ async function syncAll(options) {
           tabs: windowTabs,
           tabIds: matched.minTabs > 1 ? matched.tabIds : [tab.id]
         });
+        automaticGroupsNamed(results, windowId, matched.rule.name);
         if (results.some((result) => result.ok === false)) {
           stats.failed += 1;
         } else if (results.some((result) => result.skipped !== true)) {
@@ -250,7 +340,7 @@ async function syncAll(options) {
   }
 
   if (config.groupsFirst === true) {
-    const order = await groupsFirst();
+    const order = await orderGroups();
     Logger.info('分组前置完成', order);
   }
 
@@ -387,6 +477,47 @@ browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   schedule(tab, { groupChanged, orderOnly: !navigation });
 });
 
+// 拖拽落位和群组前置都会产生移动事件；仅推迟已存在的待弹出任务，不扫描标签。
+browser.tabs.onMoved?.addListener((tabId, moveInfo) => {
+  manualGroup.deferPopup(moveInfo.windowId);
+  if (!orderingWindows.has(moveInfo.windowId)) requestWindowOrder(moveInfo.windowId);
+});
+
+browser.tabs.onActivated?.addListener(async info => {
+  await groupOrderReady;
+  if (!groupOrderGuard.isEditing(info.windowId)) return;
+  try {
+    const tab = await browser.tabs.get(info.tabId);
+    if (!groupOrderGuard.activationCanFinish(tab)) return;
+  } catch { return; }
+  groupOrderGuard.interaction(info.windowId);
+  persistGroupOrderState();
+  syncGroupInteractionWatch(info.windowId);
+});
+browser.tabGroups.onCreated?.addListener(async group => {
+  await groupOrderReady;
+  groupOrderGuard.created(group);
+  persistGroupOrderState();
+  syncGroupInteractionWatch(group.windowId);
+});
+browser.tabGroups.onUpdated?.addListener(async group => {
+  await groupOrderReady;
+  groupOrderGuard.updated(group);
+  persistGroupOrderState();
+  syncGroupInteractionWatch(group.windowId);
+  if (!groupOrderGuard.shouldDefer(group.windowId)) requestWindowOrder(group.windowId);
+});
+browser.tabGroups.onRemoved?.addListener(async group => {
+  await groupOrderReady;
+  groupOrderGuard.removed(group);
+  persistGroupOrderState();
+  syncGroupInteractionWatch(group.windowId);
+  requestWindowOrder(group.windowId);
+});
+browser.tabGroups.onMoved?.addListener(group => {
+  if (!orderingWindows.has(group.windowId)) requestWindowOrder(group.windowId);
+});
+
 browser.runtime.onInstalled.addListener((details) => {
   Logger.info('插件已安装/更新', { version: browser.runtime.getManifest().version, reason: details.reason });
 });
@@ -433,7 +564,7 @@ async function resolvePageStyle(tab, url) {
   return {
     ruleId: matched?.ruleId || '__global-title__',
     name: matched?.rule?.name || '',
-    colorHex: Store.colorHexOf(matched?.rule),
+    colorHex: Store.colorHexOf(matched?.rule, config.colorTheme, config.customColorThemes),
     highlight,
     titleRule
   };
@@ -458,6 +589,16 @@ async function refreshPages() {
 // 避免依赖「监听器返回 Promise」这种只在 Firefox 生效的行为。
 browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message !== 'object') return undefined;
+  if (message.type === 'tabpilot:page-interaction') {
+    if (!Number.isInteger(sender?.tab?.windowId)) return undefined;
+    groupOrderReady.then(() => {
+      groupOrderGuard.interaction(sender.tab.windowId);
+      persistGroupOrderState();
+      syncGroupInteractionWatch(sender.tab.windowId);
+      sendResponse({ ok: true });
+    });
+    return true;
+  }
   if (['quick-rename-pending', 'quick-rename-active', 'quick-rename-save', 'quick-rename-reset'].includes(message.type)) {
     return quickRename.handleMessage(message, sender, sendResponse);
   }
@@ -481,6 +622,8 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (sender.tab || sender.url !== browser.runtime.getURL('src/ui/popup.html') ||
         !Number.isInteger(message.windowId) || message.windowId < 0) return undefined;
     if (message.action !== undefined && !SYNC_ACTIONS.includes(message.action)) return undefined;
+    groupOrderGuard.interaction(message.windowId);
+    persistGroupOrderState();
     executeToolbarClick({ windowId: message.windowId }, message.action)
       .then(sendResponse)
       .catch((err) => {
@@ -501,6 +644,10 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'page-style') {
+    // 页面重载后重新接上尚未结束的命名交互，不额外增加启动查询。
+    if (sender?.tab?.active && groupOrderGuard.isEditing(sender.tab.windowId)) {
+      browser.tabs.sendMessage(sender.tab.id, { type: 'tabpilot:group-order-watch', enabled: true }).catch(() => {});
+    }
     resolvePageStyle(sender && sender.tab, message.url)
       .then((style) => sendResponse(style))
       .catch((err) => {
@@ -521,7 +668,7 @@ browser.storage.onChanged.addListener((changes, areaName) => {
 });
 
 // 测试直接导入编排接口；控制台调试使用下方的 TabPilotDebug。
-export { flush, schedule, syncAll, collapseGroups, handleToolbarClick, executeToolbarClick };
+export { flush, flushWindowOrder, schedule, syncAll, collapseGroups, handleToolbarClick, executeToolbarClick };
 
 /**
  * v0.1.0 还没有配置界面，用它在扩展控制台里改配置：

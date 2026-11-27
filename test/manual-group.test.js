@@ -20,9 +20,18 @@ function fixture() {
     action:{async setBadgeText(value){badges.push(value);},async openPopup(){opens++;if(failOpen)throw Error('user gesture required');}}
   };
   const store = {async loadConfig(){return {config:structuredClone(config)};},async saveConfig(value){config=structuredClone(value);saves++;return {ok:true};}};
-  const controller = createManualGroupController(api,store,async()=>{syncs++;});
-  const capture=()=>controller.capture(10,{groupId:tabs[0].groupId},tabs[0]);
-  return {api,store,controller,tabs,groups,badges,capture,get config(){return config;},get opens(){return opens;},get saves(){return saves;},get syncs(){return syncs;},set failOpen(v){failOpen=v;}};
+  const timers = new Map();
+  let timerId = 0;
+  const controller = createManualGroupController(api,store,async()=>{syncs++;}, {
+    setTimer(fn, ms) { const id = ++timerId; timers.set(id, { fn, ms }); return id; },
+    clearTimer(id) { timers.delete(id); }
+  });
+  const flushPopup = async () => {
+    const scheduled = [...timers.values()]; timers.clear();
+    for (const timer of scheduled) await timer.fn();
+  };
+  const capture = async () => { await controller.capture(10,{groupId:tabs[0].groupId},tabs[0]); await flushPopup(); };
+  return {api,store,controller,tabs,groups,badges,capture,timers,flushPopup,get config(){return config;},get opens(){return opens;},get saves(){return saves;},get syncs(){return syncs;},set failOpen(v){failOpen=v;}};
 }
 
 test('网站默认路径：保留协议主机端口，去掉账号路径与参数，排除受限页面',()=>{
@@ -155,4 +164,84 @@ test('标签页群组关闭：手动拖入不提示，既有请求不能继续�
   assert.equal(result.ok, false);
   await f.capture();
   assert.equal(await f.controller.pending(1), null);
+});
+
+test('打开 popup 等待表单读取时不锁住待确认队列，确认和取消仍可处理', { timeout: 1000 }, async () => {
+  const f = fixture();
+  let formReady;
+  f.api.action.openPopup = () => {
+    formReady = f.controller.pending(1);
+    return formReady;
+  };
+  await f.capture();
+  const item = await formReady;
+  assert.equal(item.name, '工作');
+  assert.equal((await f.controller.cancel(1, item.id)).ok, true);
+  assert.equal(await f.controller.pending(1), null);
+});
+
+test('重复归组事件不会重复打开 popup 或让已展示的请求过期', async () => {
+  const f = fixture();
+  await f.capture();
+  const shown = await f.controller.pending(1);
+  await f.capture();
+  const latest = await f.controller.pending(1);
+  assert.equal(latest.id, shown.id);
+  assert.equal(f.opens, 1);
+  assert.equal((await f.controller.add(1, shown.id, 'new.example')).ok, true);
+});
+
+test('popup 打开尚未完成也不阻塞队列，同窗口后续请求只更新待确认列表', { timeout: 1000 }, async () => {
+  const f = fixture();
+  let resolveOpen, opened = 0;
+  f.api.action.openPopup = () => { opened++; return new Promise(resolve => { resolveOpen = resolve; }); };
+  await f.capture();
+  const nextTab = { ...f.tabs[0], id: 11, url: 'https://second.example/' };
+  f.tabs.push(nextTab);
+  await f.controller.capture(11, { groupId: 3 }, nextTab);
+  assert.equal(opened, 1);
+  const first = await f.controller.pending(1);
+  assert.equal(first.tabId, 10);
+  await f.controller.cancel(1, first.id);
+  assert.equal((await f.controller.pending(1)).tabId, 11);
+  resolveOpen();
+});
+
+test('拖拽结束前不打开，标签移动会合并并推迟同窗口弹出任务', async () => {
+  const f = fixture();
+  await f.controller.capture(10, { groupId: 3 }, f.tabs[0]);
+  assert.equal(f.opens, 0);
+  assert.equal(f.timers.size, 1);
+  const initialId = [...f.timers.keys()][0];
+  assert.equal([...f.timers.values()][0].ms, 250);
+  f.controller.deferPopup(2);
+  assert.equal([...f.timers.keys()][0], initialId, '其他窗口移动不干扰本窗口');
+  f.controller.deferPopup(1);
+  assert.equal(f.timers.size, 1);
+  assert.notEqual([...f.timers.keys()][0], initialId);
+  await f.flushPopup();
+  assert.equal(f.opens, 1);
+  assert.ok(await f.controller.pending(1));
+});
+
+test('手动点击图标读取确认表单后取消迟到的自动打开', async () => {
+  const f = fixture();
+  await f.controller.capture(10, { groupId: 3 }, f.tabs[0]);
+  assert.equal(f.timers.size, 1);
+  assert.ok(await f.controller.pending(1));
+  assert.equal(f.timers.size, 0);
+  await f.flushPopup();
+  assert.equal(f.opens, 0);
+});
+
+test('延迟期间标签已移出或开关关闭，不再打开过期确认 popup', async () => {
+  for (const mode of ['moved', 'disabled']) {
+    const f = fixture();
+    await f.controller.capture(10, { groupId: 3 }, f.tabs[0]);
+    if (mode === 'moved') f.tabs[0].groupId = -1;
+    else { f.config.autoUpdateGroupRules = false; await f.controller.settingsChanged(); }
+    await f.flushPopup();
+    assert.equal(f.opens, 0);
+    assert.equal(await f.controller.pending(1), null);
+  }
 });

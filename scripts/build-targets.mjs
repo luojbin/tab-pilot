@@ -1,5 +1,5 @@
 /**
- * 多目标构建：Firefox / Chromium（Chrome + Edge 共用）
+ * 多目标构建：Firefox / Chrome / Edge
  *
  * - manifests/base.json 放共享字段
  * - manifests/manifest.<target>.json 放该目标独有的字段
@@ -7,10 +7,12 @@
  * - 产物：dist/<target>/ 与 output/tabpilot-<version>-<target>.zip
  *
  * 用法：
- *   node scripts/build-targets.mjs            # 两个目标都构建
+ *   node scripts/build-targets.mjs            # 三个目标都构建
  *   node scripts/build-targets.mjs firefox
- *   node scripts/build-targets.mjs chromium
+ *   node scripts/build-targets.mjs chrome
+ *   node scripts/build-targets.mjs edge
  */
+import { TARGETS, mergeManifest, buildDefines } from './build-config.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { ZipArchive } from 'archiver';
@@ -19,17 +21,6 @@ import { build as bundle } from 'esbuild';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-
-const TARGETS = {
-  firefox: {
-    manifest: 'manifest.firefox.json',
-    output: (version) => `tabpilot-${version}-firefox.zip`
-  },
-  chromium: {
-    manifest: 'manifest.chromium.json',
-    output: (version) => `tabpilot-${version}-chromium.zip`
-  }
-};
 
 const COPY_ENTRIES = ['_locales', 'icons', 'LICENSE', 'src/ui/options.html', 'src/ui/popup.html'];
 const ENTRY_POINTS = ['src/app/background.js', 'src/app/content.js', 'src/ui/options.js', 'src/ui/popup.js'];
@@ -41,7 +32,7 @@ function readJson(relativePath) {
 function buildManifest(target) {
   const base = readJson('manifests/base.json');
   const overlay = readJson(path.join('manifests', TARGETS[target].manifest));
-  return { ...base, ...overlay, version: pkg.version };
+  return mergeManifest(base, overlay, pkg.version);
 }
 
 function zipDirectory(dir, outFile) {
@@ -87,7 +78,8 @@ async function build(target) {
     bundle: true,
     format: 'iife',
     platform: 'browser',
-    target: target === 'firefox' ? 'firefox140' : 'chrome116',
+    target: config.build,
+    define: buildDefines(target),
     charset: 'utf8',
     minify: false
   });

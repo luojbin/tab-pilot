@@ -1,10 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { rulesFromGroups } from '../src/core/rules-from-groups.js';
+import { buildConfigFromRules, validateConfig } from '../src/app/store.js';
 
 const group=(id,title,windowId=1)=>({id,title,windowId,color:'blue',collapsed:false});
 const tab=(id,groupId,url,index,windowId=1)=>({id,groupId,url,index,windowId});
 const ids=()=>{let id=0;return ()=>`generated-${++id}`;};
+
+test('未知原生颜色降级为灰色，同批正常群组仍生成合法规则', () => {
+  for (const color of ['future-color', 'gray', 'BLUE', '', null, undefined, 123]) {
+    const groups = [{ ...group(1, '未知颜色'), color }, group(2, '正常颜色')];
+    const rules = rulesFromGroups([], groups, [tab(1, 1, 'https://a.example/', 0), tab(2, 2, 'https://b.example/', 1)], 1, ids());
+    assert.deepEqual(rules.map(rule => rule.color), ['grey', 'blue']);
+    assert.equal(validateConfig(buildConfigFromRules(rules)).ok, true);
+    assert.equal(groups[0].color, color, '不改写浏览器返回的数据');
+  }
+});
 
 test('窗口分组生成规则：保留名称颜色折叠，按标签顺序生成网站 origin 并去重',()=>{
   const groups=[{...group(1,'开发'),collapsed:true},group(2,'工作')];

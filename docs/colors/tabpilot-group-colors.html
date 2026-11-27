@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html data-page-node-id="yWUV1UGH99eCmF9GCbbjSk" lang="zh-CN">
+<head data-page-node-id="KLR2WJTw8JbSEh07zULYym">
+
+<meta data-page-node-id="SkX3NxYK0rczcwQHT7clME" charset="UTF-8">
+<meta data-page-node-id="B1iu5eduvnElgU5B1dZ1xb" content="width=device-width, initial-scale=1.0" name="viewport">
+<title data-page-node-id="mWZJpRDCGvvFR87crShwxB" data-pnid-children="Mlu0Qje0WRaPIW5S5Qymj1">TabPilot 分组色值对照 · 五源实测 + 建议色板</title>
+<style data-page-node-id="uFOEWjCZv6ejyLff0ZBS0B" data-pnid-children="Ya04hYPuOuEKdAhwEMj22b">
+  :root{
+    --bg:#f5f6f8;
+    --card:#ffffff;
+    --text:#1c1f23;
+    --text-2:#5f6672;
+    --text-3:#8b93a1;
+    --line:#eceef2;
+    --hover:#fafbfc;
+    --chip-line:rgba(16,24,40,.13);
+    --accent:#5b3fd6;
+    --accent-bg:#f4efff;
+    --rec-line:#ddd2ff;
+    --radius:14px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    font-size:15px;
+    line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+    padding:32px 20px 56px;
+  }
+  .wrap{max-width:1080px;margin:0 auto;}
+
+  header{margin-bottom:20px;}
+  h1{font-size:23px;line-height:1.3;margin:0 0 8px;font-weight:650;letter-spacing:-.01em;}
+  h1 .sep{color:var(--text-3);font-weight:400;margin:0 8px;}
+  .sub{margin:0;color:var(--text-2);font-size:14px;}
+
+  .card{
+    overflow-x:auto;
+    -webkit-overflow-scrolling:touch;
+    background:var(--card);
+    border-radius:var(--radius);
+    box-shadow:0 1px 2px rgba(16,24,40,.04), 0 8px 24px -12px rgba(16,24,40,.10);
+  }
+  .card + .card{margin-top:20px;}
+  .card::-webkit-scrollbar{height:7px;}
+  .card::-webkit-scrollbar-track{background:transparent;}
+  .card::-webkit-scrollbar-thumb{background:#d6dae1;border-radius:4px;}
+
+  .card.dark{
+    --card:#202124;
+    --text:#e8eaed;
+    --text-2:#c2c6ce;
+    --text-3:#9aa0a6;
+    --line:#3a3d41;
+    --hover:#26282c;
+    --chip-line:rgba(255,255,255,.17);
+    --accent:#b9a7ff;
+    --accent-bg:rgba(150,130,255,.11);
+    --rec-line:rgba(150,130,255,.20);
+  }
+  .card.dark thead th{background:#191a1d;border-bottom-color:#34373b;}
+
+  table{width:100%;border-collapse:collapse;table-layout:fixed;}
+  .card.light table{min-width:840px;}
+  .card.dark table{min-width:640px;}
+
+  thead th{
+    text-align:left;
+    font-size:12px;
+    font-weight:600;
+    color:var(--text-3);
+    letter-spacing:.03em;
+    padding:15px 12px 11px;
+    border-bottom:1px solid var(--line);
+    white-space:nowrap;
+  }
+  thead th:first-child{width:96px;}
+  .card.light thead th{width:auto;}
+  .card.light thead th:first-child,
+  .card.dark thead th:first-child{width:104px;}
+  .card.light thead th:nth-child(3){color:#3d434d;}
+  .hint{display:block;font-size:10.5px;font-weight:500;letter-spacing:0;color:var(--text-3);opacity:.85;}
+
+  thead th.rec{color:var(--accent);border-left:1px solid var(--rec-line);}
+  td.rec{background:var(--accent-bg);border-left:1px solid var(--rec-line);}
+  .card.light thead th.rec{background:var(--accent-bg);}
+  .card.dark thead th.rec{background:#1b1a22;}
+
+  tbody td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:middle;}
+  tbody tr:last-child td{border-bottom:none;}
+  tbody tr:hover{background:var(--hover);}
+  tbody tr:hover td.rec{background:var(--accent-bg);}
+
+  .name{font-weight:550;white-space:nowrap;font-size:13.5px;}
+  .name .enum{
+    display:block;
+    font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+    font-size:10.5px;font-weight:400;color:var(--text-3);line-height:1.4;
+  }
+
+  .chip{
+    display:block;
+    width:100%;
+    height:44px;
+    border-radius:9px;
+    box-shadow:inset 0 0 0 1px var(--chip-line);
+    cursor:pointer;
+    transition:transform .12s ease, box-shadow .16s ease;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .chip:hover{transform:translateY(-1px);box-shadow:inset 0 0 0 1px var(--chip-line), 0 3px 10px rgba(16,24,40,.13);}
+  .chip:active{transform:scale(.984);}
+
+  .note{
+    margin-top:18px;
+    background:#fff8e8;
+    border:1px solid #f0d9a8;
+    border-radius:12px;
+    padding:14px 16px;
+    font-size:13.5px;
+    color:#7a5a12;
+    line-height:1.78;
+  }
+  .note b{font-weight:650;}
+  .note code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;}
+
+  footer{margin-top:20px;font-size:12.5px;color:var(--text-3);line-height:1.8;}
+  footer code{
+    font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+    font-size:12px;background:#eceef2;padding:1px 5px;border-radius:4px;color:#5f6672;
+  }
+
+  .toast{
+    position:fixed;
+    left:50%;
+    bottom:26px;
+    transform:translate(-50%,10px);
+    background:#23262b;
+    color:#fff;
+    font-size:12.5px;
+    padding:8px 14px;
+    border-radius:8px;
+    opacity:0;
+    pointer-events:none;
+    transition:opacity .18s ease, transform .18s ease;
+    box-shadow:0 6px 20px rgba(0,0,0,.22);
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  .toast.show{opacity:1;transform:translate(-50%,0);}
+
+  @media (max-width:600px){
+    body{padding:22px 12px 40px;font-size:14px;}
+    h1{font-size:18px;}
+    h1 .sep{display:inline;margin:0 5px;}
+    thead th{padding:12px 9px 9px;font-size:11px;}
+    tbody td{padding:8px 9px;}
+    thead th:first-child{width:82px;}
+    .chip{height:34px;border-radius:7px;}
+    .name{font-size:12.5px;}
+  }
+</style>
+</head>
+<body data-page-node-id="Rv28YlyadKhoHKaPbHDRvK">
+<div data-page-node-id="ZFb80poUxnNvhck1SkjDSL" class="wrap">
+
+  <header data-page-node-id="eMjgfYKIyqKxrqbV3ESjjU">
+    <h1 data-page-node-id="WOt3sTLauUziLWLdjCkt94"><!--pnid:edNTtW1lLCb418ehJmMB2g-->TabPilot 分组色值对照<span data-page-node-id="sv9g9dNqPtEv6EPBoAjAfj" class="sep"><!--pnid:Benfqiy3wjg4YFzqvWoZuY-->·</span><!--pnid:bztmcBChrGCbHQVQSsRmxk-->五源实测 + 建议色板</h1>
+    <p data-page-node-id="TqLlM5Yf1ebsVtb0D7PfFy" class="sub"><!--pnid:DCIG1eWkCF3oHfkA8rH6KB-->同一批 9 个枚举在各浏览器上实际渲染成什么色，以及一版重排过明度、并把粉红改成警示红的建议值。只放色块，悬停可见色值、点击复制。</p>
+  </header>
+
+  <div data-page-node-id="KeyR42t8mqZfji09fy61sf" class="card light">
+    <table data-page-node-id="DnKLauqeIf6L1YTvn2WIVO">
+      <thead data-page-node-id="aRHgKOhl7dQY0WISscsA2T">
+        <tr data-page-node-id="I38qGjBGgPwGDEnCLOBJPv">
+          <th data-page-node-id="X0mWBJ30IKEX2DosQcdecV"><!--pnid:JmHpQ1oREOsHhIN0nlxvPu-->颜色</th>
+          <th data-page-node-id="PalYKavtqxdnmLDVvDevF1"><!--pnid:59fT6JRzz6iKuoCL9LTV5c-->枚举字面<span data-page-node-id="dhtAHTf5zXpkgj7RII59Be" class="hint"><!--pnid:ilPnOzh7sRboyrqhLpNvP0-->按名字应该是什么色</span></th>
+          <th data-page-node-id="2akcjbwrhV7eUPw08W70FR"><!--pnid:8W3N6GLadshTwyBxvHaMmM-->TabPilot 实现<span data-page-node-id="6I3HscBBWVDyDSB6QeRZ0E" class="hint"><!--pnid:x9lRLPNDrGEPSmJXFTQUZf-->当前页内标识</span></th>
+          <th data-page-node-id="2t8nZIpVNVkDAFiMftKbTu"><!--pnid:YVlY5U0mRAVin0RFwy50mq-->Chrome</th>
+          <th data-page-node-id="kTDtVTz9zLjugh0BFNkEpK"><!--pnid:1e0uR7UhFD52BiTQvIzMzP-->Edge · macOS</th>
+          <th data-page-node-id="yCYnrAn5o2SWkrwrsLIvbx"><!--pnid:wpTStKOUhQtRGu34ftqn2F-->Edge · Windows</th>
+          <th data-page-node-id="ElxLVqLiCT6GGoVG3wwiBG" class="rec"><!--pnid:DMrDqFbwzejTeoNy9e6Tc3-->建议色板<span data-page-node-id="ShoaZDbhAl2w0qHqj0FLwD" class="hint"><!--pnid:GnoYPSN6lRKpAYmrZN87JP-->自研 · 浅色</span></th>
+          <th data-page-node-id="tMbwZEXA4BoKf0m6DiQvrB"><!--pnid:mR1mSYaRWc0bu77nLMadZb-->Firefox</th>
+        </tr>
+      </thead>
+      <tbody data-page-node-id="1BvyrlbOeaVdKOr5ldHXZ3">
+        <tr data-page-node-id="r54t3VO2Htvk760Z6jgRtY">
+          <td data-page-node-id="yMs6fIy07AkzIU21ULQFwo" class="name"><!--pnid:ts4n9xg1OLlmBApAwSXzWo-->紫色<span data-page-node-id="LPaLaNYYwksBFZUv18nqxJ" class="enum"><!--pnid:xbTqmRxsm9kzpym4BZe6q9-->purple</span></td>
+          <td data-page-node-id="KcSuRiweSSclUzgWkEU5RZ"><span data-page-node-id="8I2ZNCtzyXsjt92ineEA3B" class="chip" data-hex="purple" title="purple" style="background:purple"></span></td>
+          <td data-page-node-id="WdnC4ZHdaPB32GQwdommi8"><span data-page-node-id="adFcoQRaSd70Z3K8Up4xt0" class="chip" data-hex="#9334E6" title="#9334E6" style="background:#9334E6"></span></td>
+          <td data-page-node-id="DE3mQc7JPY6Zova26RYp1I"><span data-page-node-id="3UFg3FlYY4FZ0a21jRLWvR" class="chip" data-hex="#9D39F3" title="#9D39F3" style="background:#9D39F3"></span></td>
+          <td data-page-node-id="FABGJK3wLLzi4dcx1mg5cY"><span data-page-node-id="iwUiG9MlkvAhk91Ug7vfyO" class="chip" data-hex="#7835F5" title="#7835F5" style="background:#7835F5"></span></td>
+          <td data-page-node-id="b2H8QcSkbEfRHLffZwNUlI"><span data-page-node-id="Nql6M6TcPnnDdRsgH0WtDn" class="chip" data-hex="#8230FF" title="#8230FF" style="background:#8230FF"></span></td>
+          <td data-page-node-id="XL5FP42sr3pjJkYYsEOO0p" class="rec"><span data-page-node-id="s2b7xJK1j9OHMZI9ecscpa" class="chip" data-hex="#8B21FB" title="#8B21FB" style="background:#8B21FB"></span></td>
+          <td data-page-node-id="dwu7iVQl8azu2CLL0X33xD"><span data-page-node-id="rsUbAGfWswGegfAHMcIDrm" class="chip" data-hex="#9540C8" title="#9540C8" style="background:#9540C8"></span></td>
+        </tr>
+        <tr data-page-node-id="ETTTJnBAxgVjWspePjQWGt">
+          <td data-page-node-id="JvRwoXxusXhfqetZy3ng0A" class="name"><!--pnid:vYs6sSZz9ys3t2crT5K0zm-->粉红<span data-page-node-id="xZnmZHVkl8XVmyemuKCKER" class="enum"><!--pnid:OFE4pExVaSfEyoNVCZknea-->pink</span></td>
+          <td data-page-node-id="dFGE4AlwnHe3aALSuBuPtZ"><span data-page-node-id="d11IT35kwCn7wJMVeSLZnV" class="chip" data-hex="pink" title="pink" style="background:pink"></span></td>
+          <td data-page-node-id="XyAmFQBOD0mIGdWOnbOWjO"><span data-page-node-id="2YBqwggG2AKGAZJNxTmaNn" class="chip" data-hex="#D01884" title="#D01884" style="background:#D01884"></span></td>
+          <td data-page-node-id="pILzWmOZndc0gcVWtYIYXd"><span data-page-node-id="kXJZU372nyJVVDPG9VhRll" class="chip" data-hex="#C809A8" title="#C809A8" style="background:#C809A8"></span></td>
+          <td data-page-node-id="kPeKH1tRCGRrRGuBKZkMCh"><span data-page-node-id="2SXEcF7G5TnbPXMkDa1utE" class="chip" data-hex="#D02C89" title="#D02C89" style="background:#D02C89"></span></td>
+          <td data-page-node-id="7QUh7TTqPPw2c1QGfnVwUl"><span data-page-node-id="E1iCWfss4qDHNajb4YExew" class="chip" data-hex="#E3008C" title="#E3008C" style="background:#E3008C"></span></td>
+          <td data-page-node-id="SdzR438xumYt3aCbzde7L6" class="rec"><span data-page-node-id="G06YmYQSK2GnuknixbhvI5" class="chip" data-hex="#E3004E" title="#E3004E" style="background:#E3004E"></span></td>
+          <td data-page-node-id="TbGYfh3pYoozmdoZ4ulvHk"><span data-page-node-id="SQZjUq0U9FhHLUz346N7Nn" class="chip" data-hex="#B32E9F" title="#B32E9F" style="background:#B32E9F"></span></td>
+        </tr>
+        <tr data-page-node-id="ZXqvyiviY88A5Diy7Pb7Df">
+          <td data-page-node-id="4iSETd7AgVzbDGGmvZbTm2" class="name"><!--pnid:Ta1pLAUmzY0IdvDinWK3n4-->紫罗兰色<span data-page-node-id="xLKH7ENZppPsdY6AN1NC8C" class="enum"><!--pnid:aUWNo3sYPkD84sOZgSCHvs-->red</span></td>
+          <td data-page-node-id="C7XGLia7ortFUGBm08m13s"><span data-page-node-id="Oaqyx9JQzu4yTwvPkMeyRn" class="chip" data-hex="red" title="red" style="background:red"></span></td>
+          <td data-page-node-id="r48nI1qZF1GIpITsRvYYBy"><span data-page-node-id="KNeWrX115FSachSPaIPgu5" class="chip" data-hex="#D93025" title="#D93025" style="background:#D93025"></span></td>
+          <td data-page-node-id="NzBrdkSXVWCrvVWGk9VAmL"><span data-page-node-id="9cTGUYEuhIsaqIYEgWLmXl" class="chip" data-hex="#DB1B2B" title="#DB1B2B" style="background:#DB1B2B"></span></td>
+          <td data-page-node-id="sUuj78iNJkSYXJ9g1qTB1e"><span data-page-node-id="kDZG8wK2OsXH1L3DUJrGyz" class="chip" data-hex="#B344AE" title="#B344AE" style="background:#B344AE"></span></td>
+          <td data-page-node-id="RTQ2CEJP1wCGwnQyu9xIUA"><span data-page-node-id="BmoJyVsFFys3tPzohGznuc" class="chip" data-hex="#C239B3" title="#C239B3" style="background:#C239B3"></span></td>
+          <td data-page-node-id="Gb32BIwDZMRh3iGvjdJK50" class="rec"><span data-page-node-id="84JLb2zmdr9COn5Omy6dfl" class="chip" data-hex="#E15CC5" title="#E15CC5" style="background:#E15CC5"></span></td>
+          <td data-page-node-id="CwDWnPhHFeDSgxUCQbkrY2"><span data-page-node-id="A5Bf9bUb0wYGmIjygdCJOO" class="chip" data-hex="#C52D4F" title="#C52D4F" style="background:#C52D4F"></span></td>
+        </tr>
+        <tr data-page-node-id="QcmfBIjlsL6OfuhO6pE4wB">
+          <td data-page-node-id="ED0S45JFnxT0KM7MZ3drtv" class="name"><!--pnid:JTpkEHk4qo6FvFD1SYgY3K-->亮蓝色<span data-page-node-id="5MFk7LLjxjKC5EVDd1YjSy" class="enum"><!--pnid:8Z50jjotmKO1QsR2CbmrTy-->green</span></td>
+          <td data-page-node-id="3FULlpUrbdKGwbKr9yWFJe"><span data-page-node-id="nNKpLa9wf9yzB2K3wSA9bq" class="chip" data-hex="green" title="green" style="background:green"></span></td>
+          <td data-page-node-id="Itjx6VcOJT4yqENN96yO02"><span data-page-node-id="5RgDC1UVZs84kXs7b4EV9W" class="chip" data-hex="#1E8E3E" title="#1E8E3E" style="background:#1E8E3E"></span></td>
+          <td data-page-node-id="DPa3yxA6AF1eZuPUYFAGUn"><span data-page-node-id="K6zOLOmi7Gexc4ZCH9UrWd" class="chip" data-hex="#188129" title="#188129" style="background:#188129"></span></td>
+          <td data-page-node-id="vi5zjvtNygXUJUgoKj8WIL"><span data-page-node-id="OVDjrr5nqikR90GoHN3cCU" class="chip" data-hex="#1F4D87" title="#1F4D87" style="background:#1F4D87"></span></td>
+          <td data-page-node-id="5Jxlw4DC3KExKy5T8I3okK"><span data-page-node-id="zaUoWnWo46VQ16Q7ho7o3v" class="chip" data-hex="#004E8C" title="#004E8C" style="background:#004E8C"></span></td>
+          <td data-page-node-id="w6MnclkV4CxbtJuImGgAAY" class="rec"><span data-page-node-id="HIt0LKn902tZjDL7hWHvtQ" class="chip" data-hex="#2C5998" title="#2C5998" style="background:#2C5998"></span></td>
+          <td data-page-node-id="mJ8rIQ16loh2vYZzTQ792I"><span data-page-node-id="cnBJOOphPtlK0oN0eiBhHA" class="chip" data-hex="#008865" title="#008865" style="background:#008865"></span></td>
+        </tr>
+        <tr data-page-node-id="VcSPaI4FjsPiIBo58EDt7X">
+          <td data-page-node-id="VZaqnwDNbhz19CBwmRhSBt" class="name"><!--pnid:dvMJHTC6A3k0H0AAduUzxA-->青色<span data-page-node-id="ScMESGZoZKIfYQLbBxbbpU" class="enum"><!--pnid:sHttxCySlYv0ouIX97WmfH-->cyan</span></td>
+          <td data-page-node-id="iEMBduG2LsAKhm7fp6BjBx"><span data-page-node-id="NyugaxTiBXmaQz4siztHCx" class="chip" data-hex="cyan" title="cyan" style="background:cyan"></span></td>
+          <td data-page-node-id="wbgqBYpKbst8z9HWCfCt2u"><span data-page-node-id="3XM6ZZhxLW57ZHTBo7FOWL" class="chip" data-hex="#007B83" title="#007B83" style="background:#007B83"></span></td>
+          <td data-page-node-id="9VwQdTgJdqH5C7DiA6wHHt"><span data-page-node-id="KP9Tx1YRDL2esaTLLvmzBO" class="chip" data-hex="#007B83" title="#007B83" style="background:#007B83"></span></td>
+          <td data-page-node-id="O34SKQyrh83VIiVGf2Sm9A"><span data-page-node-id="cne5h6EnDYBgCqC4uRJkrU" class="chip" data-hex="#398186" title="#398186" style="background:#398186"></span></td>
+          <td data-page-node-id="H2CZlBzdPssgyW43XUgayA"><span data-page-node-id="zAG2sUyvIU8LvkAYhyL8VX" class="chip" data-hex="#038387" title="#038387" style="background:#038387"></span></td>
+          <td data-page-node-id="acIwZNavGQunnQnSyN54WY" class="rec"><span data-page-node-id="OflrnmHRBNkKwXEdC6cOg2" class="chip" data-hex="#00A08D" title="#00A08D" style="background:#00A08D"></span></td>
+          <td data-page-node-id="HnU2MiuE2k0atZcispyhro"><span data-page-node-id="AnwxOaNu3vmpHBFY0boy2o" class="chip" data-hex="#0A809F" title="#0A809F" style="background:#0A809F"></span></td>
+        </tr>
+        <tr data-page-node-id="AH2GWNqjmv5maF34h5ggEz">
+          <td data-page-node-id="pSCvOOWd065g9M7mGNfzNe" class="name"><!--pnid:3n0IfcpAa6BdPyqsdGOdwf-->黄色<span data-page-node-id="ui2aTbhj5WXyQQV96Oyf19" class="enum"><!--pnid:2znyl6lpbJCi7DhtmVyqT4-->yellow</span></td>
+          <td data-page-node-id="1pbj7aiVvCkL3SRUlR15G2"><span data-page-node-id="75U7KYK3carWv6AEPBXemn" class="chip" data-hex="yellow" title="yellow" style="background:yellow"></span></td>
+          <td data-page-node-id="mXVvFH6FnP1BFdYezOzGbA"><span data-page-node-id="pTcW3X9roJyyuughQfLmdn" class="chip" data-hex="#F9AB00" title="#F9AB00" style="background:#F9AB00"></span></td>
+          <td data-page-node-id="gFW3CFHTbUgjhaB1YdIuDc"><span data-page-node-id="8bLrkXyzx9hekAxu3Gv9t3" class="chip" data-hex="#FFD036" title="#FFD036" style="background:#FFD036"></span></td>
+          <td data-page-node-id="uW1jWMo7HfRZPZ0YcKysyM"><span data-page-node-id="Vbj9oHXWVOzEPQYyD2VTBL" class="chip" data-hex="#927127" title="#927127" style="background:#927127"></span></td>
+          <td data-page-node-id="BAcPcpLeUg9wQQmU03ykDz"><span data-page-node-id="0RjXbomu7JVxbvZpmuzOeC" class="chip" data-hex="#986F0B" title="#986F0B" style="background:#986F0B"></span></td>
+          <td data-page-node-id="EpTBUtSAm2ieLOjKtioFKR" class="rec"><span data-page-node-id="3jh8AzK0EbyJEKI9tPeGaR" class="chip" data-hex="#B08500" title="#B08500" style="background:#B08500"></span></td>
+          <td data-page-node-id="LD3pvzmeKT7x8NXMHaL3rP"><span data-page-node-id="x7JH1iYHDYmNLfuw1bKxYD" class="chip" data-hex="#B26100" title="#B26100" style="background:#B26100"></span></td>
+        </tr>
+        <tr data-page-node-id="dwf46PtQ71yn1iTUrSg1mE">
+          <td data-page-node-id="PkJVrebnnbZO6MZxAT00R4" class="name"><!--pnid:FLoV8s6xwSqNn43Zkjyyo6-->橙色<span data-page-node-id="9XoYEAj7FHNePZRvnu6dAE" class="enum"><!--pnid:lncjNMg2CDczAQmpQAktpw-->orange</span></td>
+          <td data-page-node-id="SJCrh6EUymVuANw8UPxLuD"><span data-page-node-id="cp3klfkdhY3p3VcqnZm5zj" class="chip" data-hex="orange" title="orange" style="background:orange"></span></td>
+          <td data-page-node-id="BnXgDsrovSH07fPCSxLIb6"><span data-page-node-id="rONhZflC5ypadgCkfJnkb7" class="chip" data-hex="#E8710A" title="#E8710A" style="background:#E8710A"></span></td>
+          <td data-page-node-id="Gwj1aE1n8ENe7cJjUvouCP"><span data-page-node-id="Rey4x1jpxgzwhayvkw6dxn" class="chip" data-hex="#FF9436" title="#FF9436" style="background:#FF9436"></span></td>
+          <td data-page-node-id="MOAsaHXPWKzz7ZwNwO76UN"><span data-page-node-id="45qdFabenfMlepF0jNdC3t" class="chip" data-hex="#BC5827" title="#BC5827" style="background:#BC5827"></span></td>
+          <td data-page-node-id="AhfsWyQb8MUJMOo8PZjzlz"><span data-page-node-id="BuDZe6Rqcg4h6mDyFYK1ev" class="chip" data-hex="#CA5010" title="#CA5010" style="background:#CA5010"></span></td>
+          <td data-page-node-id="SvnqNpbRgJGBVZbOZDgYKY" class="rec"><span data-page-node-id="6oQfoV14qtH9nM5nHtN8DW" class="chip" data-hex="#E66415" title="#E66415" style="background:#E66415"></span></td>
+          <td data-page-node-id="jlgOX1wQesVvXljSqDAmwC"><span data-page-node-id="X0pXvzbVvnX38wU40GFMqo" class="chip" data-hex="#CD4208" title="#CD4208" style="background:#CD4208"></span></td>
+        </tr>
+        <tr data-page-node-id="9qCVSy2PsMEVRBlHWVMhxU">
+          <td data-page-node-id="3ejq9rYKUmYrRfkLEK9gMi" class="name"><!--pnid:X3We3WmoyTZHjM9iswLSBZ-->灰色<span data-page-node-id="6zOCa6IdMNtbdeaoFRrZVx" class="enum"><!--pnid:vPnAT0sSeqaO9obfORvIfp-->grey</span></td>
+          <td data-page-node-id="1f0MFwCFkXs7tYYesaRQqy"><span data-page-node-id="BSmu9zaWFwGDOLEaS6rgvF" class="chip" data-hex="grey" title="grey" style="background:grey"></span></td>
+          <td data-page-node-id="18qAMe6SU2RaUtVSg58ZRH"><span data-page-node-id="0gcRQ43pqZXcJFkmkdN2fk" class="chip" data-hex="#9AA0A6" title="#9AA0A6" style="background:#9AA0A6"></span></td>
+          <td data-page-node-id="YRjRVA1kcAqZLALBdx2E4z"><span data-page-node-id="x693UXSiBsAmigarIVRttU" class="chip" data-hex="#5F6369" title="#5F6369" style="background:#5F6369"></span></td>
+          <td data-page-node-id="gUXHqPL8IakPAxMuc1N9zX"><span data-page-node-id="n8F1CC2R7ydQLwlenHWHiT" class="chip" data-hex="#6F6D6B" title="#6F6D6B" style="background:#6F6D6B"></span></td>
+          <td data-page-node-id="N4NrqStjzpbMov53gBEOEq"><span data-page-node-id="drCU9hUaQh3W1H6lH9imyp" class="chip" data-hex="#706D6B" title="#706D6B" style="background:#706D6B"></span></td>
+          <td data-page-node-id="uhxzWMCRLtkv2rnNetBioA" class="rec"><span data-page-node-id="nfQmwOOKGE5id37sbP00AS" class="chip" data-hex="#656260" title="#656260" style="background:#656260"></span></td>
+          <td data-page-node-id="UDgCmTrDA4xEDvKQAiSNpl"><span data-page-node-id="l8XUbBZZBBdcPVSe6djNmB" class="chip" data-hex="#515054" title="#515054" style="background:#515054"></span></td>
+        </tr>
+        <tr data-page-node-id="N8NhOD9PGyRUuXYHFSuIBg">
+          <td data-page-node-id="0ZoLbJoA4c6Z7C20xumQUZ" class="name"><!--pnid:3Uc2ZgZzZBDiqvanKk2Yv1-->蓝色<span data-page-node-id="kDPwHWgK6RRG1fIFshWrLT" class="enum"><!--pnid:AhAJa7H26nyDlJ3dGpvM8w-->blue</span></td>
+          <td data-page-node-id="uCrnQAAeuBATiH7ASeY9C3"><span data-page-node-id="0hkR6mAGIbOr1ot8uLO7by" class="chip" data-hex="blue" title="blue" style="background:blue"></span></td>
+          <td data-page-node-id="v2hLQlYaxqPmpZKn4LWKlI"><span data-page-node-id="MVEOmonQEUb1wrMYIDTJdh" class="chip" data-hex="#1A73E8" title="#1A73E8" style="background:#1A73E8"></span></td>
+          <td data-page-node-id="Zd2FGVJUwU2BCrydPhiOJq"><span data-page-node-id="0ICOAa9UqAwRQYXOvYbisV" class="chip" data-hex="#436BD7" title="#436BD7" style="background:#436BD7"></span></td>
+          <td data-page-node-id="HUscxpTgxAMzfSpQYGnJzA"><span data-page-node-id="K89hMq6MGOXsGBb9slWCkp" class="chip" data-hex="#3D6DE3" title="#3D6DE3" style="background:#3D6DE3"></span></td>
+          <td data-page-node-id="5tSj2K04mP68FA9zmbPMgN"><span data-page-node-id="SABd2nHVVBcdT4IPg3LUL8" class="chip" data-hex="#296EEB" title="#296EEB" style="background:#296EEB"></span></td>
+          <td data-page-node-id="jLZMWsg2S1vqo7rW94gbIN" class="rec"><span data-page-node-id="JbLJSZ2xZ8VU4Uqx2KvJdM" class="chip" data-hex="#588FF5" title="#588FF5" style="background:#588FF5"></span></td>
+          <td data-page-node-id="RM8cpRHdMIUK453eHhZmG4"><span data-page-node-id="q1iqTEthsOTn6d5BnKuNOZ" class="chip" data-hex="#455FE7" title="#455FE7" style="background:#455FE7"></span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div data-page-node-id="0QQXcphb0QFxjPrqAUyusj" class="card dark">
+    <table data-page-node-id="eJ5quxQX0AHJhcyNHFVpjf">
+      <thead data-page-node-id="l3rcvlbbwUC5MkPTTgyYwB">
+        <tr data-page-node-id="42lScZ5OIT33OQuyFvWncB">
+          <th data-page-node-id="FMePOpJxhR4vkZVUaoOCEe"><!--pnid:qhFq9xzLP7a4JscUVF1ZEF-->颜色</th>
+          <th data-page-node-id="IecGfmiEYDAGQQ575GsAjH"><!--pnid:ZnG0Ar5A8ifWwoENHi0NIA-->Chrome</th>
+          <th data-page-node-id="iF5BK2D5PuemLimk3n7OUT"><!--pnid:F0v0YFWkmJBDd2YiJ12njZ-->Edge · macOS</th>
+          <th data-page-node-id="HEe1p89Tvl6AETem5UY8xZ"><!--pnid:9QyYaL5dOxGQpoYj5Bs3rF-->Edge · Windows</th>
+          <th data-page-node-id="ZgrPP8NdQ6F7AlrQomwVHR" class="rec"><!--pnid:UONeOIAgAsRsBl7vvbS43O-->建议色板<span data-page-node-id="61OpDQkZg4slmo279cCfwg" class="hint"><!--pnid:AQRhZkOV1zCvSThZ0B7Ycj-->自研 · 深色</span></th>
+          <th data-page-node-id="4b9raNDZZjRZ1tB4H9D453"><!--pnid:C9AIdlNgrrsNpOd1QsAk0f-->Firefox</th>
+        </tr>
+      </thead>
+      <tbody data-page-node-id="Sx0yxCBINTnUMqa2wvDP6R">
+        <tr data-page-node-id="Oq8vM1K4cPnoSv1xm35KBz">
+          <td data-page-node-id="mEzXR5zCCSPLvT73vWm5WK" class="name"><!--pnid:yJ1QERuNgE1ee6qIsZEidg-->紫色<span data-page-node-id="rP3SFwso6On1TqPCdPHDdz" class="enum"><!--pnid:8JrNvvmVIL1XUkdYRE9ZwM-->purple</span></td>
+          <td data-page-node-id="rtv86ZZaEdJVngP9PNdUw1"><span data-page-node-id="qNWxuCW22LpfkMvYwtn6Dy" class="chip" data-hex="#CB93FF" title="#CB93FF" style="background:#CB93FF"></span></td>
+          <td data-page-node-id="YHBcxJo5KoECPttChuJfSU"><span data-page-node-id="I3RuUzgyybMSkl0YBLez7J" class="chip" data-hex="#B197F8" title="#B197F8" style="background:#B197F8"></span></td>
+          <td data-page-node-id="qf35E1Q6Lrv8iGebA61CAp"><span data-page-node-id="NY3z6icermmF9QLhhvKM2o" class="chip" data-hex="#B696FF" title="#B696FF" style="background:#B696FF"></span></td>
+          <td data-page-node-id="TRH4KxfVadahRXg49TTNFz" class="rec"><span data-page-node-id="UOkxLBdcAeB7Qe0bbnKWuW" class="chip" data-hex="#8776D2" title="#8776D2" style="background:#8776D2"></span></td>
+          <td data-page-node-id="Xte2MQDqcwEJ3IsxH1kBL5"><span data-page-node-id="veqFZKEdeMDifTRlZkum8w" class="chip" data-hex="#D490FF" title="#D490FF" style="background:#D490FF"></span></td>
+        </tr>
+        <tr data-page-node-id="G6ZSst8OnPrrfreXBPq9DJ">
+          <td data-page-node-id="yS7jx2y1daEMbYhgpOgBe3" class="name"><!--pnid:OsB6YyuR3BzNQTrlDUlZCA-->粉红<span data-page-node-id="eGwxFHGR7PQXsrMPwPWLLo" class="enum"><!--pnid:xuhGxSCA5EiM8UmWGgfY6k-->pink</span></td>
+          <td data-page-node-id="uEPFVu0W6l6TF2O9QhVhGm"><span data-page-node-id="VkgQbURbenn6caQR0TPMYi" class="chip" data-hex="#FF96DE" title="#FF96DE" style="background:#FF96DE"></span></td>
+          <td data-page-node-id="ADc1SYWQf57vea6gnic60F"><span data-page-node-id="kXG5D1g0qCxxqzCPknbnMF" class="chip" data-hex="#DD68B4" title="#DD68B4" style="background:#DD68B4"></span></td>
+          <td data-page-node-id="MWpPmr2FaII9x8HMWjnMCr"><span data-page-node-id="2BJAJQlAla0W7bS6P9IUO4" class="chip" data-hex="#EE5FB7" title="#EE5FB7" style="background:#EE5FB7"></span></td>
+          <td data-page-node-id="5fHUZXSVwj0kr4Kl4mWbA0" class="rec"><span data-page-node-id="5kIbfZuQyJnC3ES8ciUK6g" class="chip" data-hex="#FF7B85" title="#FF7B85" style="background:#FF7B85"></span></td>
+          <td data-page-node-id="VUsvm2IUF2N8TPMhKdZi5i"><span data-page-node-id="rH6wemCiMRjg4UYGNwK7Eb" class="chip" data-hex="#F585D3" title="#F585D3" style="background:#F585D3"></span></td>
+        </tr>
+        <tr data-page-node-id="9vSYraXOKglUJi0CCpCphi">
+          <td data-page-node-id="sLrhyqcGHMtKpbTiSiD6kC" class="name"><!--pnid:yXc3UEUmW9bvK6RS3dtoxa-->紫罗兰色<span data-page-node-id="ASeCKfsC9ZnsXl5pd7nhLr" class="enum"><!--pnid:PwMZPFu5OsLoJcL0ALZ1yC-->red</span></td>
+          <td data-page-node-id="zaQINGDNWBx4CHwu9Jx3gD"><span data-page-node-id="U0UwOkRG82MrlDUkkZCanp" class="chip" data-hex="#FF928B" title="#FF928B" style="background:#FF928B"></span></td>
+          <td data-page-node-id="PcW8O83OhDooUxUQrpwDir"><span data-page-node-id="GB00LRe7LgBUFXQOWgP4Gv" class="chip" data-hex="#C58AD5" title="#C58AD5" style="background:#C58AD5"></span></td>
+          <td data-page-node-id="0njMgBL4NZjp8VtjYfBKhB"><span data-page-node-id="yGT6NpzEAKvhcqL93d2Oio" class="chip" data-hex="#CF87DA" title="#CF87DA" style="background:#CF87DA"></span></td>
+          <td data-page-node-id="E5WDCuZ0tUDMqrD8DfNfDF" class="rec"><span data-page-node-id="uwtUWpot5gYxWEz8qRnfET" class="chip" data-hex="#EDADFA" title="#EDADFA" style="background:#EDADFA"></span></td>
+          <td data-page-node-id="WWSVvNo5xKxwSCd9E1Xsz1"><span data-page-node-id="DP5M2PFpspGft9ZaZfWMlc" class="chip" data-hex="#FF8998" title="#FF8998" style="background:#FF8998"></span></td>
+        </tr>
+        <tr data-page-node-id="nuP6I61hfDepoH3ZH0XYkS">
+          <td data-page-node-id="Qv5a10utAfylJIsTSJMlv0" class="name"><!--pnid:5UyRKVMbgxM0NjVNlOinlG-->亮蓝色<span data-page-node-id="T5wWld0y1GOIgU0fSHpCnu" class="enum"><!--pnid:3UzQWp1eaeiojKctGtvi7L-->green</span></td>
+          <td data-page-node-id="r6xhk0eEWidvuqaltZQjGO"><span data-page-node-id="W3cQLzsnxb4B0nd4iagi49" class="chip" data-hex="#87EB84" title="#87EB84" style="background:#87EB84"></span></td>
+          <td data-page-node-id="z0jXc5xCbbkeDSlMfrmFrs"><span data-page-node-id="gmfBpSMIYaqsDzQEbAep44" class="chip" data-hex="#5987B6" title="#5987B6" style="background:#5987B6"></span></td>
+          <td data-page-node-id="XP9YrKEhPcofGTUV2kJU2C"><span data-page-node-id="ktIjLbQ6UwmpNulobkkQZh" class="chip" data-hex="#4A89BA" title="#4A89BA" style="background:#4A89BA"></span></td>
+          <td data-page-node-id="R03fhzC1jOWhLefoMiasf1" class="rec"><span data-page-node-id="pVh2LzKQlk5iFR1L5Q4aHF" class="chip" data-hex="#3691B1" title="#3691B1" style="background:#3691B1"></span></td>
+          <td data-page-node-id="6wr3bnePEVYBY9WRCg36eD"><span data-page-node-id="WWYXVf7MtjkEsgj4zp85wM" class="chip" data-hex="#4ACCA6" title="#4ACCA6" style="background:#4ACCA6"></span></td>
+        </tr>
+        <tr data-page-node-id="ykmzTCk94LeJTW7gO2hM5E">
+          <td data-page-node-id="N1GZTwqivsnnLYzGMWiqrl" class="name"><!--pnid:Zw5kvygyMrHNzJS36aCTYF-->青色<span data-page-node-id="7FeTGGvIPohZO1URf5AhUP" class="enum"><!--pnid:aDcOkXCDxUB41ZFRbZ7U6w-->cyan</span></td>
+          <td data-page-node-id="X0ZwyXi5D3RWhLLVVaza27"><span data-page-node-id="PzJK4wi84CvpN3Ry2m4Bs7" class="chip" data-hex="#88E3EB" title="#88E3EB" style="background:#88E3EB"></span></td>
+          <td data-page-node-id="0EE8mgCRHl4fQQjxTrpkIp"><span data-page-node-id="TDgCfSc9EjLo8csmlrgXjr" class="chip" data-hex="#69B2B6" title="#69B2B6" style="background:#69B2B6"></span></td>
+          <td data-page-node-id="8Cc2Y9VW4ffNECzZMjqHd5"><span data-page-node-id="YB2ANN3HS2ZjHlr7PUSZot" class="chip" data-hex="#4CB4B7" title="#4CB4B7" style="background:#4CB4B7"></span></td>
+          <td data-page-node-id="nG1NImA4mS44tU0FYCpbtD" class="rec"><span data-page-node-id="xwaFcsKQgq01cv4zxGADPF" class="chip" data-hex="#45C8B5" title="#45C8B5" style="background:#45C8B5"></span></td>
+          <td data-page-node-id="LGPhOG2jyYt3bYrXdc7TO7"><span data-page-node-id="UXdg2ybUwFpD0ujgjO60db" class="chip" data-hex="#4CC4E1" title="#4CC4E1" style="background:#4CC4E1"></span></td>
+        </tr>
+        <tr data-page-node-id="CmdOm62C2LqZdorHHn5eFK">
+          <td data-page-node-id="XBq9RuxMNecfYegzS789Ui" class="name"><!--pnid:62E7OPhEBeHALr0FgQgOeS-->黄色<span data-page-node-id="NpX2E9g6RzmLuI9u3HXoZm" class="enum"><!--pnid:fD6ZRwIT6w7dzJoPLkxTrT-->yellow</span></td>
+          <td data-page-node-id="VgqPGi4TjzmaDbigkgin56"><span data-page-node-id="K5hEcRZJvnbRmuKQfiH27f" class="chip" data-hex="#FFDD7A" title="#FFDD7A" style="background:#FFDD7A"></span></td>
+          <td data-page-node-id="c2LlT5tYCfScoJKH2HrCua"><span data-page-node-id="OrKfa12BW5GuXN3OkuWH9f" class="chip" data-hex="#BCA361" title="#BCA361" style="background:#BCA361"></span></td>
+          <td data-page-node-id="sheAY8dj40v6VG0hTy3PDH"><span data-page-node-id="gg0wfxhPp1pA3KnDes2ZT5" class="chip" data-hex="#C1A256" title="#C1A256" style="background:#C1A256"></span></td>
+          <td data-page-node-id="VfGCUiJYNsFeybawddIFfi" class="rec"><span data-page-node-id="i9eFgnKYdk4MyErsvn8PKm" class="chip" data-hex="#F3C663" title="#F3C663" style="background:#F3C663"></span></td>
+          <td data-page-node-id="h9TcYtGz6eqWFjuz0nAWJk"><span data-page-node-id="ldYzYluP7RPbE8eqqJnyjT" class="chip" data-hex="#F3A81E" title="#F3A81E" style="background:#F3A81E"></span></td>
+        </tr>
+        <tr data-page-node-id="O3g1uT42p7ICq4DvjaTPWq">
+          <td data-page-node-id="WEJgtvEtpQLYaEylzafi3X" class="name"><!--pnid:zi0FsnTZnj3jxlOpprVKfG-->橙色<span data-page-node-id="3VEV9rhQxuniPSwBygaSva" class="enum"><!--pnid:ScXaS976ikeo8mKKdjb9X0-->orange</span></td>
+          <td data-page-node-id="Vtgm5I36WTodtS9Io5siy0"><span data-page-node-id="yJyAbkIVhLTi8YBDQN7n0z" class="chip" data-hex="#FFB379" title="#FFB379" style="background:#FFB379"></span></td>
+          <td data-page-node-id="OIFqMTRjMN2KGMOoV3Cpvs"><span data-page-node-id="qd85RVbS17x5BKUTCJ38Hz" class="chip" data-hex="#D4926B" title="#D4926B" style="background:#D4926B"></span></td>
+          <td data-page-node-id="1MXhu93ZD8Jbvr4Ei2mFRU"><span data-page-node-id="oLpKoKQt4AqZbFCcGRWpCj" class="chip" data-hex="#DF8E64" title="#DF8E64" style="background:#DF8E64"></span></td>
+          <td data-page-node-id="tWvkyafaMWHwNSy43vQC2D" class="rec"><span data-page-node-id="6HR1S8FuAGIwLgJwwKN8DW" class="chip" data-hex="#FC863D" title="#FC863D" style="background:#FC863D"></span></td>
+          <td data-page-node-id="K9yV3KRR45ApHBhX4t5N6h"><span data-page-node-id="DYPAQCQ4lT4jEdfmYV8U2B" class="chip" data-hex="#FF9565" title="#FF9565" style="background:#FF9565"></span></td>
+        </tr>
+        <tr data-page-node-id="wSuDslpoR7BPXGjhaI65nc">
+          <td data-page-node-id="X7jRZQEiOPkKN195gaXC07" class="name"><!--pnid:cDzr3lC0XwH5UdKJfOQA4z-->灰色<span data-page-node-id="veAtCgdA4vP8qn6uhLgGtp" class="enum"><!--pnid:qbbOL6QeMcj7U5FIbRarwl-->grey</span></td>
+          <td data-page-node-id="drHCVwMoV3boUJSF9neRd7"><span data-page-node-id="vK37E9ujOnD70P46ctCQzn" class="chip" data-hex="#DFE2E9" title="#DFE2E9" style="background:#DFE2E9"></span></td>
+          <td data-page-node-id="VCsEW76jy80prBdHQH5mB7"><span data-page-node-id="k9liQcP5Z7pfSTeUXT1sQh" class="chip" data-hex="#83817E" title="#83817E" style="background:#83817E"></span></td>
+          <td data-page-node-id="Hu8NFuk0PgJ5GsTwHeiTxe"><span data-page-node-id="Z64AeS97xUIBmFWg2Qe2pQ" class="chip" data-hex="#84817E" title="#84817E" style="background:#84817E"></span></td>
+          <td data-page-node-id="UFf8DPBqPNGbyLS5x2oPfq" class="rec"><span data-page-node-id="HMmlggBt7SbRHOI7SDqSbv" class="chip" data-hex="#898683" title="#898683" style="background:#898683"></span></td>
+          <td data-page-node-id="o7KtSePFSNYrLA7rgrcmsA"><span data-page-node-id="vzkiOAwtCR7KM34iOKvNib" class="chip" data-hex="#949297" title="#949297" style="background:#949297"></span></td>
+        </tr>
+        <tr data-page-node-id="aGEtFT9LiWGbDN8v87ECxT">
+          <td data-page-node-id="z6VpT7lNWlmouZ4q85clfk" class="name"><!--pnid:AQ405K5EE3Q5RbTL1Ajw0i-->蓝色<span data-page-node-id="wjEvaZlywwFCWadgZrJyrb" class="enum"><!--pnid:24q8sBMakPoWjXN7JtgYeD-->blue</span></td>
+          <td data-page-node-id="7LPoIC6HF9OI4q5AfpZz4U"><span data-page-node-id="2Bvj0xAt1OBOZY0oEqgnId" class="chip" data-hex="#A8BCFF" title="#A8BCFF" style="background:#A8BCFF"></span></td>
+          <td data-page-node-id="ANAcxprvOQN6oLJ3R3KGOz"><span data-page-node-id="TgkYYOQ7pEJBE3sObdyFe9" class="chip" data-hex="#75A0F3" title="#75A0F3" style="background:#75A0F3"></span></td>
+          <td data-page-node-id="ilViAvCyR09wFnVrA8PKot"><span data-page-node-id="7rLi3BNRQnTk08WLEAxADy" class="chip" data-hex="#69A1FA" title="#69A1FA" style="background:#69A1FA"></span></td>
+          <td data-page-node-id="ZMUY8mdOzLwTzP8StrA62M" class="rec"><span data-page-node-id="Co8N90pNLhAjebcPqX9DDi" class="chip" data-hex="#A8C6FF" title="#A8C6FF" style="background:#A8C6FF"></span></td>
+          <td data-page-node-id="dceVT2G2ilRGTXqTgkmB3r"><span data-page-node-id="fR5dEKiSwMc1HE3byEHAC4" class="chip" data-hex="#7BB2FF" title="#7BB2FF" style="background:#7BB2FF"></span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div data-page-node-id="8gOZTMrBaIt5urDuxXd7Ii" class="note">
+    <b data-page-node-id="tNP9LndICkl751H6AKUDW7"><!--pnid:Po781jdXYIANfx6LvHLM7s-->建议色板怎么来的：色相基本不动，只重排明度。</b><!--pnid:ghXrMWmpx2J61uqVfNNAaY-->除后面单独说明的三处例外，其余各格固定 Edge 原生色相（允许 ±5° 偏移），彩度不低于原生的 86%（深 <code data-page-node-id="Q2JFI9xQ0jujk5ujRYnngO" data-pnid-children="chhsbdqP3Q9egWixiRnBd6">blue</code><!--pnid:u4D0KyCvlQ6z6Zm4EjUBQn--> 是唯一例外，只有 67%），把明度按三档重新分配；目标是每格与原生 ΔE00 ≤ 13（「还是那个颜色」）、在底色上对比度 ≥ 3.1（边框不被页面吃掉），未达标或主动偏离的几处原因见下（真正 ΔE00 越界的只有 <code data-page-node-id="ExamewfJkhaZAw6fZcJccr" data-pnid-children="zff0jvHuhy4V4eCR3eGp7I">pink</code>）。结果：浅色最小 ΔE00 由 <code data-page-node-id="O95V5oV0qk4uF1vFjLzBbk" data-pnid-children="O5wtpMSBwGa9VesLQbSMr4">10.3</code><!--pnid:vnSC16hFbVuEb4BlYQTpRB--> 提到 <code data-page-node-id="wDLS6LM9ameLZtnxshguov" data-pnid-children="FQX9LP1zGDx0D0nByrHQNh">22.8</code><!--pnid:a0fEu6mdRY7mmOWBJ8zGYh-->，36 对里低于 20 的从 4 对降到 <b data-page-node-id="GzLD3KRs15X0DSY3pndi6T"><!--pnid:Irq6hCBalWpJGDm8Oyk9B2-->0 对</b><!--pnid:8siMgZvrdIJRJojTL0hE4l-->；深色最小由约 10 提到 <code data-page-node-id="dcRq5A8M94s3fuA71G9yQL" data-pnid-children="hU4TSob3w46zMWqC4HExDN">21.2</code><!--pnid:b2cWq19ANQ9v3IIYVtHSzC-->，低于 20 的同样是 <b data-page-node-id="luVqeMKqfJmfI9VdPb5EkZ"><!--pnid:kzE0ebE89uF8P4KddDwbmL-->0 对</b><!--pnid:b6KJsDyHLQCo71HxO775FZ-->。<br data-page-node-id="V8OKoyHYFCTBVg5W7dZlMY">
+    <b data-page-node-id="nUSd2JxOdzKXoMS3209EkV"><!--pnid:Z9FH8E5xGLIaBmwn5tN9NP-->为什么要重排：</b><!--pnid:jxsjrebqXKUqgmRH7oNHab-->Edge 把 9 个色的明度压进 L* 43–50 这条窄带里，人眼只剩色相可用，而紫/紫罗兰/粉三色又只差 20°。拉开明度是唯一不动色相又能分开的办法。<br data-page-node-id="M7d20bOXyFv8552ZzaNl1j">
+    <b data-page-node-id="vn1jQqHBugTKqzEPFHoYyT"><!--pnid:USndKSIHdQHSPPB5v2R00Z-->一个刻意的例外：<code data-page-node-id="HkuyJ1kjzoBvMuKJqfmpww" data-pnid-children="NfS8z0bpDH56gw1a1ZPN3U">pink</code><!--pnid:BUtYQ7dnVJuRvpVvRv1iGW--> 不再跟随原生色相，改成警示红。</b><!--pnid:NSIvHZttHZZR9ariAcmumq-->Edge 的粉红 <code data-page-node-id="QniD8r2eVHO7sLPxnO5Qkz" data-pnid-children="oIRKb0IIPPldS833h4GVnm">#E3008C</code><!--pnid:chauQTE3CtXByHX7RS5Jgg--> 是全 9 色里最接近正红的一个（色相 352°，其余八个都在 200–340° 或黄区），所以把这一格从 352° 推到 18°、彩度提到接近上限，得到 <code data-page-node-id="OugsOmiPs3PmWeJgwtPbcD" data-pnid-children="jgrZ78crflpHdCsqslKAUG">#E3004E</code><!--pnid:gNW2IgFYKMLUrAc8ApSZSs-->（深色 <code data-page-node-id="NVsXayXXTfW4PQWSEOYwHQ" data-pnid-children="X2Rr6dyLEzFiBgwUNgQYOE">#FF7B85</code><!--pnid:ur7SpoWlrjuoi5cZamjxVB-->）——整组里唯一一个「一眼就是红色」的槽位，用来标示需要立刻注意的规则。色相只移了 34°，仍带玫红底子，不会跳到纯橙红去和 <code data-page-node-id="nXFcXLfAiY0qThcRLISZde" data-pnid-children="zysmBCLilhGJalNKt5OX7O">orange</code><!--pnid:vfLuyX6v91WpR9AZ79J0sc-->（色相 53°）撞车：两者 ΔE00 为 <code data-page-node-id="fHWXzGayL8fG1MUapehZXG" data-pnid-children="hPktsUvcdCckxiKDpAV38g">27.0</code><!--pnid:usTITNuBuKznSmEx2hsT1o-->，整表最小 ΔE00 是 <code data-page-node-id="vQ9igyock2FT1mc4dsxqHa" data-pnid-children="M7Jf5T6BnigIiy36pxgRAh">green</code><!--pnid:pIIJlo2z7XDOiuPwOBFvet-->/<code data-page-node-id="UG1xHNf6GCkZ2NtNWvdscH" data-pnid-children="e9ErXqhH4CAe8Drl8AhhO5">grey</code><!--pnid:vxCYB1TXbOympsmrDHIVmO--> 与 <code data-page-node-id="MRCzXRBqbVrqnc6Z9XgzIw" data-pnid-children="M4y6wsVt9cl6uXd2QLxfKO">green</code><!--pnid:IrwLMPWTvuSJTffdi5pdlx-->/<code data-page-node-id="Aua8uOnOR68JEyaIwekYF6" data-pnid-children="vR7XPubKyXBYBMG7EJ5IWe">blue</code><!--pnid:8smPUFgktaRcWpMMLjHReu--> 并列的 <code data-page-node-id="sWB9xKFPzz9zU1Klc2MU7S" data-pnid-children="ssi27z21xb872L9s5HpAEJ">22.8</code><!--pnid:3IQxbHzGuKSNBrezWt5jdp-->，低于 20 的对数还是 <b data-page-node-id="Rm6ZkpayFP0tBHsaDof0Dw"><!--pnid:DKtG8ackRiSkEUgSs7HRZ6-->0</b><!--pnid:WSeLJapPDmIJUM6iLqzMsT-->。代价有三条：该槽位与原生分组色差 <code data-page-node-id="VQLOaMpkV9jeZfRP5oEn9B" data-pnid-children="uG8e0rpxcZoKzkCktC0olp">15</code><!--pnid:dnh8kiN4mn21ziJDOGB3V0-->，不再算「近似」；配置页里这一项在 Edge 上叫「粉红色」，色块却是正红，需要在文案上标注；其余各格通常控制在 ±5° 内；cyan 和深色 green 的主动偏离见后文。<br data-page-node-id="oqWn0Zjjgzcv8ISvWX8XAr">
+    <b data-page-node-id="KG1tXUq7FpKBofQBNLrpuS"><code data-page-node-id="azSCyl60zrklPshnZ1RJF4" data-pnid-children="ZbecYT7KLKP8c53Gefg6pz">cyan</code><!--pnid:4VOwYzPGFMCrKFVhbGsOmf--> 则既换方向也提了彩度：</b><!--pnid:LbYgrmP4s2o2oPwUTJeg1i-->色相从 <code data-page-node-id="8q4x97lEj3r8K3sedVvhNg" data-pnid-children="4y2fqncYzVVgyoaiDqJKR3">203°</code><!--pnid:v7cWnKXQPhwaRBJ2zCM9FH--> 移到 <code data-page-node-id="e0URNnIvvL4tJMJz747q0c" data-pnid-children="ojAxAUW8sQi6ul7PwrCzoq">180°</code><!--pnid:DinuAa9cIcWD8xPTZtgOx6-->，彩度从 30 提到 <code data-page-node-id="QR5BaoEw9BQ08wfpNfynKV" data-pnid-children="Dkf66uAAzC4D8YlBV4shcV">40</code><!--pnid:TJAxKyhRQYUdUJC0iZjJcy-->——这是 sRGB 在这个明度与色相下能给出的上限，再高就溢出色域。得到浅 <code data-page-node-id="TPfnsVnI3HbR5whOMCyR0t" data-pnid-children="U5TL5V7Si4pHgXKONGTmiT">#00A08D</code><!--pnid:ESD7pBjyPipDpKNZ4VfeJK--> / 深 <code data-page-node-id="7r63Dju76l4mWAMsVPYuGZ" data-pnid-children="L7HGpALZBhE9zKmPSMV6o0">#45C8B5</code><!--pnid:TapWMCuiVR477z6PJNQmqU-->，明度不动，仍与相邻色处于同一明度档，只是从「灰蓝绿」变成一块干净的青绿。收益是与 <code data-page-node-id="HlUb3qpcdGOeOCFYtiPQNu" data-pnid-children="iXIK3W3AzKx4gR4wROkk8j">blue</code><!--pnid:fq2caikVi9ueBg1mfQzicH-->、<code data-page-node-id="zskP0k7duvYOuHcclieovC" data-pnid-children="BUyC3SKXs7cb6833wBitBA">green</code><!--pnid:K6PDMdCrUNSbtVHfcqjbRU--> 这一簇的间距从 29.7 拉到 <code data-page-node-id="zqGbSsI6qFsJ2jmTNbH66s" data-pnid-children="b8PiYE7M285JYfXvt6d5hu">37.4</code><!--pnid:C5ZWXjiQJxalYJnSosm94L-->，同表里不再有两块「都像蓝」的色。代价是与 Edge 原生青色的 ΔE00 从 9.1 涨到 <code data-page-node-id="DxE0EZv1Oosu1TL4FEQV0P" data-pnid-children="AymwNeVe1ygUIQ8A696CKO">13.0</code><!--pnid:1TPQVujAALII02JqkGLR9q-->（深色 9.5），刚好贴着「≤13」这条线——所以它也从「轻微近似」变成了「主动偏离」，幅度比 <code data-page-node-id="cQD8s9uDxi0u85nBWzFvFR" data-pnid-children="glc2zHAXghjqY1un0rmigw">pink</code><!--pnid:up0qsCmUzlvrR4tZBJdHIE--> 和 <code data-page-node-id="7ra4mze9xHGKZsbTkzRdl5" data-pnid-children="RKXiOX7y3sP0RuupP0wAj1">yellow</code><!--pnid:huLeGgRDwCqprlnLueKtDq--> 都小。<br data-page-node-id="acFwS263eZMDUK5JssTio0">
+    <b data-page-node-id="jO6QVigTZ9urPNzLc2oflz"><code data-page-node-id="cvUptWQY8RzWkPsiGST9N9" data-pnid-children="dcdJD1x4dU4tOMRU4mdYpq">yellow</code><!--pnid:aKM96SNmzTElPPr9QXo483--> 提亮后为避免描边又收了一档：</b><!--pnid:G1aNT6PossUUJaw5qJiUm2-->原来的浅色 <code data-page-node-id="98beQmHfjD5fpfm6Dxe3JF" data-pnid-children="vekbXqHToTjkMgB1NgIzGp">#805F0A</code><!--pnid:TmH2jhovPhAf3mkendFZuF--> 是照搬原生明度的结果（L* <code data-page-node-id="6xYZhvdeqvEiYkVC8Et2jn" data-pnid-children="cVRoZRk9XIhnlrVLY7Jcml">42</code><!--pnid:phXYsusGnOjfwNbDLJ31Gf-->），看上去像橄榄；先拉到 L* <code data-page-node-id="fqm70yZdrI7ATz6FDGZHpi" data-pnid-children="XMMBKLV8x6zfEeOyOUd0za">70</code><!--pnid:PvN9jR9odasqf38OXRlq2E--> 得到 <code data-page-node-id="r7sDw3dGrKHVqe7IbbOO3b" data-pnid-children="iLaTk8TzEwjjDhRgxPcayM">#D4A428</code><!--pnid:EGw8ySiKcHgYu327MNkuWm-->，但它在白底对比度只有 <code data-page-node-id="joDlA4fKQFqMu6Hwi1wnnT" data-pnid-children="1qUEVjh6AZ6c06EWaHwluw">2.30</code><!--pnid:X5O1ClHjrfZTAtoIRUpQD3-->、必须配描边才不发飘。于是收回到 L* <code data-page-node-id="B8XXvKi1B1uAHOX0q7NmL4" data-pnid-children="DTPc3OcPq3To7D5oPnPnZq">58</code><!--pnid:8VgQ2g5ChtSVqjmkKwwY7n-->、彩度 <code data-page-node-id="uk7HaKR81kAgluKgHHdzwD" data-pnid-children="qmTELmtX5PHZ4c7vy0fXXy">64</code><!--pnid:HTADYDkS03glduj50kQryC-->，得到现在的 <code data-page-node-id="tTqfmAfu19Vy5XjR9T65Bv" data-pnid-children="PABRZDlQ9xaZdRRzB5Trub">#B08500</code><!--pnid:9cO8CLK5WWJIutBcJBxldp-->（深色仍是 <code data-page-node-id="IGoEvEc9GrfTejj0RZrFc9" data-pnid-children="BWd7q4Hqq2WKfk55RtVARN">#F3C663</code><!--pnid:UJ0vRVdMzGSIwGGGCgIWpN-->）：白底对比度升到 <code data-page-node-id="VOEUO7IGpZS2zrHlP0QwrI" data-pnid-children="pwyZ3r2VQ80MsqYM5uPd0Y">3.39</code><!--pnid:fXYJepKzlQaTjCEekBXzvM-->，与其余各格一样达标，不再需要描边。调整后与 Edge 原生黄的 ΔE00 <code data-page-node-id="k2wSBkBTuYO3HZJ5gQhcAN" data-pnid-children="Uug34vdY6zu7m1Q3eTdUkD">8.7</code><!--pnid:jcJNZR4PWrM4fDu774nxYI-->，仍属于本项目的近似目标范围——想亮又想达标，只能从原生深金走到这个深琥珀。<br data-page-node-id="vHJOfpCHx0T2oCmNHeMwv5">
+    <b data-page-node-id="IC0VPF76O3AkW5dcJtxsn3"><code data-page-node-id="l4OaLqb6tp3ohV5K6uQKMK" data-pnid-children="sVHnZ8GRAL83bKs0ct9yxN">orange</code><!--pnid:SWHT88SxyopKWbue2vSzsC--> 往黄挪了 6°、把彩度推到色域上限，明度为达标而下调：</b><!--pnid:unazP4Kdlz2CDga0JqKEHk-->现在浅色是 <code data-page-node-id="7gsoPlG4VdpFwTyqjXUNaf" data-pnid-children="rqSqus5z4v4AgeQZLuIouQ">#E66415</code><!--pnid:DcTJA2LzOAKImUZrAjB5EU-->（L* <code data-page-node-id="vCgZkTXtQCtTIWXyQraoID" data-pnid-children="iS9vYMjJRyrhFOetp7lp78">58</code><!--pnid:BA0Tf02lNtPrDVgHwJeY5A--> / C* <code data-page-node-id="viF36e0OCgQuBuyWMghdva" data-pnid-children="gwwhv7E08J86vkfb8Oovwx">78</code><!--pnid:myrLabXnoHh2AAntgib3nJ--> / h <code data-page-node-id="yGuzNV4nMyRnK5xq2tHqjW" data-pnid-children="arBov4pvVPDyblZsy68fjI">53°</code><!--pnid:cPsQBTSk5SffLoETXlgEkC-->），深色是 <code data-page-node-id="4NeM55lqafJQDqMHv2UM2e" data-pnid-children="iRvkHTswgyL48LIgP3x4Zj">#FC863D</code><!--pnid:2mdvvcVaXH7jW0FtkkTPUu-->（原生 C* <code data-page-node-id="5obhh96FnYkYjRLYmYU1yd" data-pnid-children="BFefgXcXSqoODMb6665X4d">58</code><!--pnid:DbCegi2X97zM8yUgfs3Cxx--> 先提到 <code data-page-node-id="TAEUL7MVvCeOHrUdixLYv4" data-pnid-children="5032m6NLOz7fhSM8umy8sK">78</code><!--pnid:h0kfI8CUA0k4bixiDfqCze--> 拉开距离，后来觉得在一片灰白里过于扎眼，又收回 <code data-page-node-id="HihiQDKD9KyUDcEiXrsCt1" data-pnid-children="u32ABthEpV4PNX0YV0NgQb">70</code><!--pnid:PgtYafcrSLCVyPTLxCaTAs-->、色相从 <code data-page-node-id="pepGsQN2VEPbh00B34dedQ" data-pnid-children="vINGDnQOCvfCrC504jYlDd">58°</code><!--pnid:uT7p22Gc7vOl0copaK8H5u--> 微拨到 <code data-page-node-id="yfVHLQVcyLDHs3vuVnmInp" data-pnid-children="0ccN6mJkLqC2OmK2XlGqlW">55°</code><!--pnid:3WOOmehkUjUR0Xb9LI8Pwi-->）。起因是它与 <code data-page-node-id="I4megdBd0DeaVCpaxC3Izv" data-pnid-children="89qwIOwfnL0pMnWOPvqSgU">pink</code><!--pnid:czj397LcvtgMsF7X0PiDox--> 的警示红贴得太近：色差 27.0 看着不算小，但两者彩度接近，唯一的分隔是色相，而 47°→18° 恰好落在红橙边界上，是人眼最钝的一段。橙色又正好被 <code data-page-node-id="ylT9UkYvqIP8WupsB1yx04" data-pnid-children="rr3qxU1XISaNARcETJcsUR">pink</code><!--pnid:8a5anxV4ZW3sdM8eZUgp9C-->（18°）和 <code data-page-node-id="SasdrnA3U8xrhN2xsRENfa" data-pnid-children="oS9fWwMuoA3wee4ai61eYb">yellow</code><!--pnid:RwRtWrtxgWLZ1jxbaVUshX-->（84°）夹在中间——往黄推会撞黄，往下沉会变成焦糖（已否决「太暗」的观感），只剩往黄挪 + 提彩度这一条路：原生的 C* <code data-page-node-id="NKkjfvRWHhFU1rZiuWmKck" data-pnid-children="AYoJGxo9QeYEDMu9BrX59q">72.5</code><!--pnid:xVMey9rKrCcnFjSQwbq84w--> 在 L* 58 / h 53 处还能往上推。结果红橙 ΔE00 拉开到 <code data-page-node-id="EhWn1frPFVwA7iSfTXl2D2" data-pnid-children="skL2OTiJyUuFWKqh7j1hSH">27.0</code><!--pnid:4SkM27N6FKi28UpugRDbYT-->，橙黄 <code data-page-node-id="rVMSAJo3BBtQ8D47fw8rbX" data-pnid-children="oXVDUr8GMNM2dzSmMent6A">23.5</code><!--pnid:iPa3soHoeMgZCOATkLjvtv-->，两头都守在 23 以上。最初提亮到 <code data-page-node-id="cGRsNA8EauAQTR3OPYavJ2" data-pnid-children="L7jAzRnp2hbL7AyClM70Up">#F36F22</code><!--pnid:7BDcTcik4sYhDcnX9nHxTI--> 时白底对比度只有 <code data-page-node-id="TUooQNnIx70B4tXkk1LsBb" data-pnid-children="ZYhbFuibvR0ZD89ekD9o5J">2.95</code><!--pnid:5vlXkbwr8KnuCxiVVo670x-->，与黄色一样要靠描边；这次连黄色一起把明度压到 L* <code data-page-node-id="O96z8YURdWLWpBqztjxlJs" data-pnid-children="C9R6dbrPRMsk8r8hh5nFJo">58</code><!--pnid:YJjupvp61wtftsMAVfOuTO-->，白底对比度升到 <code data-page-node-id="QaOxC2CRJVvTl85Cdwm6fR" data-pnid-children="SpHbbg7ohIOXWLtzndVBlR">3.39</code><!--pnid:gQkQivA8bD8YdEuVzPr86O-->，描边需求一并消除。深色侧收彩度、色相微拨后：红橙 <code data-page-node-id="eyVH9XP43ChA0P0wJw2pqm" data-pnid-children="zW6awhZHBZp5S0RuZIZET8">22.5</code><!--pnid:CdSq6vrGQiOqMMBVWq8HQB-->、橙黄 <code data-page-node-id="XolvLrsnek0k2G9jpvInKy" data-pnid-children="trV34UVKDs1Sdvr3N9hh7E">23.2</code><!--pnid:XqAwDEJIPvAAA2tWeoSmna-->，两头仍守在 22 以上，深色表低于 20 的对数保持 <b data-page-node-id="qoyqOGASGwUTe1HoGHNf50"><!--pnid:euzwrSOjiWSsZTHzsJJ8hL-->0</b><!--pnid:gXytpSHjG4QfhRDXPKcO19-->（此前还把 <code data-page-node-id="EXXvOq1b4DYdN9Eh7wl6fF" data-pnid-children="pP8Fuqr68wP46X6WKTwyFZ">green</code><!--pnid:S4Q7UAUrf0HPKAZm0D0Gew--> 色相从 256° 微调到 236°，消除了它与 <code data-page-node-id="BMRebDM4X60iTuqMT6SJEN" data-pnid-children="EazznRZtXE52Wu99fCbMjv">purple</code><!--pnid:CCPW3kblPhFR7E5NtI3sNS-->/<code data-page-node-id="mHoY3f5v7Ef2ZRn3VSw8Fj" data-pnid-children="UTRvvzkZnkxfYV4QaFSf6d">blue</code><!--pnid:W9ZCEOcLXyKUFD3rL6X5aP--> 的混淆对）。<br data-page-node-id="7yOe2HG5mcNqPPvCfPwHDB">
+    <b data-page-node-id="VCOuUZSOq1QyXfX10HB4Io"><!--pnid:R5uClmZbGqpXriNkxpV2SR-->顺带说明 <code data-page-node-id="6OWueiTlYpy22XxPLn2F9D" data-pnid-children="A5DEhkiFaOaDYcbi7ldiE1">red</code><!--pnid:jYihjPwWvEC3iAaTIWdhOQ--> 为什么偏浅：</b><!--pnid:8UDbbqKKUmAGHQiZrOt4dH-->建议版里 <code data-page-node-id="vJagOJKrvEEY87hmJuTRcw" data-pnid-children="bshEOKiqnP7gStBZ0Kq0s9">red</code><!--pnid:o6nQrbg6FwoUntUC9ftXde-->（紫罗兰色）比 <code data-page-node-id="lFYVQcynDSQax6W6m27Q7y" data-pnid-children="MWrEIkIF7AngmuKkjIHrS9">pink</code><!--pnid:vtYtMKsoMStszuPyGg4cIJ--> 更浅——不过现在已经不是「被 pink 逼出来的」，而是它与 <code data-page-node-id="4OOH8kQRJK8wa8wKe63wlY" data-pnid-children="MjLnmp02Xg7febGncBzdt5">purple</code><!--pnid:tsmQ8bxeW1O8eOxeblBLSO--> 只差 20°，两者必须靠明度错开，否则紫区又会糊成一片。若坚持「紫罗兰应该更深」，只能把 <code data-page-node-id="eaPzRKYGEnjq9WjSwPaYf9" data-pnid-children="ujnfAQzg4Ew5VAiuojKYtw">red</code><!--pnid:AZ7torvKgzbYxUTSPZvolZ--> 整体换到红区（如 Fluent 的 <code data-page-node-id="hf8WjjynBF6l5Tqc57F2g5" data-pnid-children="AM89EBvcVCw7BcNs4cZldd">#D13438</code><!--pnid:Et0b8WWaA0ihHhu8UUMDHY-->），代价是与 Edge 分组标签彻底不同色相，且会与 <code data-page-node-id="YGH60w3AJCq76sV6UIlMVA" data-pnid-children="Mhho5DpzDl39KGjwt6IIwY">orange</code><!--pnid:hSLgl3qSoQig6r7S6rGuoC--> 撞。<br data-page-node-id="bPCxi404OxQ5uX5AUDL3Xm">
+    <b data-page-node-id="4wz8E7cbIDVNQRaZnTbAoZ"><!--pnid:04GbSSmjEhcjaPvwY7upFi-->两点边界：</b><!--pnid:OcvjhAbaO9ZlRCLwMZzIuC-->色板只优化正常色觉——模拟三类常见色觉障碍后，深色 protan 的 <code data-page-node-id="eFIf102DCXpRSAOHOjv2w2" data-pnid-children="jXUvPWosZUGoZos46y2DuU">pink</code><!--pnid:1B61c6YvqK93obicdSAxTv-->/<code data-page-node-id="Ah7AgwyOAteJyrYTNPAECh" data-pnid-children="y9in8zkTIIgpFCNIPL2gUN">grey</code><!--pnid:KP6FMhKLgXMNmPQlIFQfe5--> ΔE00 只有 2.4、deutan 的 <code data-page-node-id="TSGv7W1JLx71fb0Zdo9vUT" data-pnid-children="L9k3xJwO4VJRR70EBPLhrw">red</code><!--pnid:hKPkFmi1mL1M4Q0DlH9DGO-->/<code data-page-node-id="xRYGA99gfBXPV9QeETcBKk" data-pnid-children="xNaObbjz17dgItSBu1CBvF">blue</code><!--pnid:ZqGkPVEF2NdgNO0jXVwP6A--> 2.0、tritan 的 <code data-page-node-id="N6MuaQ3bmnKFmYTosxvA51" data-pnid-children="rLyaHasN80xuODJnGrSF9c">pink</code><!--pnid:DUQeVpgFpJsBwxEQ3DB6wZ-->/<code data-page-node-id="4Q4vF4p3u1xLHyniiv9jVY" data-pnid-children="kLNtz0dYb8YAc5yMa6Z4z6">orange</code><!--pnid:Gzf2nwzfoCUtTBXJDEqg2D--> 5.8，所以「ΔE00 全部 &gt; 20」不等于所有用户都能分清，组名前缀是必需的第二维度。另外色相归属是按 Edge 定的：这套表拿到 Chrome 上时 <code data-page-node-id="b74HefmOdCB1K7RQXfDaL5" data-pnid-children="v79J7Lz4rik5knEBrVyGiV">green</code><!--pnid:jpoeM7xprWzIyXUmYLq042--> 与原生差 49.0、<code data-page-node-id="VJA3UEaZfndZm161Pe3okT" data-pnid-children="PspmBM9grdq5PcCoF77ZVX">red</code><!--pnid:wW96giQ4OLYwjzp7pGdvUP--> 差 32.2、<code data-page-node-id="vxwExce359YIraxmWRM2mr" data-pnid-children="7Qc0fNVXOS2Uz26KAbzE8r">pink</code><!--pnid:STgnGZzh6qt3s4e10w85Jz--> 差 22.0——因为 Edge 的 <code data-page-node-id="ULwBrK6e4hKLZVbvziYQ5k" data-pnid-children="F8znPtOsZHfEmhXQ4HndP6">red</code><!--pnid:oaUhjBeIcXRNKIHMWRqKZh--> 本就是紫罗兰、<code data-page-node-id="hIzeLsiESRNYGloAnhHAb3" data-pnid-children="8zL7pgTqBy96DwQzqckJj3">green</code><!--pnid:gpsygbooQbBStNLygxyjir--> 本就是亮蓝，别把它当成「更准」的 Chrome 色板。
+  </div>
+
+  <footer data-page-node-id="tzL6Q7UdlyyW5DIICBoYAb"><!--pnid:J88cB3VNjNPMRptzXfq9sb-->
+    第 2 列由 API 枚举名直接作 CSS 颜色渲染，代表「按名字本该是什么色」，与任何浏览器的实际渲染都不同。<br data-page-node-id="FHyvmwdT1ciPz3HVxKplXM"><!--pnid:Gckz8OHRJ5YvrBfbZUNgKq-->
+    第 3 列取 <code data-page-node-id="pBNsSSFFvM2vnWEH5hzgvT" data-pnid-children="D1Rn8a1YwA235G2OhGL54n">src/app/store.js</code><!--pnid:Q6XK7jBPy2IWruQ8flgkRh--> 的 <code data-page-node-id="UXTgJpwinbzKk8rWjG1YfW" data-pnid-children="Jr2YmsIr5kCKua2uzwWc3N">GROUP_COLOR_HEX</code><!--pnid:YLOlAE9WOYc8ZbPg9lARNp-->，现作为“经典”主题保留；页内边框与 banner 的实际颜色由全局色彩主题决定。<br data-page-node-id="R5Meqwka5lWXUGcWUGhkTE"><!--pnid:lJCoP8eBeATylqgYDONheZ-->
+    Chrome 列与 <code data-page-node-id="nZvGYIk6L9VYpw1hD8GTMd" data-pnid-children="Ou53r8pmgKjhop6RQws4Wc">tab_group_color_ids.h</code><!--pnid:fuUPGs8oIJlJjzmYrh4w1R--> 的 <code data-page-node-id="xgxqDETtnz8PUAqqHfMjug" data-pnid-children="f65UpUHorsYmNkqOeSsov3">*LightMode</code><!--pnid:B89SJ67Ve6PRpZ79bqPFlj--> / <code data-page-node-id="XBWKIwTpiqSAmwBtrgOUEc" data-pnid-children="kAdkEBI9RhluE0WA8JuFdw">*DarkMode</code><!--pnid:jn3ROF1LgH3J9qvBaZqbee--> 常量完全一致，可作取色基准；Edge、Firefox 为截图实测（2026-11-26，Windows 11 与 macOS）。Edge 两列同枚举的浅色平均 ΔE00 <code data-page-node-id="y0KJ91WcP733dQmtlrpZ5W" data-pnid-children="gpVupb9ekNAzWwXduBCVYU">2.5</code><!--pnid:IUgkthdXMwi4kOVGiapgc9-->、深色 <code data-page-node-id="lZ6flLSonhVdOw7SeWfLWr" data-pnid-children="RbpBt8JYJTpx66vx12JKI7">2.3</code><!--pnid:FtgQfYeJgphTlWIhAX4RL6-->，属同一套色板，分开列只为看采样误差（Windows 开了 Mica，底色会透一点窗口背景）。<br data-page-node-id="qU0xZIpaWGvC8vTyVjZWXP"><!--pnid:AqkT7G6LoUBtIzbp3ZE8yJ-->
+    深色表底色 <code data-page-node-id="29BSQBeCuUOpS8BwQbsZuM" data-pnid-children="QSVz5ShMJ0xREOpNNX62qd">#202124</code><!--pnid:azx5AUWtHj7nFAcH9gGraw--> 近似浏览器深色主题背景，用于还原观感，不是精确背景值。<br data-page-node-id="OrBVD7YN9iVIWBmtsvhhgG"><!--pnid:wORNAxon6ESyDo29BbhPCx-->
+    对应待办：<code data-page-node-id="keqVnfiBugwg6oTcIjYp12" data-pnid-children="C4cR5I484875BwvUhC9E7L">docs/PRD.md</code><!--pnid:xB0l1z7ms2sBifQuhvJIWi--> 中的 BUG-07。点击任意色块可复制色值。
+  </footer>
+
+</div>
+<div data-page-node-id="vgQNrAGm2MELNJowLgXWHi" class="toast" id="toast"></div>
+
+<script data-page-node-id="MGv1c1rRdYs2rsBbw32fuL" data-pnid-children="iXfE8yS89yxVqpVEaNInWU">
+  var toast = document.getElementById('toast');
+  var timer = null;
+  document.querySelectorAll('.chip').forEach(function (el) {
+    el.addEventListener('click', function () {
+      var hex = el.dataset.hex;
+      var show = function () {
+        toast.textContent = hex + ' 已复制';
+        toast.classList.add('show');
+        clearTimeout(timer);
+        timer = setTimeout(function () { toast.classList.remove('show'); }, 1200);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(hex).then(show).catch(show);
+      } else {
+        show();
+      }
+    });
+  });
+</script>
+</body>
+</html>

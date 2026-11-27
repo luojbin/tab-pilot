@@ -8,8 +8,9 @@
     "test": "node --test \"test/*.test.js\"",
     "build": "node scripts/build-targets.mjs",
     "build:firefox": "node scripts/build-targets.mjs firefox",
-    "build:chromium": "node scripts/build-targets.mjs chromium",
-    "lint": "web-ext lint --source-dir dist/firefox"
+    "lint": "web-ext lint --source-dir dist/firefox",
+    "build:chrome": "node scripts/build-targets.mjs chrome",
+    "build:edge": "node scripts/build-targets.mjs edge"
   },
   "devDependencies": {
     "archiver": "^8.0.0",

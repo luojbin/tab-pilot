@@ -4,9 +4,6 @@
     "service_worker": "src/app/background.js"
   },
   "permissions": [
-    "tabs",
-    "tabGroups",
-    "storage",
     "contextMenus"
   ]
 }

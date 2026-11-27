@@ -4,14 +4,14 @@
 
 ## 项目速览
 
-- 浏览器扩展，WebExtensions MV3，共享源码同时构建 Firefox / Chromium。
+- 浏览器扩展，WebExtensions MV3，共享源码同时构建 Firefox / Chrome / Edge。
 - 源码是 ES Module，构建用 esbuild 打成四个 IIFE 入口：
   - `src/app/background.js`
   - `src/app/content.js`
   - `src/ui/options.js`
   - `src/ui/popup.js`
-- manifest 模板在 `manifests/`，构建时合并并注入 `package.json` 的版本。
-- 浏览器加载的是 `dist/firefox` / `dist/chromium`，不是 `src/`；改源码后必须重新构建。
+- manifest 模板在 `manifests/`，构建时合并并注入 `package.json` 的版本。目标差异统一声明于 `scripts/build-config.mjs` 的 TARGETS；权限数组合并去重，默认主题由构建注入。
+- 浏览器加载的是 `dist/firefox` / `dist/chrome` / `dist/edge`，不是 `src/`；改源码后必须重新构建。
 - 配置页支持中文 / English，文案在 `src/ui/i18n.js`，manifest 文案在 `_locales/`。
 
 ## 先确认环境
@@ -112,9 +112,11 @@ npm run lint
 
 ```text
 dist/firefox/                       Firefox 加载目录
-dist/chromium/                      Chrome / Edge 加载目录
+dist/chrome/                        Chrome 加载目录
+dist/edge/                          Edge 加载目录
 output/tabpilot-<version>-firefox.zip
-output/tabpilot-<version>-chromium.zip
+output/tabpilot-<version>-chrome.zip
+output/tabpilot-<version>-edge.zip
 ```
 
 - `npm run lint` 只检查 `dist/firefox`，必须在 build 之后跑。
@@ -136,6 +138,6 @@ output/tabpilot-<version>-chromium.zip
 
 1. 完整环境执行 `npm ci`、`npm test`、`npm run build`、`npm run lint`。
 2. Firefox：上传 `output/tabpilot-<version>-firefox.zip` 到 AMO，下载签名 xpi。
-3. Chrome / Edge：同一个 `output/tabpilot-<version>-chromium.zip` 分别上传两个商店。
+3. Chrome / Edge：分别上传 `output/tabpilot-<version>-chrome.zip` 和 `output/tabpilot-<version>-edge.zip` 到对应商店。
 4. Edge Partner Center 会按 `_locales` 识别语言；补齐每种语言的 Description、logo、截图。
 5. 记录实际使用的版本号、产物名、商店审核状态。

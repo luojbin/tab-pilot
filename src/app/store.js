@@ -1,8 +1,11 @@
+import { BUILD_DEFAULT_COLOR_THEME } from '../platform/build-target.js';
+import { COLOR_THEMES, CLASSIC_COLORS, normalizeColorTheme as resolveColorTheme, themeColor } from '../core/color-themes.js';
 import { TOOLBAR_ACTIONS } from '../core/toolbar-actions.js';
 import browser from '../platform/browser.js';
 import { migrateConfig } from '../core/config-migration.js';
 import { normalizeTabGroup } from '../core/tab-group.js';
 import { compilePattern } from '../core/title-rule.js';
+import { GROUP_COLORS, DEFAULT_COLOR, colorOf } from '../core/group-colors.js';
 
 /**
  * TabPilot 存储层
@@ -23,20 +26,6 @@ import { compilePattern } from '../core/title-rule.js';
 const CONFIG_KEY = 'tabpilot:config';
 const SCHEMA_VERSION = 2;
 
-/** Firefox tabGroups 的预设颜色。 */
-const GROUP_COLORS = [
-  'grey',
-  'blue',
-  'red',
-  'yellow',
-  'green',
-  'pink',
-  'purple',
-  'cyan',
-  'orange'
-];
-
-const DEFAULT_COLOR = 'grey';
 const DEFAULT_MIN_TABS = 1;
 
 /**
@@ -56,18 +45,12 @@ const DEFAULT_CLICK_ACTION = 'sync';
 const LANGUAGES = ['auto', 'zh', 'en'];
 const DEFAULT_LANGUAGE = 'auto';
 
-/** 分组颜色的实际色值（页面内标识需要真实颜色，不是色名）。 */
-const GROUP_COLOR_HEX = {
-  grey: '#9aa0a6',
-  blue: '#1a73e8',
-  red: '#d93025',
-  yellow: '#f9ab00',
-  green: '#1e8e3e',
-  pink: '#d01884',
-  purple: '#9334e6',
-  cyan: '#007b83',
-  orange: '#e8710a'
-};
+/** 历史固定色板保留为“经典”；主题选择与原生群组颜色枚举独立。 */
+const GROUP_COLOR_HEX = CLASSIC_COLORS;
+const DEFAULT_COLOR_THEME = BUILD_DEFAULT_COLOR_THEME;
+function normalizeColorTheme(value, themes = []) {
+  return resolveColorTheme(value, DEFAULT_COLOR_THEME, themes);
+}
 
 /**
  * 内置默认配置：没有存储配置时的兜底，也是配置页的初始内容。
@@ -79,6 +62,7 @@ const DEFAULT_CONFIG = {
   autoUpdateGroupRules: true,
   showActionResult: true,
   language: DEFAULT_LANGUAGE,
+  colorTheme: DEFAULT_COLOR_THEME,
   rules: [
     {
       id: 'dev-localhost',
@@ -203,6 +187,23 @@ function validateConfig(raw, options) {
     report(
       `schemaVersion 必须为 ${SCHEMA_VERSION}，收到 ${JSON.stringify(raw.schemaVersion)}`
     );
+  }
+  if (raw.customColorThemes !== undefined) {
+    if (!Array.isArray(raw.customColorThemes)) report('customColorThemes 必须是数组');
+    else {
+      const ids = new Set(Object.keys(COLOR_THEMES));
+      for (const theme of raw.customColorThemes) {
+        if (!isPlainObject(theme) || typeof theme.id !== 'string' || !theme.id.trim() || ids.has(theme.id) ||
+            typeof theme.name !== 'string' || !theme.name.trim() || !isPlainObject(theme.colors) ||
+            GROUP_COLORS.some(color => typeof theme.colors[color] !== 'string' || !/^#[0-9a-f]{6}$/i.test(theme.colors[color]))) {
+          report('自定义主题必须有唯一标识、名称和九种有效的十六进制颜色');
+        }
+        if (typeof theme?.id === 'string') ids.add(theme.id);
+      }
+    }
+  }
+  if (raw.colorTheme !== undefined && (typeof raw.colorTheme !== 'string' || normalizeColorTheme(raw.colorTheme, raw.customColorThemes) !== raw.colorTheme)) {
+    report('colorTheme 必须是有效的色彩主题');
   }
   if ('strictMode' in raw) report('strictMode 已移至 rules[].tabGroup.strictMode');
   for (const key of ['autoUpdateGroupRules', 'showActionResult']) {
@@ -393,7 +394,7 @@ async function loadConfig() {
   if (!result.ok) {
     return { config: clone(DEFAULT_CONFIG), source: 'default', errors: result.errors };
   }
-  return { config: result.config, source: 'storage' };
+  return { config: { ...result.config, colorTheme: normalizeColorTheme(result.config.colorTheme, result.config.customColorThemes) }, source: 'storage' };
 }
 
 /** 保存配置；非法配置不会被写入。 */
@@ -434,6 +435,8 @@ function buildConfigFromRules(rules, clickAction, language, groupsFirst = false,
     groupsFirst: groupsFirst === true,
     autoUpdateGroupRules: preferences.autoUpdateGroupRules !== false,
     showActionResult: preferences.showActionResult !== false,
+    colorTheme: normalizeColorTheme(preferences.colorTheme, preferences.customColorThemes),
+    ...(preferences.customColorThemes === undefined ? {} : { customColorThemes: clone(preferences.customColorThemes) }),
     ...(preferences.globalTitleRule === undefined ? {} : { globalTitleRule: preferences.globalTitleRule }),
     rules: list.map((rule) => {
       const normalized = {
@@ -466,13 +469,10 @@ function colorForIndex(index) {
 }
 
 /** 规则实际使用的分组颜色。 */
-function colorOf(rule) {
-  return rule && GROUP_COLORS.includes(rule.color) ? rule.color : DEFAULT_COLOR;
-}
 
 /** 分组颜色对应的色值，未知颜色回退到 grey。 */
-function colorHexOf(rule) {
-  return GROUP_COLOR_HEX[colorOf(rule)] || GROUP_COLOR_HEX.grey;
+function colorHexOf(rule, theme, themes = []) {
+  return themeColor(colorOf(rule), normalizeColorTheme(theme, themes), themes);
 }
 
 export {
@@ -480,6 +480,9 @@ export {
   SCHEMA_VERSION,
   GROUP_COLORS,
   GROUP_COLOR_HEX,
+  COLOR_THEMES,
+  DEFAULT_COLOR_THEME,
+  normalizeColorTheme,
   CLICK_ACTIONS,
   DEFAULT_CLICK_ACTION,
   LANGUAGES,

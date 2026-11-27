@@ -13,6 +13,20 @@ import * as TitleRule from '../core/title-rule.js';
 const ROOT_ID = 'tabpilot-highlight-root';
 const MESSAGE_REFRESH = 'tabpilot:refresh';
 const Z_INDEX = '2147483647';
+let waitingForGroupInteraction = false;
+let contextInvalidated = false;
+
+function stopInvalidatedContext(error) {
+  if (!/extension context invalidated/i.test(String(error?.message || error))) return false;
+  contextInvalidated = true;
+  waitingForGroupInteraction = false;
+  ++refreshSequence;
+  clearInterval(pageWatchdog);
+  restoreTitle();
+  removeRoot();
+  mark('off');
+  return true;
+}
 
 let root = null;
 let signature = '';
@@ -283,6 +297,7 @@ function watchTitleChanges(titleRule) {
 }
 
 async function refresh(force = false) {
+  if (contextInvalidated) return;
   const url = location.href;
   if (!force && (styleUrl === url || pendingRefresh?.url === url)) return;
   const sequence = ++refreshSequence;
@@ -294,6 +309,7 @@ async function refresh(force = false) {
     if (sequence !== refreshSequence || location.href !== url) return;
     styleUrl = url;
   } catch (err) {
+    if (stopInvalidatedContext(err)) return;
     if (sequence !== refreshSequence || location.href !== url) return;
     styleUrl = null;
     restoreTitle();
@@ -329,12 +345,34 @@ async function refresh(force = false) {
 }
 
 browser.runtime.onMessage.addListener((message, sender, respond) => {
+  if (contextInvalidated) return;
+  if (message?.type === 'tabpilot:group-order-watch') {
+    waitingForGroupInteraction = message.enabled === true;
+    return;
+  }
   if (message?.type === 'tabpilot:title-context') {
     respond({ url: location.href, title: titleState.applied !== null && document.title === titleState.applied
       ? titleState.input : document.title });
     return;
   }
   if (message && message.type === MESSAGE_REFRESH) refresh(message.reason !== 'navigation');
+});
+
+// 只有后台等待原生命名结束时才发送一次；普通页面点击不产生后台消息。
+const groupInteraction = async event => {
+  if (contextInvalidated || !waitingForGroupInteraction || event.isTrusted === false) return;
+  waitingForGroupInteraction = false;
+  try {
+    await browser.runtime.sendMessage({ type: 'tabpilot:page-interaction' });
+  } catch (error) {
+    if (!stopInvalidatedContext(error)) waitingForGroupInteraction = true;
+  }
+};
+window.addEventListener('pointerdown', groupInteraction, { capture: true, passive: true });
+// 原生群组编辑框可能消耗第一次按下事件；关闭后回到页面的焦点和点击也可继续整理。
+window.addEventListener('click', groupInteraction, { capture: true, passive: true });
+window.addEventListener('focus', event => {
+  if (event.target === window) groupInteraction(event);
 });
 
 // 单页应用切换路由时重新判断
@@ -346,7 +384,8 @@ window.addEventListener('pageshow', (event) => {
 });
 
 // URL 兜底不随标题功能停止：未命中、只高亮、停用重命名时也能再次发现路由变化。
-setInterval(() => {
+const pageWatchdog = setInterval(() => {
+  if (contextInvalidated) return;
   if (location.href !== styleUrl) refresh();
   // 页面重建 body 或清空节点后，同一 URL 也需要恢复被移除的标识。
   else if (root && root.isConnected === false && !pendingRefresh) refresh(true);

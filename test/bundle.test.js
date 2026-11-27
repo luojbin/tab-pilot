@@ -3,10 +3,13 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
+import { TARGETS, buildDefines } from '../scripts/build-config.mjs';
 
 // 验证真实打包结果能作为普通脚本独立运行，不依赖其他脚本或全局模块。
-for (const [namespace, target] of [['browser', 'firefox140'], ['chrome', 'chrome116']]) {
-  test(`打包入口：${namespace} 环境下后台归组并响应内容脚本查询`, async () => {
+for (const [name, config] of Object.entries(TARGETS)) {
+  const namespace = name === 'firefox' ? 'browser' : 'chrome';
+  const target = config.build;
+  test(`打包入口：${name} 默认主题、后台归组及内容脚本查询`, async () => {
     const { outputFiles } = await build({
       absWorkingDir: fileURLToPath(new URL('..', import.meta.url)),
       entryPoints: ['src/app/background.js', 'src/app/content.js', 'src/ui/options.js', 'src/ui/popup.js'],
@@ -16,6 +19,7 @@ for (const [namespace, target] of [['browser', 'firefox140'], ['chrome', 'chrome
       format: 'iife',
       platform: 'browser',
       target,
+      define: buildDefines(name),
       write: false
     });
     const scripts = new Map(outputFiles.map(file => [
@@ -27,9 +31,10 @@ for (const [namespace, target] of [['browser', 'firefox140'], ['chrome', 'chrome
     const tab = { id: 1, windowId: 1, groupId: -1, url: 'http://localhost:3000/' };
     const groupCalls = [];
     const listeners = {};
+    let storedConfig = null;
     const event = name => ({ addListener(fn) { listeners[name] = fn; } });
     const api = {
-      storage: { local: { async get() { return {}; } }, onChanged: event('storage') },
+      storage: { local: { async get() { return storedConfig ? { 'tabpilot:config': storedConfig } : {}; } }, onChanged: event('storage') },
       tabs: {
         async query() { return [tab]; },
         async group(options) { groupCalls.push(options); return 42; },
@@ -46,6 +51,12 @@ for (const [namespace, target] of [['browser', 'firefox140'], ['chrome', 'chrome
     };
     const background = vm.createContext({ [namespace]: api, console, setTimeout, clearTimeout });
     scripts.get('background.js').runInContext(background);
+    assert.equal((await background.TabPilotDebug.getConfig()).config.colorTheme, config.theme);
+    storedConfig = { schemaVersion: 2, colorTheme: 'classic', rules: [] };
+    assert.equal((await background.TabPilotDebug.getConfig()).config.colorTheme, 'classic', '显式主题不被构建默认覆盖');
+    storedConfig = { schemaVersion: 2, rules: [] };
+    assert.equal((await background.TabPilotDebug.getConfig()).config.colorTheme, config.theme, '旧配置缺省采用构建默认');
+    storedConfig = null;
     const stats = await background.TabPilotDebug.syncAll();
     assert.equal(stats.grouped, 1);
     assert.deepEqual(Array.from(groupCalls[0].tabIds), [tab.id]);
@@ -176,7 +187,7 @@ for (const [namespace, target] of [['browser', 'firefox140'], ['chrome', 'chrome
     };
     const queries = [], events = {}, intervals = [];
     let message, observer, highlightMutation;
-    const lookup = ({ url }) => styles[new URL(url).pathname.slice(1)] || null;
+    const lookup = ({ type, url }) => type === 'page-style' ? styles[new URL(url).pathname.slice(1)] || null : null;
     let responder = lookup;
     const context = vm.createContext({
       [namespace]: { runtime: { onMessage: { addListener(fn) { message = fn; } },
@@ -199,6 +210,25 @@ for (const [namespace, target] of [['browser', 'firefox140'], ['chrome', 'chrome
     script.runInContext(context);
     await tick();
     assert.equal(document.body.children.length, 0);
+    const initialQueries = queries.length;
+    events.pointerdown({ isTrusted: true });
+    assert.equal(queries.length, initialQueries, '普通点击不产生消息');
+    message({ type: 'tabpilot:group-order-watch', enabled: true });
+    events.pointerdown({ isTrusted: false });
+    assert.equal(queries.length, initialQueries, '脚本触发的点击不解除命名保护');
+    events.pointerdown({ isTrusted: true });
+    events.pointerdown({ isTrusted: true });
+    assert.equal(queries.length, initialQueries + 1, '等待命名时仅通知一次真实交互');
+    assert.equal(queries.at(-1).type, 'tabpilot:page-interaction');
+    message({ type: 'tabpilot:group-order-watch', enabled: true });
+    events.click({ isTrusted: true });
+    events.pointerdown({ isTrusted: true });
+    assert.equal(queries.length, initialQueries + 2, '原生编辑框消耗按下事件后，点击也可解除保护且不重复通知');
+    message({ type: 'tabpilot:group-order-watch', enabled: true });
+    events.focus({ isTrusted: true, target: document.body });
+    assert.equal(queries.length, initialQueries + 2, '页内输入框焦点不解除保护');
+    events.focus({ isTrusted: true, target: context.window });
+    assert.equal(queries.length, initialQueries + 3, '从原生命名框返回页面焦点时解除保护');
     assert.equal(intervals.length, 1, '未命中时也保留 URL 兜底');
     location.href = 'https://host/a';
     intervals[0]();
@@ -281,5 +311,14 @@ for (const [namespace, target] of [['browser', 'firefox140'], ['chrome', 'chrome
     intervals[0](); await tick();
     assert.equal(document.title, 'b', '同 URL 强制刷新失败后也能由兜底恢复');
     assert.equal(intervals.length, 1, '多次路由和功能切换不会重复启动定时器');
+    responder = () => { throw new Error('Extension context invalidated.'); };
+    message({ type: 'tabpilot:refresh' }); await tick();
+    assert.equal(document.title, 'App', '扩展上下文失效后恢复原标题');
+    assert.equal(document.body.children.length, 0, '扩展上下文失效后移除旧标识');
+    const stoppedQueries = queries.length;
+    intervals[0](); events.hashchange(); notify();
+    events.click({ isTrusted: true });
+    await tick();
+    assert.equal(queries.length, stoppedQueries, '失效脚本停止重试，导航和点击也不再通信');
   });
 }

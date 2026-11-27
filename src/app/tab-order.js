@@ -11,6 +11,7 @@ export async function groupsFirst(options = {}) {
   }
   const result = { moved: 0, failed: 0 };
   for (const [windowId, windowTabs] of windows) {
+    if (options.shouldDeferWindow?.(windowId)) continue;
     const sorted = windowTabs.slice().sort((a, b) => a.index - b.index);
     const groups = new Map();
     for (const tab of sorted) {
@@ -20,6 +21,7 @@ export async function groupsFirst(options = {}) {
     }
     let index = sorted.filter(tab => tab.pinned).length;
     for (const [groupId, members] of groups) {
+      if (options.shouldDeferWindow?.(windowId)) break;
       // 前面的组只会向左移动，不影响后面尚未处理的组的起始位置。
       if (members[0].index !== index) {
         try {

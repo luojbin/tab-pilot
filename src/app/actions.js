@@ -1,5 +1,6 @@
 import { normalizeTabGroup, tabGroupEnabled } from '../core/tab-group.js';
 import browser from '../platform/browser.js';
+import { colorOf } from '../core/group-colors.js';
 import { markAutomaticGrouping, clearAutomaticGrouping, finishAutomaticGrouping } from '../core/manual-group-rule.js';
 
 /**
@@ -10,12 +11,6 @@ import { markAutomaticGrouping, clearAutomaticGrouping, finishAutomaticGrouping 
  *
  * 一条规则对应一个分组，分组属性取自规则的 name / color 及 tabGroup.collapsed。
  */
-const FALLBACK_COLOR = 'grey';
-
-function colorOf(rule) {
-  return rule && typeof rule.color === 'string' && rule.color ? rule.color : FALLBACK_COLOR;
-}
-
 function nameOf(rule) {
   return rule && typeof rule.name === 'string' ? rule.name : '';
 }

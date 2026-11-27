@@ -21,7 +21,7 @@ const state = {
   pageMessages: []
 };
 
-const listeners = { created: [], updated: [], actionClicked: [], message: [], configChanged: [] };
+const listeners = { created: [], updated: [], actionClicked: [], message: [], configChanged: [], groupCreated: [], groupUpdated: [], groupRemoved: [], groupMoved: [], moved: [], activated: [] };
 
 /** 按浏览器消息协议调用监听器：支持 sendResponse + return true 的异步回复。 */
 function sendMessage(message, sender) {
@@ -62,6 +62,8 @@ globalThis.browser = {
       state.groupCalls.push(options);
       return options.createProperties ? 42 : options.groupId;
     },
+    onMoved: { addListener(fn) { listeners.moved.push(fn); } },
+    onActivated: { addListener(fn) { listeners.activated.push(fn); } },
     onCreated: { addListener(fn) { listeners.created.push(fn); } },
     onUpdated: { addListener(fn) { listeners.updated.push(fn); } },
     async sendMessage(tabId, message) {
@@ -69,6 +71,10 @@ globalThis.browser = {
     }
   },
   tabGroups: {
+    onCreated: { addListener(fn) { listeners.groupCreated.push(fn); } },
+    onUpdated: { addListener(fn) { listeners.groupUpdated.push(fn); } },
+    onRemoved: { addListener(fn) { listeners.groupRemoved.push(fn); } },
+    onMoved: { addListener(fn) { listeners.groupMoved.push(fn); } },
     async get(id) { return state.existingGroups.find(group => group.id === id); },
     async move(groupId, options) { state.moveCalls.push({ groupId, ...options }); return { id: groupId }; },
     async query(queryInfo) {
@@ -163,6 +169,33 @@ test('background 注册事件与消息监听，工具栏由 popup 驱动', () =>
   assert.equal(listeners.updated.length, 1);
   assert.equal(listeners.actionClicked.length, 0);
   assert.equal(listeners.message.length, 1);
+});
+
+test('自定义主题保存重读后，后台页面标识使用自定义颜色', async () => {
+  reset();
+  const store = await import('../src/app/store.js');
+  const themes = [{ id: 'theme-custom', name: '自定义', colors: { ...store.COLOR_THEMES.classic.colors, green: '#123456' } }];
+  const config = { ...store.clone(store.DEFAULT_CONFIG), colorTheme: 'theme-custom', customColorThemes: themes };
+  config.rules[0].highlight = { enabled: true, border: { sides: ['top'] } };
+  await store.saveConfig(config);
+  const loaded = await store.loadConfig();
+  assert.equal(loaded.config.colorTheme, 'theme-custom');
+  assert.deepEqual(loaded.config.customColorThemes, themes);
+  const style = await sendMessage({ type: 'page-style', url: 'http://localhost:3000/' }, { tab: { id: 1, windowId: 7 } });
+  assert.equal(style.colorHex, '#123456');
+});
+
+test('动作层对未知颜色兜底，新建和已有群组均只向 API 发送合法颜色', async () => {
+  const { applyRule } = await import('../src/app/actions.js');
+  for (const existing of [false, true]) {
+    reset();
+    const tab = localhostTab(1, 7);
+    state.tabsByWindow[7] = [tab];
+    if (existing) state.existingGroups = [{ id: 42, windowId: 7, title: '颜色兜底', color: 'blue' }];
+    const result = await applyRule({ name: '颜色兜底', color: 'future-color', tabGroup: { enabled: true } }, tab);
+    assert.equal(result.ok, true);
+    assert.equal(state.updateCalls.at(-1).patch.color, 'grey');
+  }
 });
 
 test('命中内置默认规则时创建分组并记日志', async () => {
@@ -509,7 +542,7 @@ test('page-style：命中的分组开启标识时返回渲染规格', async () =
 
   assert.equal(style.ruleId, 'dev');
   assert.equal(style.name, '开发');
-  assert.equal(style.colorHex, '#1e8e3e');
+  assert.equal(style.colorHex, '#008865');
   assert.deepEqual(style.highlight.border.sides, ['top']);
   assert.deepEqual(style.highlight.banner.positions, ['topLeft']);
   assert.equal(style.titleRule.enabled, false);
@@ -1157,4 +1190,81 @@ test('动作菜单显式选择覆盖默认配置，不把菜单或重命名当�
   assert.equal(await sendMessage({ type: 'toolbar-execute', windowId: 1, action: 'renameTab' }, sender), undefined);
   assert.equal(await sendMessage({ type: 'toolbar-execute', windowId: 1, action: 'actionMenu' }, sender), undefined);
   await assert.rejects(Background.handleToolbarClick({ windowId: 1 }), /Unsupported sync action/);
+});
+
+
+test('页内主题切换只改变渲染色值，不改变规则或群组颜色枚举', async () => {
+  reset();
+  state.storedConfig = { schemaVersion: 2, colorTheme: 'classic', rules: [{
+    id: 'work', name: 'Work', color: 'blue', patterns: ['https://example.com/*'], highlight: { enabled: true, border: { sides: ['top'] } }
+  }] };
+  const message = { type: 'page-style', url: 'https://example.com/a' };
+  const sender = { tab: { id: 1, windowId: 1 } };
+  assert.equal((await sendMessage(message, sender)).colorHex, '#1a73e8');
+  state.storedConfig.colorTheme = 'vivid-dark';
+  const style = await sendMessage(message, sender);
+  assert.equal(style.colorHex, '#a8c6ff');
+  assert.equal(style.ruleId, 'work');
+  assert.equal(state.storedConfig.rules[0].color, 'blue');
+  assert.equal(state.groupCalls.length, 0);
+});
+
+
+test('手动新建群组：命名过程中不前置，点击页面后整理，并覆盖手动移动后的遗漏', async () => {
+  reset();
+  state.storedConfig = { schemaVersion: 2, groupsFirst: true, rules: [] };
+  const group = { id: 8001, windowId: 1, title: '' };
+  const loose = { id: 801, index: 0, windowId: 1, groupId: -1, url: 'https://loose.example/' };
+  const target = { id: 802, index: 1, windowId: 1, groupId: 8001, active: true, url: 'https://manual.example/' };
+  state.existingGroups = [group];
+  state.tabsByWindow = { 1: [loose, target] };
+  await withGroupPositionUpdates(async () => {
+    await listeners.groupCreated[0](group);
+    listeners.updated[0](target.id, { groupId: group.id }, target);
+    await Background.flush();
+    assert.equal(state.moveCalls.length, 0, '空名称时不能移动');
+    await listeners.activated[0]({ windowId: 1, tabId: target.id });
+    await Background.flushWindowOrder();
+    assert.equal(state.moveCalls.length, 0, '新建组自动激活标签不能提前解除命名保护');
+    group.title = '工'; await listeners.groupUpdated[0](group);
+    group.title = '工作'; await listeners.groupUpdated[0](group);
+    await Background.flushWindowOrder();
+    assert.equal(state.moveCalls.length, 0, '完成文字输入仍等待明确页面交互');
+    await sendMessage({ type: 'tabpilot:page-interaction' }, { tab: target });
+    await Background.flushWindowOrder();
+    assert.deepEqual(state.moveCalls, [{ groupId: 8001, windowId: 1, index: 0 }]);
+    assert.equal(state.groupCalls.length, 0);
+    target.index = 1; loose.index = 0;
+    listeners.groupMoved[0](group);
+    await Background.flushWindowOrder();
+    assert.equal(state.moveCalls.length, 2, '群组手动移动后也能重新前置');
+  });
+  state.tabsByWindow = {};
+  await listeners.groupRemoved[0](group);
+  await Background.flushWindowOrder();
+});
+
+test('已有群组改名：切换标签后解除保护，无需依赖命名停顿时长', async () => {
+  reset();
+  state.storedConfig = { schemaVersion: 2, groupsFirst: true, rules: [] };
+  const group = { id: 8002, windowId: 2, title: '旧名称' };
+  const tab = { id: 803, index: 1, windowId: 2, groupId: 8002, url: 'https://manual.example/' };
+  state.existingGroups = [group];
+  state.tabsByWindow = { 2: [{ id: 804, index: 0, windowId: 2, groupId: -1, url: 'https://loose.example/' }, tab] };
+  await withGroupPositionUpdates(async () => {
+    await listeners.groupCreated[0](group);
+    await listeners.activated[0]({ windowId: 2, tabId: 804 });
+    await Background.flushWindowOrder();
+    state.moveCalls = [];
+    tab.index = 1; state.tabsByWindow[2][0].index = 0;
+    group.title = '新名称'; await listeners.groupUpdated[0](group);
+    await Background.flushWindowOrder();
+    assert.equal(state.moveCalls.length, 0);
+    await listeners.activated[0]({ windowId: 2, tabId: 804 });
+    await Background.flushWindowOrder();
+    assert.equal(state.moveCalls.length, 1);
+  });
+  state.tabsByWindow = {};
+  await listeners.groupRemoved[0](group);
+  await Background.flushWindowOrder();
 });
